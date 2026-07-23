@@ -12,6 +12,7 @@ import {
   X,
   FileText,
   TrendingUp,
+  Contact,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -26,6 +27,7 @@ import {
 } from '@/components/ui/dialog'
 import { useToast } from '@/hooks/use-toast'
 import { formatCurrency, formatDate, todayStr, startOfMonth } from '@/lib/format'
+import { pickContactFromPhone, isContactsPickerSupported } from '@/lib/contacts'
 
 interface Supplier {
   id: string
@@ -235,6 +237,8 @@ function SupplierForm({
   const [address, setAddress] = useState('')
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
+  const [picking, setPicking] = useState(false)
+  const contactsSupported = isContactsPickerSupported()
   const { toast } = useToast()
 
   useEffect(() => {
@@ -250,6 +254,22 @@ function SupplierForm({
       setNotes('')
     }
   }, [supplier, open])
+
+  const pickFromContacts = async () => {
+    setPicking(true)
+    try {
+      const contact = await pickContactFromPhone()
+      if (contact) {
+        if (contact.name) setName(contact.name)
+        if (contact.phone) setPhone(contact.phone)
+        toast({ title: 'تم', description: 'تم تعبئة البيانات من جهة الاتصال' })
+      }
+    } catch (e: any) {
+      toast({ title: 'تعذر الاختيار', description: e.message, variant: 'destructive' })
+    } finally {
+      setPicking(false)
+    }
+  }
 
   const save = async () => {
     if (!name.trim()) {
@@ -282,6 +302,18 @@ function SupplierForm({
           <DialogTitle className="text-right">{supplier ? 'تعديل مورد' : 'مورد جديد'}</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
+          {contactsSupported && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={pickFromContacts}
+              disabled={picking}
+              className="w-full border-amber-300 text-amber-700 hover:bg-amber-50 bg-amber-50/50"
+            >
+              <Contact className="w-4 h-4 ml-2" />
+              {picking ? 'جارٍ الفتح...' : 'اختيار من جهات الاتصال'}
+            </Button>
+          )}
           <div>
             <Label className="text-xs">الاسم *</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} className="bg-slate-50" />

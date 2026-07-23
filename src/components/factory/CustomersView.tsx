@@ -12,6 +12,7 @@ import {
   X,
   FileText,
   TrendingUp,
+  Contact,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -27,6 +28,7 @@ import {
 } from '@/components/ui/dialog'
 import { useToast } from '@/hooks/use-toast'
 import { formatCurrency, formatDate, todayStr, startOfMonth } from '@/lib/format'
+import { pickContactFromPhone, isContactsPickerSupported } from '@/lib/contacts'
 
 interface Customer {
   id: string
@@ -242,6 +244,8 @@ function CustomerForm({
   const [address, setAddress] = useState('')
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
+  const [picking, setPicking] = useState(false)
+  const contactsSupported = isContactsPickerSupported()
   const { toast } = useToast()
 
   useEffect(() => {
@@ -257,6 +261,22 @@ function CustomerForm({
       setNotes('')
     }
   }, [customer, open])
+
+  const pickFromContacts = async () => {
+    setPicking(true)
+    try {
+      const contact = await pickContactFromPhone()
+      if (contact) {
+        if (contact.name) setName(contact.name)
+        if (contact.phone) setPhone(contact.phone)
+        toast({ title: 'تم', description: 'تم تعبئة البيانات من جهة الاتصال' })
+      }
+    } catch (e: any) {
+      toast({ title: 'تعذر الاختيار', description: e.message, variant: 'destructive' })
+    } finally {
+      setPicking(false)
+    }
+  }
 
   const save = async () => {
     if (!name.trim()) {
@@ -291,6 +311,18 @@ function CustomerForm({
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
+          {contactsSupported && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={pickFromContacts}
+              disabled={picking}
+              className="w-full border-emerald-300 text-emerald-700 hover:bg-emerald-50 bg-emerald-50/50"
+            >
+              <Contact className="w-4 h-4 ml-2" />
+              {picking ? 'جارٍ الفتح...' : 'اختيار من جهات الاتصال'}
+            </Button>
+          )}
           <div>
             <Label className="text-xs">الاسم *</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} className="bg-slate-50" />

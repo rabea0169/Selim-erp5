@@ -15,6 +15,7 @@ import {
   Calendar,
   Scissors,
   Clock,
+  Contact,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -40,6 +41,7 @@ import { formatCurrency, formatDate, todayStr } from '@/lib/format'
 import { WorkerReportModal } from './WorkerReportModal'
 import { AttendanceView } from './AttendanceView'
 import { ProductionView } from './ProductionView'
+import { pickContactFromPhone, isContactsPickerSupported } from '@/lib/contacts'
 
 type SubView = 'list' | 'attendance' | 'production'
 
@@ -474,7 +476,25 @@ function WorkerForm({
   const [type, setType] = useState('monthly')
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
+  const [picking, setPicking] = useState(false)
+  const contactsSupported = isContactsPickerSupported()
   const { toast } = useToast()
+
+  const pickFromContacts = async () => {
+    setPicking(true)
+    try {
+      const contact = await pickContactFromPhone()
+      if (contact) {
+        if (contact.name) setName(contact.name)
+        if (contact.phone) setPhone(contact.phone)
+        toast({ title: 'تم', description: 'تم تعبئة البيانات من جهة الاتصال' })
+      }
+    } catch (e: any) {
+      toast({ title: 'تعذر الاختيار', description: e.message, variant: 'destructive' })
+    } finally {
+      setPicking(false)
+    }
+  }
 
   const save = async () => {
     if (!name.trim()) {
@@ -510,6 +530,18 @@ function WorkerForm({
           <DialogTitle className="text-right">عامل جديد</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
+          {contactsSupported && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={pickFromContacts}
+              disabled={picking}
+              className="w-full border-purple-300 text-purple-700 hover:bg-purple-50 bg-purple-50/50"
+            >
+              <Contact className="w-4 h-4 ml-2" />
+              {picking ? 'جارٍ الفتح...' : 'اختيار من جهات الاتصال'}
+            </Button>
+          )}
           <div>
             <Label className="text-xs">اسم العامل *</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} className="bg-slate-50" />
