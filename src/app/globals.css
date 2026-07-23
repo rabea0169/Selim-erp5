@@ -270,3 +270,12 @@ button, a, [role="button"] {
 .dark .bg-slate-200 {
   background: #475569;
 }
+
+/* ====== إخفاء شريط التمرير (للتنقل السفلي الأفقي) ====== */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}

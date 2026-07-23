@@ -175,6 +175,116 @@ export interface Expense {
   createdAt: string
 }
 
+// ====== الخزينة (Treasury) ======
+export interface TreasuryTransaction {
+  id: string
+  type: 'deposit' | 'withdrawal' | 'transfer'
+  amount: number
+  date: string
+  description: string
+  category?: string  // مصدر/وجهة الفلوس (مبيعات، مشتريات، مصاريف، سلف، إلخ)
+  referenceType?: string  // sale, purchase, expense, workerAdvance, etc.
+  referenceId?: string
+  notes?: string
+  createdAt: string
+}
+
+// ====== المخازن (Warehouses) ======
+export interface Warehouse {
+  id: string
+  name: string
+  type: 'raw_materials' | 'finished_goods' | 'general'
+  location?: string
+  notes?: string
+  createdAt: string
+}
+
+export interface Material {
+  id: string
+  name: string
+  unit: string  // متر، كجم، قطعة، إلخ
+  warehouseId: string
+  quantity: number
+  unitCost: number  // متوسط التكلفة
+  reorderLevel?: number  // حد إعادة الطلب
+  notes?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface MaterialTransaction {
+  id: string
+  materialId: string
+  warehouseId: string
+  type: 'in' | 'out' | 'transfer' | 'adjustment'
+  quantity: number
+  unitCost?: number
+  date: string
+  reason: string  // شراء، استهلاك، تحويل، تسوية
+  referenceType?: string  // purchase, production_order, etc.
+  referenceId?: string
+  notes?: string
+  createdAt: string
+}
+
+// ====== المنتجات ======
+export interface Product {
+  id: string
+  name: string
+  category?: string
+  unit: string  // قطعة، زوج، إلخ
+  wholesalePrice: number     // سعر الجملة
+  halfWholesalePrice: number // سعر نصف الجملة
+  retailPrice: number        // سعر القطاعي
+  cost: number               // التكلفة (محسوبة من المواد)
+  warehouseId?: string       // مخزن المنتجات المنتهية
+  quantity: number           // الكمية المتاحة
+  reorderLevel?: number
+  notes?: string
+  createdAt: string
+  updatedAt: string
+}
+
+// ====== أوامر التشغيل (Production Orders) ======
+export interface ProductionOrderItem {
+  id: string
+  materialId: string
+  materialName: string
+  quantity: number
+  unit: string
+}
+
+export interface ProductionOrderStage {
+  id: string
+  name: string  // قص، خياطة، تشطيب، إلخ
+  status: 'pending' | 'in_progress' | 'completed'
+  startedAt?: string
+  completedAt?: string
+  workerId?: string
+  notes?: string
+}
+
+export interface ProductionOrder {
+  id: string
+  orderNumber: string
+  productId: string
+  productName: string
+  quantity: number  // الكمية المطلوب إنتاجها
+  completedQuantity: number  // الكمية المنتهية
+  unit: string
+  status: 'draft' | 'in_progress' | 'completed' | 'cancelled'
+  // المواد المستخدمة
+  materials: ProductionOrderItem[]
+  // مراحل التصنيع
+  stages: ProductionOrderStage[]
+  date: string
+  expectedEndDate?: string
+  completedDate?: string
+  notes?: string
+  createdAt: string
+  updatedAt: string
+}
+
 // كل الجداول في قاعدة البيانات
 export type TableName =
   | 'factorySettings'
@@ -193,6 +303,12 @@ export type TableName =
   | 'purchaseItems'
   | 'expenseCategories'
   | 'expenses'
+  | 'treasuryTransactions'
+  | 'warehouses'
+  | 'materials'
+  | 'materialTransactions'
+  | 'products'
+  | 'productionOrders'
 
 export interface DatabaseSchema {
   factorySettings: FactorySettings
@@ -211,6 +327,12 @@ export interface DatabaseSchema {
   purchaseItems: PurchaseItem
   expenseCategories: ExpenseCategory
   expenses: Expense
+  treasuryTransactions: TreasuryTransaction
+  warehouses: Warehouse
+  materials: Material
+  materialTransactions: MaterialTransaction
+  products: Product
+  productionOrders: ProductionOrder
 }
 
 // إضافة AuditLogEntry type

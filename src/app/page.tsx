@@ -12,7 +12,10 @@ import {
   LogOut,
   Printer,
   Factory,
-  Settings,
+  Boxes,
+  Tags,
+  Hammer,
+  Coins,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Dashboard } from '@/components/factory/Dashboard'
@@ -21,6 +24,10 @@ import { PurchasesView } from '@/components/factory/PurchasesView'
 import { WorkersView } from '@/components/factory/WorkersView'
 import { ExpensesView } from '@/components/factory/ExpensesView'
 import { ReportsView } from '@/components/factory/ReportsView'
+import { TreasuryView } from '@/components/factory/TreasuryView'
+import { WarehousesView } from '@/components/factory/WarehousesView'
+import { ProductsView } from '@/components/factory/ProductsView'
+import { ProductionOrdersView } from '@/components/factory/ProductionOrdersView'
 import { BackupRestore } from '@/components/factory/BackupRestore'
 import { AuthScreen } from '@/components/factory/AuthScreen'
 import { PrintSettingsDialog } from '@/components/factory/PrintSettingsDialog'
@@ -30,7 +37,7 @@ import { ConnectionStatus } from '@/components/factory/ConnectionStatus'
 import { ThemeToggle } from '@/components/factory/ThemeToggle'
 import { GlobalSearch } from '@/components/factory/GlobalSearch'
 import { AlertsPanel } from '@/components/factory/AlertsPanel'
-import { getCurrentUser, logout, factorySettingsRepository, expenseCategoryRepository, autoBackupService, auditLogRepository, type SessionUser, type FactorySettings } from '@/lib/db'
+import { getCurrentUser, logout, factorySettingsRepository, expenseCategoryRepository, warehouseRepository, autoBackupService, auditLogRepository, type SessionUser, type FactorySettings } from '@/lib/db'
 
 export type TabKey =
   | 'dashboard'
@@ -39,14 +46,29 @@ export type TabKey =
   | 'workers'
   | 'expenses'
   | 'reports'
+  | 'treasury'
+  | 'warehouses'
+  | 'products'
+  | 'productionOrders'
 
-const TABS: { key: TabKey; label: string; icon: any }[] = [
-  { key: 'dashboard', label: 'الرئيسية', icon: LayoutDashboard },
-  { key: 'sales', label: 'المبيعات', icon: ShoppingCart },
-  { key: 'purchases', label: 'المشتريات', icon: Package },
-  { key: 'workers', label: 'الموظفين', icon: Users },
-  { key: 'expenses', label: 'المصاريف', icon: Wallet },
-  { key: 'reports', label: 'التقارير', icon: FileText },
+interface TabDef {
+  key: TabKey
+  label: string
+  icon: any
+  group: 'main' | 'ops'
+}
+
+const TABS: TabDef[] = [
+  { key: 'dashboard', label: 'الرئيسية', icon: LayoutDashboard, group: 'main' },
+  { key: 'sales', label: 'المبيعات', icon: ShoppingCart, group: 'main' },
+  { key: 'purchases', label: 'المشتريات', icon: Package, group: 'main' },
+  { key: 'workers', label: 'الموظفين', icon: Users, group: 'main' },
+  { key: 'expenses', label: 'المصاريف', icon: Wallet, group: 'main' },
+  { key: 'treasury', label: 'الخزينة', icon: Coins, group: 'ops' },
+  { key: 'warehouses', label: 'المخازن', icon: Boxes, group: 'ops' },
+  { key: 'products', label: 'منتجات', icon: Tags, group: 'ops' },
+  { key: 'productionOrders', label: 'التشغيل', icon: Hammer, group: 'ops' },
+  { key: 'reports', label: 'التقارير', icon: FileText, group: 'ops' },
 ]
 
 export default function Home() {
@@ -71,6 +93,10 @@ export default function Home() {
           setFactorySettings(settings)
           // بدء النسخ الاحتياطي التلقائي
           autoBackupService.start()
+          // تهيئة المخازن الافتراضية (إن لم تكن موجودة)
+          warehouseRepository.seedDefaults().catch((e) => {
+            console.error('Failed to seed warehouses:', e)
+          })
           // تسجيل دخول في audit log
           auditLogRepository.log({
             userId: currentUser.id,
@@ -117,6 +143,10 @@ export default function Home() {
     return <AuthScreen onAuthenticated={() => setReloadKey((k) => k + 1)} />
   }
 
+  // تقسيم الـ tabs لمجموعتين: رئيسية + عمليات
+  const mainTabs = TABS.filter((t) => t.group === 'main')
+  const opsTabs = TABS.filter((t) => t.group === 'ops')
+
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-b from-slate-50 to-slate-100">
       {/* Header */}
@@ -135,7 +165,7 @@ export default function Home() {
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <ConnectionStatus />
             <GlobalSearch onNavigate={(t) => setTab(t as TabKey)} />
             <AlertsPanel onNavigate={(target) => {
@@ -176,52 +206,59 @@ export default function Home() {
       </header>
 
       {/* Main content */}
-      <main className="flex-1 max-w-2xl mx-auto w-full px-4 pb-24 pt-4">
+      <main className="flex-1 max-w-2xl mx-auto w-full px-4 pb-28 pt-4">
         {tab === 'dashboard' && <Dashboard onNavigate={setTab} />}
         {tab === 'sales' && <SalesView />}
         {tab === 'purchases' && <PurchasesView />}
         {tab === 'workers' && <WorkersView />}
         {tab === 'expenses' && <ExpensesView />}
         {tab === 'reports' && <ReportsView />}
+        {tab === 'treasury' && <TreasuryView />}
+        {tab === 'warehouses' && <WarehousesView />}
+        {tab === 'products' && <ProductsView />}
+        {tab === 'productionOrders' && <ProductionOrdersView />}
       </main>
 
-      {/* Bottom nav */}
+      {/* Bottom nav - scrollable أفقي */}
       <nav className="fixed bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur border-t border-slate-200 shadow-lg">
-        <div className="max-w-2xl mx-auto grid grid-cols-6">
-          {TABS.map((t) => {
-            const Icon = t.icon
-            const active = tab === t.key
-            return (
-              <button
-                key={t.key}
-                onClick={() => setTab(t.key)}
-                className={cn(
-                  'flex flex-col items-center justify-center py-2 gap-0.5 transition-colors relative',
-                  active
-                    ? 'text-emerald-600'
-                    : 'text-slate-500 hover:text-slate-700'
-                )}
-              >
-                <Icon
+        <div className="max-w-2xl mx-auto">
+          {/* صف التبويبات - scrollable */}
+          <div className="flex items-stretch overflow-x-auto no-scrollbar">
+            {TABS.map((t) => {
+              const Icon = t.icon
+              const active = tab === t.key
+              return (
+                <button
+                  key={t.key}
+                  onClick={() => setTab(t.key)}
                   className={cn(
-                    'w-5 h-5 transition-transform',
-                    active && 'scale-110'
-                  )}
-                />
-                <span
-                  className={cn(
-                    'text-[10px] font-medium',
-                    active && 'font-bold'
+                    'flex flex-col items-center justify-center py-2 px-3 gap-0.5 transition-colors relative shrink-0 min-w-[68px]',
+                    active
+                      ? 'text-emerald-600'
+                      : 'text-slate-500 hover:text-slate-700'
                   )}
                 >
-                  {t.label}
-                </span>
-                {active && (
-                  <span className="absolute -mt-2 w-1 h-1 rounded-full bg-emerald-600" />
-                )}
-              </button>
-            )
-          })}
+                  <Icon
+                    className={cn(
+                      'w-5 h-5 transition-transform',
+                      active && 'scale-110'
+                    )}
+                  />
+                  <span
+                    className={cn(
+                      'text-[10px] font-medium whitespace-nowrap',
+                      active && 'font-bold'
+                    )}
+                  >
+                    {t.label}
+                  </span>
+                  {active && (
+                    <span className="absolute top-0 w-8 h-0.5 rounded-full bg-emerald-600" />
+                  )}
+                </button>
+              )
+            })}
+          </div>
         </div>
       </nav>
 

@@ -3,10 +3,12 @@ import type {
   FactorySettings, AuditLogEntry, User, Worker, WorkerAdvance, WorkerReceipt, WorkerAttendance,
   Production, Customer, Supplier, Sale, SaleItem,
   Purchase, PurchaseItem, ExpenseCategory, Expense,
+  TreasuryTransaction, Warehouse, Material, MaterialTransaction,
+  Product, ProductionOrder,
 } from './types'
 
 const DB_NAME = 'selim-erp-db'
-const DB_VERSION = 3
+const DB_VERSION = 4
 
 interface FactoryDBSchema extends DBSchema {
   factorySettings: { key: string; value: FactorySettings }
@@ -25,6 +27,15 @@ interface FactoryDBSchema extends DBSchema {
   purchaseItems: { key: string; value: PurchaseItem; indexes: { 'by-purchase': string } }
   expenseCategories: { key: string; value: ExpenseCategory }
   expenses: { key: string; value: Expense; indexes: { 'by-date': string, 'by-category': string } }
+  // الخزينة
+  treasuryTransactions: { key: string; value: TreasuryTransaction; indexes: { 'by-date': string, 'by-type': string } }
+  // المخازن
+  warehouses: { key: string; value: Warehouse; indexes: { 'by-type': string } }
+  materials: { key: string; value: Material; indexes: { 'by-warehouse': string, 'by-name': string } }
+  materialTransactions: { key: string; value: MaterialTransaction; indexes: { 'by-material': string, 'by-date': string, 'by-warehouse': string } }
+  // المنتجات وأوامر التشغيل
+  products: { key: string; value: Product; indexes: { 'by-name': string, 'by-warehouse': string } }
+  productionOrders: { key: string; value: ProductionOrder; indexes: { 'by-date': string, 'by-status': string, 'by-product': string } }
 }
 
 let dbInstance: IDBPDatabase<FactoryDBSchema> | null = null
@@ -134,6 +145,51 @@ export async function getDB(): Promise<IDBPDatabase<FactoryDBSchema>> {
         const store = db.createObjectStore('expenses', { keyPath: 'id' })
         store.createIndex('by-date', 'date')
         store.createIndex('by-category', 'categoryId')
+      }
+
+      // ====== المخازن الجديدة ======
+
+      // Treasury (الخزينة)
+      if (!db.objectStoreNames.contains('treasuryTransactions')) {
+        const store = db.createObjectStore('treasuryTransactions', { keyPath: 'id' })
+        store.createIndex('by-date', 'date')
+        store.createIndex('by-type', 'type')
+      }
+
+      // Warehouses (المخازن)
+      if (!db.objectStoreNames.contains('warehouses')) {
+        const store = db.createObjectStore('warehouses', { keyPath: 'id' })
+        store.createIndex('by-type', 'type')
+      }
+
+      // Materials (المواد الخام)
+      if (!db.objectStoreNames.contains('materials')) {
+        const store = db.createObjectStore('materials', { keyPath: 'id' })
+        store.createIndex('by-warehouse', 'warehouseId')
+        store.createIndex('by-name', 'name')
+      }
+
+      // Material Transactions (حركات المواد)
+      if (!db.objectStoreNames.contains('materialTransactions')) {
+        const store = db.createObjectStore('materialTransactions', { keyPath: 'id' })
+        store.createIndex('by-material', 'materialId')
+        store.createIndex('by-date', 'date')
+        store.createIndex('by-warehouse', 'warehouseId')
+      }
+
+      // Products (المنتجات)
+      if (!db.objectStoreNames.contains('products')) {
+        const store = db.createObjectStore('products', { keyPath: 'id' })
+        store.createIndex('by-name', 'name')
+        store.createIndex('by-warehouse', 'warehouseId')
+      }
+
+      // Production Orders (أوامر التشغيل)
+      if (!db.objectStoreNames.contains('productionOrders')) {
+        const store = db.createObjectStore('productionOrders', { keyPath: 'id' })
+        store.createIndex('by-date', 'date')
+        store.createIndex('by-status', 'status')
+        store.createIndex('by-product', 'productId')
       }
     },
   })

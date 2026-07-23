@@ -7,6 +7,8 @@ type EntityType =
   | 'sales' | 'purchases' | 'workers' | 'workerAdvances' | 'workerReceipts'
   | 'workerAttendance' | 'production' | 'customers' | 'suppliers'
   | 'expenses' | 'expenseCategories' | 'factorySettings' | 'reports'
+  | 'treasuryTransactions' | 'warehouses' | 'materials'
+  | 'materialTransactions' | 'products' | 'productionOrders'
 
 interface DataChangeEvent {
   type: EntityType
