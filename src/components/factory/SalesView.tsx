@@ -23,6 +23,7 @@ import {
 import { useToast } from '@/hooks/use-toast'
 import { formatCurrency, formatDate, todayStr } from '@/lib/format'
 import { CustomersView } from './CustomersView'
+import { PrintButton } from './PrintButton'
 
 interface SaleItem {
   id?: string
@@ -302,6 +303,16 @@ function SaleCard({
             </div>
           </div>
 
+          <PrintButton
+            contentHtml={buildSalePrintHtml(sale)}
+            title={`فاتورة مبيعات - ${sale.customerName}`}
+            plainText={buildSalePrintText(sale)}
+            variant="outline"
+            size="sm"
+            className="w-full border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+            label="🖨️ طباعة الفاتورة"
+          />
+
           {sale.notes && (
             <div className="bg-yellow-50 rounded-lg p-2 text-xs text-slate-700">
               <span className="font-bold">ملاحظات: </span>
@@ -437,7 +448,7 @@ function SaleForm({
               </SelectTrigger>
               <SelectContent>
                 {customers.length === 0 ? (
-                  <SelectItem value="" disabled>لا يوجد عملاء مسجلين</SelectItem>
+                  <SelectItem value="__none__" disabled>لا يوجد عملاء مسجلين</SelectItem>
                 ) : (
                   customers.map((c) => (
                     <SelectItem key={c.id} value={c.id}>
@@ -598,4 +609,69 @@ function SaleForm({
       </DialogContent>
     </Dialog>
   )
+}
+
+// دوال طباعة الفاتورة
+function buildSalePrintHtml(sale: Sale): string {
+  const itemsRows = sale.items
+    .map(
+      (it, i) =>
+        `<tr><td style="padding: 4px 6px; border: 1px solid #000; text-align: center;">${i + 1}</td><td style="padding: 4px 6px; border: 1px solid #000;">${it.itemName}</td><td style="padding: 4px 6px; border: 1px solid #000; text-align: center;">${it.quantity}</td><td style="padding: 4px 6px; border: 1px solid #000; text-align: left;">${formatCurrency(it.unitPrice)}</td><td style="padding: 4px 6px; border: 1px solid #000; text-align: left; font-weight: bold;">${formatCurrency(it.total)}</td></tr>`
+    )
+    .join('')
+
+  return `
+    <div style="text-align: center; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 12px;">
+      <h1 style="margin: 0; font-size: 18px;">فاتورة مبيعات</h1>
+      <p style="margin: 4px 0 0; font-size: 11px;">مصنع الملابس</p>
+    </div>
+    <table style="width: 100%; font-size: 12px; margin-bottom: 12px;">
+      <tr><td style="padding: 2px 0;">العميل:</td><td style="font-weight: bold;">${sale.customerName}</td></tr>
+      ${sale.invoiceNo ? `<tr><td style="padding: 2px 0;">رقم الفاتورة:</td><td>${sale.invoiceNo}</td></tr>` : ''}
+      <tr><td style="padding: 2px 0;">التاريخ:</td><td>${formatDate(sale.date)}</td></tr>
+    </table>
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 12px;">
+      <thead>
+        <tr style="background: #f0f0f0;">
+          <th style="padding: 6px; border: 1px solid #000;">#</th>
+          <th style="padding: 6px; border: 1px solid #000;">الصنف</th>
+          <th style="padding: 6px; border: 1px solid #000;">كمية</th>
+          <th style="padding: 6px; border: 1px solid #000;">سعر</th>
+          <th style="padding: 6px; border: 1px solid #000;">إجمالي</th>
+        </tr>
+      </thead>
+      <tbody>${itemsRows}</tbody>
+      <tfoot>
+        <tr style="background: #f8f8f8;">
+          <td colspan="4" style="padding: 6px; border: 1px solid #000; text-align: left; font-weight: bold;">الإجمالي:</td>
+          <td style="padding: 6px; border: 1px solid #000; text-align: left; font-weight: bold; color: #059669;">${formatCurrency(sale.total)}</td>
+        </tr>
+        <tr><td colspan="4" style="padding: 4px 6px; border: 1px solid #000; text-align: left;">المدفوع:</td><td style="padding: 4px 6px; border: 1px solid #000; text-align: left;">${formatCurrency(sale.paid)}</td></tr>
+        <tr><td colspan="4" style="padding: 4px 6px; border: 1px solid #000; text-align: left; font-weight: bold;">المتبقي:</td><td style="padding: 4px 6px; border: 1px solid #000; text-align: left; font-weight: bold; color: #d97706;">${formatCurrency(sale.total - sale.paid)}</td></tr>
+      </tfoot>
+    </table>
+    ${sale.notes ? `<p style="font-size: 11px; margin: 8px 0;"><strong>ملاحظات:</strong> ${sale.notes}</p>` : ''}
+    <div style="margin-top: 16px; padding-top: 8px; border-top: 1px dashed #000; text-align: center; font-size: 10px; color: #666;">
+      شكراً لتعاملكم معنا
+    </div>
+  `
+}
+
+function buildSalePrintText(sale: Sale): string {
+  const items = sale.items
+    .map((it) => `${it.itemName}  ${it.quantity} × ${formatCurrency(it.unitPrice)} = ${formatCurrency(it.total)}`)
+    .join('\n')
+  return `فاتورة مبيعات
+مصنع الملابس
+------------------------
+العميل: ${sale.customerName}
+${sale.invoiceNo ? `رقم الفاتورة: ${sale.invoiceNo}\n` : ''}التاريخ: ${formatDate(sale.date)}
+------------------------
+${items}
+------------------------
+الإجمالي:  ${formatCurrency(sale.total)}
+المدفوع:   ${formatCurrency(sale.paid)}
+المتبقي:   ${formatCurrency(sale.total - sale.paid)}
+${sale.notes ? `\nملاحظات: ${sale.notes}\n` : ''}------------------------
+شكراً لتعاملكم معنا`
 }

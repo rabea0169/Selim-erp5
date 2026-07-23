@@ -23,6 +23,7 @@ import {
 import { useToast } from '@/hooks/use-toast'
 import { formatCurrency, formatDate, todayStr } from '@/lib/format'
 import { SuppliersView } from './SuppliersView'
+import { PrintButton } from './PrintButton'
 
 interface PurchaseItem {
   id?: string
@@ -296,6 +297,16 @@ function PurchaseCard({
             </div>
           </div>
 
+          <PrintButton
+            contentHtml={buildPurchasePrintHtml(purchase)}
+            title={`فاتورة مشتريات - ${purchase.supplierName}`}
+            plainText={buildPurchasePrintText(purchase)}
+            variant="outline"
+            size="sm"
+            className="w-full border-amber-300 text-amber-700 hover:bg-amber-50"
+            label="🖨️ طباعة الفاتورة"
+          />
+
           {purchase.notes && (
             <div className="bg-yellow-50 rounded-lg p-2 text-xs text-slate-700">
               <span className="font-bold">ملاحظات: </span>
@@ -431,7 +442,7 @@ function PurchaseForm({
               </SelectTrigger>
               <SelectContent>
                 {suppliers.length === 0 ? (
-                  <SelectItem value="" disabled>لا يوجد موردين مسجلين</SelectItem>
+                  <SelectItem value="__none__" disabled>لا يوجد موردين مسجلين</SelectItem>
                 ) : (
                   suppliers.map((s) => (
                     <SelectItem key={s.id} value={s.id}>
@@ -592,3 +603,68 @@ function PurchaseForm({
     </Dialog>
   )
 }
+
+// دوال طباعة فاتورة المشتريات
+function buildPurchasePrintHtml(purchase: Purchase): string {
+  const itemsRows = purchase.items
+    .map(
+      (it, i) =>
+        `<tr><td style="padding: 4px 6px; border: 1px solid #000; text-align: center;">${i + 1}</td><td style="padding: 4px 6px; border: 1px solid #000;">${it.itemName}</td><td style="padding: 4px 6px; border: 1px solid #000; text-align: center;">${it.quantity}</td><td style="padding: 4px 6px; border: 1px solid #000; text-align: left;">${formatCurrency(it.unitPrice)}</td><td style="padding: 4px 6px; border: 1px solid #000; text-align: left; font-weight: bold;">${formatCurrency(it.total)}</td></tr>`
+    )
+    .join("")
+  return `
+    <div style="text-align: center; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 12px;">
+      <h1 style="margin: 0; font-size: 18px;">فاتورة مشتريات</h1>
+      <p style="margin: 4px 0 0; font-size: 11px;">مصنع الملابس</p>
+    </div>
+    <table style="width: 100%; font-size: 12px; margin-bottom: 12px;">
+      <tr><td style="padding: 2px 0;">المورد:</td><td style="font-weight: bold;">${purchase.supplierName}</td></tr>
+      ${purchase.invoiceNo ? `<tr><td style="padding: 2px 0;">رقم الفاتورة:</td><td>${purchase.invoiceNo}</td></tr>` : ""}
+      <tr><td style="padding: 2px 0;">التاريخ:</td><td>${formatDate(purchase.date)}</td></tr>
+    </table>
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 12px;">
+      <thead>
+        <tr style="background: #f0f0f0;">
+          <th style="padding: 6px; border: 1px solid #000;">#</th>
+          <th style="padding: 6px; border: 1px solid #000;">الصنف</th>
+          <th style="padding: 6px; border: 1px solid #000;">كمية</th>
+          <th style="padding: 6px; border: 1px solid #000;">سعر</th>
+          <th style="padding: 6px; border: 1px solid #000;">إجمالي</th>
+        </tr>
+      </thead>
+      <tbody>${itemsRows}</tbody>
+      <tfoot>
+        <tr style="background: #f8f8f8;">
+          <td colspan="4" style="padding: 6px; border: 1px solid #000; text-align: left; font-weight: bold;">الإجمالي:</td>
+          <td style="padding: 6px; border: 1px solid #000; text-align: left; font-weight: bold; color: #d97706;">${formatCurrency(purchase.total)}</td>
+        </tr>
+        <tr><td colspan="4" style="padding: 4px 6px; border: 1px solid #000; text-align: left;">المدفوع:</td><td style="padding: 4px 6px; border: 1px solid #000; text-align: left;">${formatCurrency(purchase.paid)}</td></tr>
+        <tr><td colspan="4" style="padding: 4px 6px; border: 1px solid #000; text-align: left; font-weight: bold;">المتبقي:</td><td style="padding: 4px 6px; border: 1px solid #000; text-align: left; font-weight: bold; color: #dc2626;">${formatCurrency(purchase.total - purchase.paid)}</td></tr>
+      </tfoot>
+    </table>
+    ${purchase.notes ? `<p style="font-size: 11px; margin: 8px 0;"><strong>ملاحظات:</strong> ${purchase.notes}</p>` : ""}
+    <div style="margin-top: 16px; padding-top: 8px; border-top: 1px dashed #000; text-align: center; font-size: 10px; color: #666;">
+      مصنع الملابس
+    </div>
+  `
+}
+
+function buildPurchasePrintText(purchase: Purchase): string {
+  const items = purchase.items
+    .map((it) => `${it.itemName}  ${it.quantity} × ${formatCurrency(it.unitPrice)} = ${formatCurrency(it.total)}`)
+    .join("\n")
+  return `فاتورة مشتريات
+مصنع الملابس
+------------------------
+المورد: ${purchase.supplierName}
+${purchase.invoiceNo ? `رقم الفاتورة: ${purchase.invoiceNo}\n` : ""}التاريخ: ${formatDate(purchase.date)}
+------------------------
+${items}
+------------------------
+الإجمالي:  ${formatCurrency(purchase.total)}
+المدفوع:   ${formatCurrency(purchase.paid)}
+المتبقي:   ${formatCurrency(purchase.total - purchase.paid)}
+${purchase.notes ? `\nملاحظات: ${purchase.notes}\n` : ""}------------------------
+مصنع الملابس`
+}
+

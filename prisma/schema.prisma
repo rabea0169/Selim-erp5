@@ -10,6 +10,17 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// المستخدمون (تسجيل الدخول)
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  passwordHash String
+  name         String
+  role         String   @default("admin") // admin / user
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
 // العمال
 model Worker {
   id        String   @id @default(cuid())

@@ -9,6 +9,8 @@ import {
   Wallet,
   FileText,
   Database,
+  LogOut,
+  Printer,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Dashboard } from '@/components/factory/Dashboard'
@@ -18,6 +20,8 @@ import { WorkersView } from '@/components/factory/WorkersView'
 import { ExpensesView } from '@/components/factory/ExpensesView'
 import { ReportsView } from '@/components/factory/ReportsView'
 import { BackupRestore } from '@/components/factory/BackupRestore'
+import { AuthScreen } from '@/components/factory/AuthScreen'
+import { PrintSettingsDialog } from '@/components/factory/PrintSettingsDialog'
 
 export type TabKey =
   | 'dashboard'
@@ -39,11 +43,48 @@ const TABS: { key: TabKey; label: string; icon: any }[] = [
 export default function Home() {
   const [tab, setTab] = useState<TabKey>('dashboard')
   const [backupOpen, setBackupOpen] = useState(false)
+  const [printOpen, setPrintOpen] = useState(false)
+  const [user, setUser] = useState<{ name: string; username: string } | null>(null)
+  const [authChecked, setAuthChecked] = useState(false)
 
-  // التهيئة الأولية - إنشاء فئات المصاريف الافتراضية
+  // التحقق من تسجيل الدخول
   useEffect(() => {
+    fetch('/api/auth/me')
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.user) {
+          setUser({ name: data.user.name, username: data.user.username })
+        } else {
+          setUser(null)
+        }
+      })
+      .catch(() => setUser(null))
+      .finally(() => setAuthChecked(true))
+
+    // التهيئة الأولية
     fetch('/api/seed', { method: 'POST' }).catch(() => {})
   }, [])
+
+  const handleLogout = async () => {
+    if (!confirm('هل تريد تسجيل الخروج؟')) return
+    await fetch('/api/auth/logout', { method: 'POST' })
+    setUser(null)
+    setTab('dashboard')
+  }
+
+  // لو لسه بيتحقق
+  if (!authChecked) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="w-12 h-12 rounded-full border-4 border-emerald-200 border-t-emerald-600 animate-spin" />
+      </div>
+    )
+  }
+
+  // لو مش مسجل دخول - اعرض شاشة الدخول
+  if (!user) {
+    return <AuthScreen onAuthenticated={() => location.reload()} />
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-b from-slate-50 to-slate-100">
@@ -59,11 +100,18 @@ export default function Home() {
                 مصنع الملابس
               </h1>
               <p className="text-[10px] text-slate-500 leading-tight">
-                نظام الإدارة المالية
+                مرحباً، {user.name}
               </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => setPrintOpen(true)}
+              className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 transition-colors"
+              title="إعدادات الطباعة"
+            >
+              <Printer className="w-4 h-4" />
+            </button>
             <button
               onClick={() => setBackupOpen(true)}
               className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 transition-colors"
@@ -71,7 +119,14 @@ export default function Home() {
             >
               <Database className="w-4 h-4" />
             </button>
-            <div className="text-left">
+            <button
+              onClick={handleLogout}
+              className="w-8 h-8 rounded-lg bg-rose-50 hover:bg-rose-100 flex items-center justify-center text-rose-600 transition-colors"
+              title="تسجيل الخروج"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+            <div className="text-left hidden">
               <p className="text-[10px] text-slate-500">اليوم</p>
               <p className="text-xs font-semibold text-slate-700">
                 {new Date().toLocaleDateString('ar-EG', {
@@ -136,6 +191,7 @@ export default function Home() {
       </nav>
 
       <BackupRestore open={backupOpen} onOpenChange={setBackupOpen} />
+      <PrintSettingsDialog open={printOpen} onOpenChange={setPrintOpen} />
     </div>
   )
 }

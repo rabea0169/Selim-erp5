@@ -10,9 +10,11 @@ import {
   Calendar,
   Download,
   Receipt,
+  Printer,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { PrintButton } from './PrintButton'
 import { Label } from '@/components/ui/label'
 import {
   Tabs,
@@ -49,6 +51,64 @@ interface ReportData {
   expensesByCategory: Record<string, number>
   topItems: { name: string; qty: number; total: number }[]
   topModels: { name: string; qty: number; total: number }[]
+}
+
+// بناء HTML للطباعة
+function buildPrintHtml(data: ReportData, from: string, to: string): string {
+  const s = data.summary
+  const catRows = Object.entries(data.expensesByCategory || {})
+    .sort((a, b) => b[1] - a[1])
+    .map(
+      ([name, amount]) =>
+        `<tr><td style="padding: 4px 8px; border: 1px solid #000;">${name}</td><td style="padding: 4px 8px; border: 1px solid #000; text-align: left; font-weight: bold;">${formatCurrency(amount)}</td></tr>`
+    )
+    .join('')
+
+  return `
+    <div style="text-align: center; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 12px;">
+      <h1 style="margin: 0; font-size: 18px;">تقرير مصنع الملابس الشامل</h1>
+      <p style="margin: 4px 0 0; font-size: 11px;">الفترة: ${formatDate(from)} إلى ${formatDate(to)}</p>
+    </div>
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 12px;">
+      <tr style="background: #f0f0f0;">
+        <th style="padding: 6px; border: 1px solid #000; text-align: right;">البند</th>
+        <th style="padding: 6px; border: 1px solid #000; text-align: left;">القيمة</th>
+      </tr>
+      <tr><td style="padding: 4px 8px; border: 1px solid #000;">إجمالي المبيعات</td><td style="padding: 4px 8px; border: 1px solid #000; text-align: left; color: #059669; font-weight: bold;">${formatCurrency(s.salesTotal)}</td></tr>
+      <tr><td style="padding: 4px 8px; border: 1px solid #000;">إجمالي المشتريات</td><td style="padding: 4px 8px; border: 1px solid #000; text-align: left; color: #d97706; font-weight: bold;">${formatCurrency(s.purchasesTotal)}</td></tr>
+      <tr><td style="padding: 4px 8px; border: 1px solid #000;">إجمالي المصاريف</td><td style="padding: 4px 8px; border: 1px solid #000; text-align: left; color: #dc2626; font-weight: bold;">${formatCurrency(s.expensesTotal)}</td></tr>
+      <tr><td style="padding: 4px 8px; border: 1px solid #000;">سلف العمال</td><td style="padding: 4px 8px; border: 1px solid #000; text-align: left; color: #dc2626; font-weight: bold;">${formatCurrency(s.advancesTotal)}</td></tr>
+      ${s.productionTotal > 0 ? `<tr><td style="padding: 4px 8px; border: 1px solid #000;">إنتاج بالقطعة</td><td style="padding: 4px 8px; border: 1px solid #000; text-align: left; color: #4f46e5; font-weight: bold;">${formatCurrency(s.productionTotal)}</td></tr>` : ''}
+      <tr style="background: ${s.netProfit >= 0 ? '#dcfce7' : '#fee2e2'};">
+        <td style="padding: 8px; border: 2px solid #000; font-weight: bold; font-size: 14px;">صافي الربح</td>
+        <td style="padding: 8px; border: 2px solid #000; text-align: left; font-weight: bold; font-size: 14px; color: ${s.netProfit >= 0 ? '#059669' : '#dc2626'};">${formatCurrency(s.netProfit)}</td>
+      </tr>
+    </table>
+    ${catRows ? `
+    <h3 style="font-size: 13px; margin: 12px 0 6px;">المصاريف حسب البند</h3>
+    <table style="width: 100%; border-collapse: collapse;">
+      <thead><tr style="background: #fee2e2;"><th style="padding: 6px; border: 1px solid #000;">البند</th><th style="padding: 6px; border: 1px solid #000;">المبلغ</th></tr></thead>
+      <tbody>${catRows}</tbody>
+    </table>` : ''}
+    <div style="margin-top: 16px; padding-top: 8px; border-top: 1px dashed #000; text-align: center; font-size: 10px; color: #666;">
+      تم إنشاء التقرير: ${new Date().toLocaleString('ar-EG')}
+    </div>
+  `
+}
+
+function buildPrintText(data: ReportData, from: string, to: string): string {
+  const s = data.summary
+  return `تقرير مصنع الملابس
+الفترة: ${formatDate(from)} إلى ${formatDate(to)}
+----------------------------
+المبيعات:     ${formatCurrency(s.salesTotal)}
+المشتريات:    ${formatCurrency(s.purchasesTotal)}
+المصاريف:     ${formatCurrency(s.expensesTotal)}
+سلف العمال:   ${formatCurrency(s.advancesTotal)}
+${s.productionTotal > 0 ? `الإنتاج:      ${formatCurrency(s.productionTotal)}\n` : ''}----------------------------
+صافي الربح:   ${formatCurrency(s.netProfit)}
+----------------------------
+${new Date().toLocaleString('ar-EG')}`
 }
 
 export function ReportsView() {
@@ -275,6 +335,18 @@ export function ReportsView() {
           <Download className="w-4 h-4 ml-1" />
           {exporting ? 'جارٍ التصدير...' : 'تصدير PDF ومشاركة واتساب'}
         </Button>
+
+        {data && (
+          <PrintButton
+            contentHtml={buildPrintHtml(data, from, to)}
+            title="التقرير الشامل"
+            plainText={buildPrintText(data, from, to)}
+            variant="outline"
+            size="sm"
+            className="w-full border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+            label="🖨️ طباعة التقرير"
+          />
+        )}
       </div>
 
       {data && (
