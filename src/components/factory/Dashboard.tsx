@@ -11,52 +11,45 @@ import {
   FileText,
   ArrowLeft,
 } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { formatCurrency, todayStr, startOfMonth } from '@/lib/format'
+import { reportRepository, type ReportData } from '@/lib/db'
 import type { TabKey } from '@/app/page'
-
-interface ReportSummary {
-  salesTotal: number
-  purchasesTotal: number
-  expensesTotal: number
-  advancesTotal: number
-  receiptsTotal: number
-  productionTotal: number
-  productionPieces: number
-  netProfit: number
-}
 
 interface DashboardProps {
   onNavigate: (t: TabKey) => void
 }
 
 export function Dashboard({ onNavigate }: DashboardProps) {
-  const [todaySummary, setTodaySummary] = useState<ReportSummary | null>(null)
-  const [monthSummary, setMonthSummary] = useState<ReportSummary | null>(null)
+  const [todayData, setTodayData] = useState<ReportData | null>(null)
+  const [monthData, setMonthData] = useState<ReportData | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    let mounted = true
     async function load() {
-      setLoading(true)
       const today = todayStr()
       const start = startOfMonth()
       try {
-        const [todayRes, monthRes] = await Promise.all([
-          fetch(`/api/reports?from=${today}&to=${today}`).then((r) => r.json()),
-          fetch(`/api/reports?from=${start}&to=${today}`).then((r) => r.json()),
+        const [todayReport, monthReport] = await Promise.all([
+          reportRepository.getFullReport(today, today),
+          reportRepository.getFullReport(start, today),
         ])
-        setTodaySummary(todayRes.summary)
-        setMonthSummary(monthRes.summary)
+        if (mounted) {
+          setTodayData(todayReport)
+          setMonthData(monthReport)
+        }
       } catch (e) {
         console.error(e)
       } finally {
-        setLoading(false)
+        if (mounted) setLoading(false)
       }
     }
     load()
+    return () => { mounted = false }
   }, [])
 
-  if (loading || !todaySummary || !monthSummary) {
+  if (loading || !todayData || !monthData) {
     return (
       <div className="space-y-3">
         {[1, 2, 3].map((i) => (
@@ -69,28 +62,28 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   const quickCards = [
     {
       label: 'المبيعات',
-      value: monthSummary.salesTotal,
+      value: monthData.summary.salesTotal,
       icon: ShoppingCart,
       color: 'from-emerald-500 to-teal-600',
       tab: 'sales' as TabKey,
     },
     {
       label: 'المشتريات',
-      value: monthSummary.purchasesTotal,
+      value: monthData.summary.purchasesTotal,
       icon: Package,
       color: 'from-amber-500 to-orange-600',
       tab: 'purchases' as TabKey,
     },
     {
       label: 'المصاريف',
-      value: monthSummary.expensesTotal,
+      value: monthData.summary.expensesTotal,
       icon: Wallet,
       color: 'from-rose-500 to-red-600',
       tab: 'expenses' as TabKey,
     },
     {
       label: 'سلف العمال',
-      value: monthSummary.advancesTotal,
+      value: monthData.summary.advancesTotal,
       icon: Users,
       color: 'from-purple-500 to-violet-600',
       tab: 'workers' as TabKey,
@@ -108,25 +101,25 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         <div className="grid grid-cols-2 gap-3">
           <StatCard
             label="مبيعات اليوم"
-            value={todaySummary.salesTotal}
+            value={todayData.summary.salesTotal}
             icon={TrendingUp}
             color="emerald"
           />
           <StatCard
             label="مصاريف اليوم"
-            value={todaySummary.expensesTotal}
+            value={todayData.summary.expensesTotal}
             icon={TrendingDown}
             color="rose"
           />
           <StatCard
             label="سلف اليوم"
-            value={todaySummary.advancesTotal}
+            value={todayData.summary.advancesTotal}
             icon={Users}
             color="purple"
           />
           <StatCard
             label="قبض اليوم"
-            value={todaySummary.receiptsTotal}
+            value={todayData.summary.receiptsTotal}
             icon={Wallet}
             color="blue"
           />
@@ -144,7 +137,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
             <div>
               <p className="text-xs text-slate-300 mb-1">صافي الربح هذا الشهر</p>
               <p className="text-3xl font-bold text-white">
-                {formatCurrency(monthSummary.netProfit)}
+                {formatCurrency(monthData.summary.netProfit)}
               </p>
             </div>
             <div className="w-12 h-12 rounded-2xl bg-white/10 backdrop-blur flex items-center justify-center">
@@ -155,16 +148,16 @@ export function Dashboard({ onNavigate }: DashboardProps) {
             <div className="bg-white/10 backdrop-blur rounded-lg p-2">
               <p className="text-slate-300">إجمالي المبيعات</p>
               <p className="font-bold text-emerald-300">
-                {formatCurrency(monthSummary.salesTotal)}
+                {formatCurrency(monthData.summary.salesTotal)}
               </p>
             </div>
             <div className="bg-white/10 backdrop-blur rounded-lg p-2">
               <p className="text-slate-300">إجمالي المصاريف</p>
               <p className="font-bold text-rose-300">
                 {formatCurrency(
-                  monthSummary.purchasesTotal +
-                    monthSummary.expensesTotal +
-                    monthSummary.advancesTotal
+                  monthData.summary.purchasesTotal +
+                    monthData.summary.expensesTotal +
+                    monthData.summary.advancesTotal
                 )}
               </p>
             </div>

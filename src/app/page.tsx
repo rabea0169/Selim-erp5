@@ -23,6 +23,8 @@ import { BackupRestore } from '@/components/factory/BackupRestore'
 import { AuthScreen } from '@/components/factory/AuthScreen'
 import { PrintSettingsDialog } from '@/components/factory/PrintSettingsDialog'
 import { InstallPrompt } from '@/components/factory/InstallPrompt'
+import { getCurrentUser, logout, type SessionUser } from '@/lib/db'
+import { expenseCategoryRepository } from '@/lib/db'
 
 export type TabKey =
   | 'dashboard'
@@ -45,30 +47,25 @@ export default function Home() {
   const [tab, setTab] = useState<TabKey>('dashboard')
   const [backupOpen, setBackupOpen] = useState(false)
   const [printOpen, setPrintOpen] = useState(false)
-  const [user, setUser] = useState<{ name: string; username: string } | null>(null)
+  const [user, setUser] = useState<SessionUser | null>(null)
   const [authChecked, setAuthChecked] = useState(false)
+  const [reloadKey, setReloadKey] = useState(0)
 
   // التحقق من تسجيل الدخول
   useEffect(() => {
-    fetch('/api/auth/me')
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.user) {
-          setUser({ name: data.user.name, username: data.user.username })
-        } else {
-          setUser(null)
-        }
-      })
-      .catch(() => setUser(null))
-      .finally(() => setAuthChecked(true))
+    Promise.resolve().then(() => {
+      const currentUser = getCurrentUser()
+      setUser(currentUser)
+      setAuthChecked(true)
+    })
 
-    // التهيئة الأولية
-    fetch('/api/seed', { method: 'POST' }).catch(() => {})
-  }, [])
+    // تهيئة فئات المصاريف الافتراضية
+    expenseCategoryRepository.seedDefaults().catch(() => {})
+  }, [reloadKey])
 
-  const handleLogout = async () => {
+  const handleLogout = () => {
     if (!confirm('هل تريد تسجيل الخروج؟')) return
-    await fetch('/api/auth/logout', { method: 'POST' })
+    logout()
     setUser(null)
     setTab('dashboard')
   }
@@ -84,7 +81,7 @@ export default function Home() {
 
   // لو مش مسجل دخول - اعرض شاشة الدخول
   if (!user) {
-    return <AuthScreen onAuthenticated={() => location.reload()} />
+    return <AuthScreen onAuthenticated={() => setReloadKey((k) => k + 1)} />
   }
 
   return (
@@ -127,16 +124,6 @@ export default function Home() {
             >
               <LogOut className="w-4 h-4" />
             </button>
-            <div className="text-left hidden">
-              <p className="text-[10px] text-slate-500">اليوم</p>
-              <p className="text-xs font-semibold text-slate-700">
-                {new Date().toLocaleDateString('ar-EG', {
-                  weekday: 'short',
-                  day: 'numeric',
-                  month: 'short',
-                })}
-              </p>
-            </div>
           </div>
         </div>
       </header>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   Plus,
   Trash2,
@@ -32,12 +32,13 @@ import {
 } from '@/components/ui/select'
 import { useToast } from '@/hooks/use-toast'
 import { formatCurrency, formatDate, todayStr } from '@/lib/format'
+import { expenseRepository, expenseCategoryRepository } from '@/lib/db'
 
 interface ExpenseCategory {
   id: string
   name: string
   notes: string | null
-  _count?: { expenses: number }
+  expenseCount?: number
 }
 
 interface Expense {
@@ -47,7 +48,6 @@ interface Expense {
   amount: number
   date: string
   notes: string | null
-  category?: ExpenseCategory
 }
 
 export function ExpensesView() {
@@ -62,36 +62,43 @@ export function ExpensesView() {
   const [to, setTo] = useState('')
   const { toast } = useToast()
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true)
     try {
-      const params = new URLSearchParams()
-      if (search) params.set('q', search)
-      if (filterCat) params.set('categoryId', filterCat)
-      if (from) params.set('from', from)
-      if (to) params.set('to', to)
-      const [expRes, catRes] = await Promise.all([
-        fetch(`/api/expenses?${params.toString()}`).then((r) => r.json()),
-        fetch('/api/expense-categories').then((r) => r.json()),
+      const [expData, catData] = await Promise.all([
+        expenseRepository.search(search, from || undefined, to || undefined, filterCat || undefined),
+        expenseCategoryRepository.getAll(),
       ])
-      setExpenses(expRes.expenses || [])
-      setCategories(catRes.categories || [])
+
+      // حساب عدد المصاريف لكل بند
+      const countByCat: Record<string, number> = {}
+      const allExpenses = await expenseRepository.getAll()
+      for (const e of allExpenses) {
+        countByCat[e.categoryId] = (countByCat[e.categoryId] || 0) + 1
+      }
+      const catsWithCount = catData.map((c) => ({
+        ...c,
+        notes: c.notes ?? null,
+        expenseCount: countByCat[c.id] || 0,
+      }))
+
+      setExpenses(expData as Expense[])
+      setCategories(catsWithCount)
     } catch {
       toast({ title: 'خطأ', description: 'فشل تحميل المصاريف', variant: 'destructive' })
     } finally {
       setLoading(false)
     }
-  }
+  }, [search, filterCat, from, to, toast])
 
   useEffect(() => {
     load()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, filterCat, from, to])
+  }, [load])
 
   const handleDelete = async (id: string) => {
     if (!confirm('حذف هذا المصروف؟')) return
     try {
-      await fetch(`/api/expenses/${id}`, { method: 'DELETE' })
+      await expenseRepository.delete(id)
       toast({ title: 'تم الحذف' })
       load()
     } catch {
@@ -335,17 +342,12 @@ function ExpenseForm({
     }
     setSaving(true)
     try {
-      const res = await fetch('/api/expenses', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          categoryId,
-          amount: Number(amount),
-          date,
-          notes,
-        }),
-      }).then((r) => r.json())
-      if (res.error) throw new Error(res.error)
+      await expenseRepository.createWithCategory({
+        categoryId,
+        amount: Number(amount),
+        date,
+        notes: notes || undefined,
+      })
       toast({ title: 'تم', description: 'تم تسجيل المصروف' })
       setCategoryId('')
       setAmount('')
@@ -441,12 +443,7 @@ function CategoryManager({
     }
     setSaving(true)
     try {
-      const res = await fetch('/api/expense-categories', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, notes }),
-      }).then((r) => r.json())
-      if (res.error) throw new Error(res.error)
+      await expenseCategoryRepository.create({ name, notes: notes || undefined })
       toast({ title: 'تم', description: 'تمت إضافة البند' })
       setName('')
       setNotes('')
@@ -464,7 +461,7 @@ function CategoryManager({
       : 'حذف هذا البند؟'
     if (!confirm(msg)) return
     try {
-      await fetch(`/api/expense-categories/${id}`, { method: 'DELETE' })
+      await expenseCategoryRepository.delete(id)
       toast({ title: 'تم الحذف' })
       onSaved()
     } catch {
@@ -510,15 +507,15 @@ function CategoryManager({
                 >
                   <div>
                     <p className="font-medium text-slate-800">{c.name}</p>
-                    {c._count && c._count.expenses > 0 && (
-                      <p className="text-[10px] text-slate-500">{c._count.expenses} مصروف</p>
+                    {c.expenseCount !== undefined && c.expenseCount > 0 && (
+                      <p className="text-[10px] text-slate-500">{c.expenseCount} مصروف</p>
                     )}
                   </div>
                   <Button
                     size="icon"
                     variant="ghost"
                     className="h-7 w-7 text-rose-500"
-                    onClick={() => deleteCategory(c.id, c._count?.expenses || 0)}
+                    onClick={() => deleteCategory(c.id, c.expenseCount || 0)}
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </Button>

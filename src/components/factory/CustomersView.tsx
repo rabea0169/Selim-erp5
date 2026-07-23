@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   Plus,
   Trash2,
@@ -18,7 +18,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Badge } from '@/components/ui/badge'
 import {
   Dialog,
   DialogContent,
@@ -29,6 +28,7 @@ import {
 import { useToast } from '@/hooks/use-toast'
 import { formatCurrency, formatDate, todayStr, startOfMonth } from '@/lib/format'
 import { pickContactFromPhone, isContactsPickerSupported } from '@/lib/contacts'
+import { customerRepository } from '@/lib/db'
 
 interface Customer {
   id: string
@@ -51,29 +51,28 @@ export function CustomersView({ onBack }: { onBack: () => void }) {
   const [reportCustomer, setReportCustomer] = useState<Customer | null>(null)
   const { toast } = useToast()
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true)
     try {
-      const params = new URLSearchParams()
-      if (search) params.set('q', search)
-      const res = await fetch(`/api/customers?${params.toString()}`).then((r) => r.json())
-      setCustomers(res.customers || [])
+      const data = search
+        ? await customerRepository.search(search)
+        : await customerRepository.getAllWithStats()
+      setCustomers(data as Customer[])
     } catch {
       toast({ title: 'خطأ', description: 'فشل تحميل العملاء', variant: 'destructive' })
     } finally {
       setLoading(false)
     }
-  }
+  }, [search, toast])
 
   useEffect(() => {
     load()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search])
+  }, [load])
 
   const handleDelete = async (id: string) => {
     if (!confirm('حذف هذا العميل؟')) return
     try {
-      await fetch(`/api/customers/${id}`, { method: 'DELETE' })
+      await customerRepository.delete(id)
       toast({ title: 'تم الحذف' })
       load()
     } catch {
@@ -285,15 +284,14 @@ function CustomerForm({
     }
     setSaving(true)
     try {
-      const url = customer ? `/api/customers/${customer.id}` : '/api/customers'
-      const method = customer ? 'PUT' : 'POST'
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, phone, address, notes }),
-      }).then((r) => r.json())
-      if (res.error) throw new Error(res.error)
-      toast({ title: 'تم', description: customer ? 'تم التحديث' : 'تمت الإضافة' })
+      const payload = { name, phone: phone || undefined, address: address || undefined, notes: notes || undefined }
+      if (customer) {
+        await customerRepository.update(customer.id, payload)
+        toast({ title: 'تم', description: 'تم التحديث' })
+      } else {
+        await customerRepository.create(payload)
+        toast({ title: 'تم', description: 'تمت الإضافة' })
+      }
       onSaved()
     } catch (e: any) {
       toast({ title: 'خطأ', description: e.message, variant: 'destructive' })
@@ -371,24 +369,46 @@ function CustomerReport({
   const [exporting, setExporting] = useState(false)
   const { toast } = useToast()
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch(
-        `/api/customer-report/${customer.id}?from=${from}&to=${to}`
-      ).then((r) => r.json())
-      setData(res)
+      const stats = await customerRepository.getWithStats(customer.id)
+      if (!stats) {
+        setData(null)
+        return
+      }
+      const fromTime = from ? new Date(from).getTime() : 0
+      const toTime = to ? new Date(to).getTime() + 24 * 60 * 60 * 1000 - 1 : Date.now()
+      const filteredSales = stats.sales.filter((s) => {
+        const t = new Date(s.date).getTime()
+        return t >= fromTime && t <= toTime
+      })
+      const totalSales = filteredSales.reduce((sum, s) => sum + s.total, 0)
+      const totalPaid = filteredSales.reduce((sum, s) => sum + s.paid, 0)
+      setData({
+        ...stats,
+        sales: filteredSales,
+        totalSales,
+        totalPaid,
+        totalRemaining: totalSales - totalPaid,
+        salesCount: filteredSales.length,
+        summary: {
+          salesCount: filteredSales.length,
+          totalSales,
+          totalPaid,
+          totalRemaining: totalSales - totalPaid,
+        },
+      })
     } catch {
       toast({ title: 'خطأ', description: 'فشل تحميل التقرير', variant: 'destructive' })
     } finally {
       setLoading(false)
     }
-  }
+  }, [customer.id, from, to, toast])
 
   useEffect(() => {
-    load()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    Promise.resolve().then(() => load())
+  }, [load])
 
   const exportPDF = async () => {
     if (!data) return
@@ -548,3 +568,4 @@ function CustomerReport({
     </Dialog>
   )
 }
+

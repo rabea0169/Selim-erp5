@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   Plus,
   Trash2,
@@ -31,6 +31,7 @@ import {
 } from '@/components/ui/select'
 import { useToast } from '@/hooks/use-toast'
 import { formatCurrency, formatDate, todayStr } from '@/lib/format'
+import { workerRepository, productionRepository } from '@/lib/db'
 
 interface Worker {
   id: string
@@ -61,43 +62,63 @@ export function ProductionView({ onBack }: { onBack: () => void }) {
   const [to, setTo] = useState('')
   const { toast } = useToast()
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true)
     try {
-      const params = new URLSearchParams()
-      if (from) params.set('from', from)
-      if (to) params.set('to', to)
-      const [pRes, wRes] = await Promise.all([
-        fetch(`/api/production?${params.toString()}`).then((r) => r.json()),
-        fetch('/api/workers').then((r) => r.json()),
+      const [prodsData, workersData] = await Promise.all([
+        productionRepository.getByDateRange(from || undefined, to || undefined),
+        workerRepository.getAll(),
       ])
-      let prods = pRes.productions || []
+      const workersList: Worker[] = workersData.map((w) => ({
+        id: w.id,
+        name: w.name,
+        job: w.job ?? null,
+        type: w.type,
+      }))
+      const workerMap = new Map(workersList.map((w) => [w.id, w]))
+      let prods: Production[] = prodsData
+        .map((p) => {
+          const w = workerMap.get(p.workerId)
+          if (!w) return null
+          return {
+            id: p.id,
+            workerId: p.workerId,
+            date: p.date,
+            modelName: p.modelName,
+            quantity: p.quantity,
+            unitPrice: p.unitPrice,
+            total: p.total,
+            notes: p.notes ?? null,
+            worker: w,
+          } as Production
+        })
+        .filter((x): x is Production => x !== null)
+
       if (search) {
         const q = search.toLowerCase()
         prods = prods.filter(
-          (p: Production) =>
+          (p) =>
             p.modelName.toLowerCase().includes(q) ||
             p.worker?.name.toLowerCase().includes(q)
         )
       }
       setProductions(prods)
-      setWorkers(wRes.workers || [])
+      setWorkers(workersList)
     } catch {
       toast({ title: 'خطأ', description: 'فشل تحميل البيانات', variant: 'destructive' })
     } finally {
       setLoading(false)
     }
-  }
+  }, [from, to, search, toast])
 
   useEffect(() => {
-    load()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [from, to, search])
+    Promise.resolve().then(() => load())
+  }, [load])
 
   const handleDelete = async (id: string) => {
     if (!confirm('حذف سجل الإنتاج؟')) return
     try {
-      await fetch(`/api/production/${id}`, { method: 'DELETE' })
+      await productionRepository.delete(id)
       toast({ title: 'تم الحذف' })
       load()
     } catch {
@@ -271,19 +292,14 @@ function ProductionForm({
     }
     setSaving(true)
     try {
-      const res = await fetch('/api/production', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          workerId,
-          date,
-          modelName,
-          quantity: Number(quantity),
-          unitPrice: Number(unitPrice),
-          notes,
-        }),
-      }).then((r) => r.json())
-      if (res.error) throw new Error(res.error)
+      await productionRepository.createWithCalculation({
+        workerId,
+        date,
+        modelName,
+        quantity: Number(quantity),
+        unitPrice: Number(unitPrice),
+        notes: notes || undefined,
+      })
       toast({ title: 'تم', description: 'تم تسجيل الإنتاج' })
       setWorkerId('')
       setModelName('')
@@ -381,3 +397,4 @@ function ProductionForm({
     </Dialog>
   )
 }
+

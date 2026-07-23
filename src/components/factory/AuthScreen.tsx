@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/hooks/use-toast'
+import { login, register, hasAnyUser } from '@/lib/db'
 
 export function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
   const [mode, setMode] = useState<'login' | 'register'>('login')
@@ -28,16 +29,8 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void })
   const { toast } = useToast()
 
   useEffect(() => {
-    // التحقق من وجود مستخدمين لتحديد الوضع الافتراضي
-    fetch('/api/auth/register')
-      .then((r) => r.json())
-      .then((data) => {
-        setHasUsers(data.hasUsers)
-        // لو مفيش مستخدمين، حول لوضع التسجيل تلقائياً
-        if (!data.hasUsers) {
-          setMode('register')
-        }
-      })
+    hasAnyUser()
+      .then(setHasUsers)
       .catch(() => {})
       .finally(() => setChecking(false))
   }, [])
@@ -47,20 +40,12 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void })
     setLoading(true)
 
     try {
-      const endpoint = mode === 'login' ? '/api/auth/login' : '/api/auth/register'
-      const body =
-        mode === 'login'
-          ? { username, password }
-          : { username, password, name }
+      const result = mode === 'login'
+        ? await login(username, password)
+        : await register(username, password, name)
 
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      }).then((r) => r.json())
-
-      if (res.error) {
-        toast({ title: 'خطأ', description: res.error, variant: 'destructive' })
+      if (!result.success) {
+        toast({ title: 'خطأ', description: result.error, variant: 'destructive' })
         return
       }
 
@@ -68,8 +53,8 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void })
         title: mode === 'login' ? 'أهلاً بك' : 'تم التسجيل',
         description:
           mode === 'login'
-            ? `مرحباً ${res.user.name}`
-            : `تم إنشاء حسابك بنجاح، أهلاً ${res.user.name}`,
+            ? `مرحباً ${result.user?.name}`
+            : `تم إنشاء حسابك بنجاح، أهلاً ${result.user?.name}`,
       })
 
       onAuthenticated()
@@ -98,6 +83,7 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void })
           </div>
           <h1 className="text-2xl font-bold text-slate-800">مصنع الملابس</h1>
           <p className="text-sm text-slate-500 mt-1">نظام الإدارة المالية</p>
+          <p className="text-[10px] text-emerald-600 mt-1">💾 يعمل offline - بياناتك محفوظة على جهازك</p>
         </div>
 
         {/* Card */}
@@ -226,7 +212,7 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void })
         </div>
 
         <p className="text-center text-xs text-slate-400 mt-6">
-          نظام إدارة مصنع الملابس - البيانات محفوظة محلياً
+          نظام إدارة مصنع الملابس - يعمل offline بدون إنترنت
         </p>
       </div>
     </div>

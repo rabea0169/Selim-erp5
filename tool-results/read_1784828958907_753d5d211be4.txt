@@ -1,0 +1,716 @@
+     1→'use client'
+     2→
+     3→import { useEffect, useState } from 'react'
+     4→import {
+     5→  FileText,
+     6→  TrendingUp,
+     7→  TrendingDown,
+     8→  Wallet,
+     9→  Users,
+    10→  Calendar,
+    11→  Download,
+    12→  Receipt,
+    13→  Printer,
+    14→} from 'lucide-react'
+    15→import { Button } from '@/components/ui/button'
+    16→import { Input } from '@/components/ui/input'
+    17→import { PrintButton } from './PrintButton'
+    18→import { Label } from '@/components/ui/label'
+    19→import {
+    20→  Tabs,
+    21→  TabsContent,
+    22→  TabsList,
+    23→  TabsTrigger,
+    24→} from '@/components/ui/tabs'
+    25→import { useToast } from '@/hooks/use-toast'
+    26→import { formatCurrency, formatDate, todayStr, startOfMonth } from '@/lib/format'
+    27→
+    28→interface ReportData {
+    29→  range: { from: string | null; to: string | null }
+    30→  summary: {
+    31→    salesTotal: number
+    32→    salesPaid: number
+    33→    salesRemaining: number
+    34→    purchasesTotal: number
+    35→    purchasesPaid: number
+    36→    purchasesRemaining: number
+    37→    advancesTotal: number
+    38→    receiptsTotal: number
+    39→    productionTotal: number
+    40→    productionPieces: number
+    41→    expensesTotal: number
+    42→    netProfit: number
+    43→  }
+    44→  sales: any[]
+    45→  purchases: any[]
+    46→  advances: any[]
+    47→  receipts: any[]
+    48→  productions: any[]
+    49→  attendance: any[]
+    50→  expenses: any[]
+    51→  expensesByCategory: Record<string, number>
+    52→  topItems: { name: string; qty: number; total: number }[]
+    53→  topModels: { name: string; qty: number; total: number }[]
+    54→}
+    55→
+    56→// بناء HTML للطباعة
+    57→function buildPrintHtml(data: ReportData, from: string, to: string): string {
+    58→  const s = data.summary
+    59→  const catRows = Object.entries(data.expensesByCategory || {})
+    60→    .sort((a, b) => b[1] - a[1])
+    61→    .map(
+    62→      ([name, amount]) =>
+    63→        `<tr><td style="padding: 4px 8px; border: 1px solid #000;">${name}</td><td style="padding: 4px 8px; border: 1px solid #000; text-align: left; font-weight: bold;">${formatCurrency(amount)}</td></tr>`
+    64→    )
+    65→    .join('')
+    66→
+    67→  return `
+    68→    <div style="text-align: center; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 12px;">
+    69→      <h1 style="margin: 0; font-size: 18px;">تقرير مصنع الملابس الشامل</h1>
+    70→      <p style="margin: 4px 0 0; font-size: 11px;">الفترة: ${formatDate(from)} إلى ${formatDate(to)}</p>
+    71→    </div>
+    72→    <table style="width: 100%; border-collapse: collapse; margin-bottom: 12px;">
+    73→      <tr style="background: #f0f0f0;">
+    74→        <th style="padding: 6px; border: 1px solid #000; text-align: right;">البند</th>
+    75→        <th style="padding: 6px; border: 1px solid #000; text-align: left;">القيمة</th>
+    76→      </tr>
+    77→      <tr><td style="padding: 4px 8px; border: 1px solid #000;">إجمالي المبيعات</td><td style="padding: 4px 8px; border: 1px solid #000; text-align: left; color: #059669; font-weight: bold;">${formatCurrency(s.salesTotal)}</td></tr>
+    78→      <tr><td style="padding: 4px 8px; border: 1px solid #000;">إجمالي المشتريات</td><td style="padding: 4px 8px; border: 1px solid #000; text-align: left; color: #d97706; font-weight: bold;">${formatCurrency(s.purchasesTotal)}</td></tr>
+    79→      <tr><td style="padding: 4px 8px; border: 1px solid #000;">إجمالي المصاريف</td><td style="padding: 4px 8px; border: 1px solid #000; text-align: left; color: #dc2626; font-weight: bold;">${formatCurrency(s.expensesTotal)}</td></tr>
+    80→      <tr><td style="padding: 4px 8px; border: 1px solid #000;">سلف العمال</td><td style="padding: 4px 8px; border: 1px solid #000; text-align: left; color: #dc2626; font-weight: bold;">${formatCurrency(s.advancesTotal)}</td></tr>
+    81→      ${s.productionTotal > 0 ? `<tr><td style="padding: 4px 8px; border: 1px solid #000;">إنتاج بالقطعة</td><td style="padding: 4px 8px; border: 1px solid #000; text-align: left; color: #4f46e5; font-weight: bold;">${formatCurrency(s.productionTotal)}</td></tr>` : ''}
+    82→      <tr style="background: ${s.netProfit >= 0 ? '#dcfce7' : '#fee2e2'};">
+    83→        <td style="padding: 8px; border: 2px solid #000; font-weight: bold; font-size: 14px;">صافي الربح</td>
+    84→        <td style="padding: 8px; border: 2px solid #000; text-align: left; font-weight: bold; font-size: 14px; color: ${s.netProfit >= 0 ? '#059669' : '#dc2626'};">${formatCurrency(s.netProfit)}</td>
+    85→      </tr>
+    86→    </table>
+    87→    ${catRows ? `
+    88→    <h3 style="font-size: 13px; margin: 12px 0 6px;">المصاريف حسب البند</h3>
+    89→    <table style="width: 100%; border-collapse: collapse;">
+    90→      <thead><tr style="background: #fee2e2;"><th style="padding: 6px; border: 1px solid #000;">البند</th><th style="padding: 6px; border: 1px solid #000;">المبلغ</th></tr></thead>
+    91→      <tbody>${catRows}</tbody>
+    92→    </table>` : ''}
+    93→    <div style="margin-top: 16px; padding-top: 8px; border-top: 1px dashed #000; text-align: center; font-size: 10px; color: #666;">
+    94→      تم إنشاء التقرير: ${new Date().toLocaleString('ar-EG')}
+    95→    </div>
+    96→  `
+    97→}
+    98→
+    99→function buildPrintText(data: ReportData, from: string, to: string): string {
+   100→  const s = data.summary
+   101→  return `تقرير مصنع الملابس
+   102→الفترة: ${formatDate(from)} إلى ${formatDate(to)}
+   103→----------------------------
+   104→المبيعات:     ${formatCurrency(s.salesTotal)}
+   105→المشتريات:    ${formatCurrency(s.purchasesTotal)}
+   106→المصاريف:     ${formatCurrency(s.expensesTotal)}
+   107→سلف العمال:   ${formatCurrency(s.advancesTotal)}
+   108→${s.productionTotal > 0 ? `الإنتاج:      ${formatCurrency(s.productionTotal)}\n` : ''}----------------------------
+   109→صافي الربح:   ${formatCurrency(s.netProfit)}
+   110→----------------------------
+   111→${new Date().toLocaleString('ar-EG')}`
+   112→}
+   113→
+   114→export function ReportsView() {
+   115→  const [from, setFrom] = useState(startOfMonth())
+   116→  const [to, setTo] = useState(todayStr())
+   117→  const [data, setData] = useState<ReportData | null>(null)
+   118→  const [loading, setLoading] = useState(false)
+   119→  const [exporting, setExporting] = useState(false)
+   120→  const { toast } = useToast()
+   121→
+   122→  const load = async () => {
+   123→    setLoading(true)
+   124→    try {
+   125→      const res = await fetch(`/api/reports?from=${from}&to=${to}`).then((r) => r.json())
+   126→      setData(res)
+   127→    } catch {
+   128→      toast({ title: 'خطأ', description: 'فشل تحميل التقرير', variant: 'destructive' })
+   129→    } finally {
+   130→      setLoading(false)
+   131→    }
+   132→  }
+   133→
+   134→  useEffect(() => {
+   135→    load()
+   136→    // eslint-disable-next-line react-hooks/exhaustive-deps
+   137→  }, [])
+   138→
+   139→  const setPreset = (preset: 'today' | 'week' | 'month' | 'year') => {
+   140→    const now = new Date()
+   141→    const today = todayStr()
+   142→    let start = ''
+   143→    if (preset === 'today') start = today
+   144→    else if (preset === 'week') {
+   145→      const d = new Date()
+   146→      d.setDate(d.getDate() - 7)
+   147→      start = d.toISOString().split('T')[0]
+   148→    } else if (preset === 'month') start = startOfMonth()
+   149→    else if (preset === 'year') start = `${now.getFullYear()}-01-01`
+   150→    setFrom(start)
+   151→    setTo(today)
+   152→  }
+   153→
+   154→  const handlePrint = () => {
+   155→    window.print()
+   156→  }
+   157→
+   158→  const exportPDF = async () => {
+   159→    if (!data) return
+   160→    setExporting(true)
+   161→    try {
+   162→      const { exportElementToPDF, shareViaWhatsApp, createReportContainer, cleanupContainer } =
+   163→        await import('@/lib/pdf-export')
+   164→
+   165→      const s = data.summary
+   166→      const catRows = Object.entries(data.expensesByCategory || {})
+   167→        .sort((a, b) => b[1] - a[1])
+   168→        .map(
+   169→          ([name, amount]) =>
+   170→            `<tr><td style="padding:5px;border:1px solid #e2e8f0;">${name}</td><td style="padding:5px;border:1px solid #e2e8f0;text-align:left;font-weight:bold;color:#dc2626;">${formatCurrency(amount)}</td></tr>`
+   171→        )
+   172→        .join('')
+   173→
+   174→      const topItemRows = (data.topItems || [])
+   175→        .map(
+   176→          (it, i) =>
+   177→            `<tr><td style="padding:5px;border:1px solid #e2e8f0;text-align:center;">${i + 1}</td><td style="padding:5px;border:1px solid #e2e8f0;">${it.name}</td><td style="padding:5px;border:1px solid #e2e8f0;text-align:center;">${it.qty}</td><td style="padding:5px;border:1px solid #e2e8f0;text-align:left;font-weight:bold;color:#059669;">${formatCurrency(it.total)}</td></tr>`
+   178→        )
+   179→        .join('')
+   180→
+   181→      const contentHtml = `
+   182→        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:20px;">
+   183→          <div style="padding:16px;background:${s.netProfit >= 0 ? '#f0fdf4' : '#fef2f2'};border-radius:8px;text-align:center;">
+   184→            <p style="margin:0;font-size:12px;color:${s.netProfit >= 0 ? '#047857' : '#991b1b'};">صافي الربح للفترة</p>
+   185→            <p style="margin:6px 0 0;font-size:22px;font-weight:bold;color:${s.netProfit >= 0 ? '#065f46' : '#7f1d1d'};">${formatCurrency(s.netProfit)}</p>
+   186→            <p style="margin:4px 0 0;font-size:10px;color:#64748b;">${from ? formatDate(from) : 'البداية'} إلى ${to ? formatDate(to) : 'اليوم'}</p>
+   187→          </div>
+   188→          <div style="padding:16px;background:#f8fafc;border-radius:8px;">
+   189→            <p style="margin:0 0 8px;font-size:12px;color:#475569;font-weight:bold;">ملخص العمليات</p>
+   190→            <div style="font-size:11px;line-height:1.8;">
+   191→              <div style="display:flex;justify-content:space-between;"><span>المبيعات:</span><span style="color:#059669;font-weight:bold;">${formatCurrency(s.salesTotal)}</span></div>
+   192→              <div style="display:flex;justify-content:space-between;"><span>المشتريات:</span><span style="color:#d97706;font-weight:bold;">${formatCurrency(s.purchasesTotal)}</span></div>
+   193→              <div style="display:flex;justify-content:space-between;"><span>المصاريف:</span><span style="color:#dc2626;font-weight:bold;">${formatCurrency(s.expensesTotal)}</span></div>
+   194→              <div style="display:flex;justify-content:space-between;"><span>سلف العمال:</span><span style="color:#dc2626;font-weight:bold;">${formatCurrency(s.advancesTotal)}</span></div>
+   195→              ${s.productionTotal > 0 ? `<div style="display:flex;justify-content:space-between;"><span>إنتاج بالقطعة:</span><span style="color:#4f46e5;font-weight:bold;">${formatCurrency(s.productionTotal)}</span></div>` : ''}
+   196→            </div>
+   197→          </div>
+   198→        </div>
+   199→        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:20px;">
+   200→          <div style="padding:10px;background:#ecfdf5;border-radius:6px;text-align:center;"><p style="margin:0;font-size:10px;color:#047857;">مبيعات</p><p style="margin:3px 0 0;font-size:13px;font-weight:bold;color:#065f46;">${formatCurrency(s.salesTotal)}</p></div>
+   201→          <div style="padding:10px;background:#fffbeb;border-radius:6px;text-align:center;"><p style="margin:0;font-size:10px;color:#92400e;">مشتريات</p><p style="margin:3px 0 0;font-size:13px;font-weight:bold;color:#78350f;">${formatCurrency(s.purchasesTotal)}</p></div>
+   202→          <div style="padding:10px;background:#fef2f2;border-radius:6px;text-align:center;"><p style="margin:0;font-size:10px;color:#991b1b;">مصاريف</p><p style="margin:3px 0 0;font-size:13px;font-weight:bold;color:#7f1d1d;">${formatCurrency(s.expensesTotal)}</p></div>
+   203→          <div style="padding:10px;background:#f5f3ff;border-radius:6px;text-align:center;"><p style="margin:0;font-size:10px;color:#5b21b6;">سلف</p><p style="margin:3px 0 0;font-size:13px;font-weight:bold;color:#4c1d95;">${formatCurrency(s.advancesTotal)}</p></div>
+   204→        </div>
+   205→        ${catRows ? `
+   206→        <h3 style="color:#1e293b;margin:16px 0 8px;">المصاريف حسب البند</h3>
+   207→        <table style="width:100%;border-collapse:collapse;font-size:11px;">
+   208→          <thead><tr style="background:#fef2f2;"><th style="padding:6px;border:1px solid #e2e8f0;">البند</th><th style="padding:6px;border:1px solid #e2e8f0;">المبلغ</th></tr></thead>
+   209→          <tbody>${catRows}</tbody>
+   210→        </table>` : ''}
+   211→        ${topItemRows ? `
+   212→        <h3 style="color:#1e293b;margin:16px 0 8px;">أكثر الأصناف مبيعاً</h3>
+   213→        <table style="width:100%;border-collapse:collapse;font-size:11px;">
+   214→          <thead><tr style="background:#f0fdf4;"><th style="padding:6px;border:1px solid #e2e8f0;">#</th><th style="padding:6px;border:1px solid #e2e8f0;">الصنف</th><th style="padding:6px;border:1px solid #e2e8f0;">الكمية</th><th style="padding:6px;border:1px solid #e2e8f0;">الإجمالي</th></tr></thead>
+   215→          <tbody>${topItemRows}</tbody>
+   216→        </table>` : ''}
+   217→      `
+   218→
+   219→      const container = createReportContainer('التقرير الشامل للمصنع', contentHtml)
+   220→      await new Promise((r) => setTimeout(r, 100))
+   221→      const file = await exportElementToPDF(container, `تقرير-شامل-${from}-إلى-${to}.pdf`)
+   222→      cleanupContainer(container)
+   223→
+   224→      toast({ title: 'تم', description: 'تم إنشاء PDF - جارٍ المشاركة عبر الواتساب' })
+   225→      await shareViaWhatsApp(file, `تقرير المصنع الشامل\nالفترة: ${formatDate(from)} إلى ${formatDate(to)}\nصافي الربح: ${formatCurrency(s.netProfit)}`)
+   226→    } catch (e: any) {
+   227→      toast({ title: 'خطأ', description: e.message, variant: 'destructive' })
+   228→    } finally {
+   229→      setExporting(false)
+   230→    }
+   231→  }
+   232→
+   233→  if (loading && !data) {
+   234→    return (
+   235→      <div className="space-y-3">
+   236→        {[1, 2, 3, 4].map((i) => (
+   237→          <div key={i} className="h-20 bg-slate-200 rounded-xl animate-pulse" />
+   238→        ))}
+   239→      </div>
+   240→    )
+   241→  }
+   242→
+   243→  return (
+   244→    <div className="space-y-4">
+   245→      <div>
+   246→        <h2 className="text-xl font-bold text-slate-800">التقارير</h2>
+   247→        <p className="text-xs text-slate-500">تقارير شاملة بالتاريخ المحدد</p>
+   248→      </div>
+   249→
+   250→      {/* Date range */}
+   251→      <div className="bg-white rounded-xl p-3 shadow-sm border border-slate-100 space-y-2">
+   252→        <div className="grid grid-cols-2 gap-2">
+   253→          <div>
+   254→            <Label className="text-[10px] text-slate-500">من تاريخ</Label>
+   255→            <Input
+   256→              type="date"
+   257→              value={from}
+   258→              onChange={(e) => setFrom(e.target.value)}
+   259→              className="bg-slate-50 border-slate-200 text-sm"
+   260→            />
+   261→          </div>
+   262→          <div>
+   263→            <Label className="text-[10px] text-slate-500">إلى تاريخ</Label>
+   264→            <Input
+   265→              type="date"
+   266→              value={to}
+   267→              onChange={(e) => setTo(e.target.value)}
+   268→              className="bg-slate-50 border-slate-200 text-sm"
+   269→            />
+   270→          </div>
+   271→        </div>
+   272→
+   273→        <div className="flex flex-wrap gap-1">
+   274→          <Button
+   275→            variant="outline"
+   276→            size="sm"
+   277→            onClick={() => setPreset('today')}
+   278→            className="h-7 text-[11px]"
+   279→          >
+   280→            اليوم
+   281→          </Button>
+   282→          <Button
+   283→            variant="outline"
+   284→            size="sm"
+   285→            onClick={() => setPreset('week')}
+   286→            className="h-7 text-[11px]"
+   287→          >
+   288→            آخر أسبوع
+   289→          </Button>
+   290→          <Button
+   291→            variant="outline"
+   292→            size="sm"
+   293→            onClick={() => setPreset('month')}
+   294→            className="h-7 text-[11px]"
+   295→          >
+   296→            هذا الشهر
+   297→          </Button>
+   298→          <Button
+   299→            variant="outline"
+   300→            size="sm"
+   301→            onClick={() => setPreset('year')}
+   302→            className="h-7 text-[11px]"
+   303→          >
+   304→            هذا العام
+   305→          </Button>
+   306→        </div>
+   307→
+   308→        <div className="flex gap-2">
+   309→          <Button
+   310→            onClick={load}
+   311→            disabled={loading}
+   312→            className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
+   313→            size="sm"
+   314→          >
+   315→            <FileText className="w-4 h-4 ml-1" />
+   316→            {loading ? 'جارٍ التحديث...' : 'عرض التقرير'}
+   317→          </Button>
+   318→          <Button
+   319→            onClick={handlePrint}
+   320→            variant="outline"
+   321→            size="sm"
+   322→            className="border-slate-200"
+   323→          >
+   324→            <Download className="w-4 h-4 ml-1" />
+   325→            طباعة
+   326→          </Button>
+   327→        </div>
+   328→
+   329→        <Button
+   330→          onClick={exportPDF}
+   331→          disabled={exporting || !data}
+   332→          className="w-full bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white"
+   333→          size="sm"
+   334→        >
+   335→          <Download className="w-4 h-4 ml-1" />
+   336→          {exporting ? 'جارٍ التصدير...' : 'تصدير PDF ومشاركة واتساب'}
+   337→        </Button>
+   338→
+   339→        {data && (
+   340→          <PrintButton
+   341→            contentHtml={buildPrintHtml(data, from, to)}
+   342→            title="التقرير الشامل"
+   343→            plainText={buildPrintText(data, from, to)}
+   344→            variant="outline"
+   345→            size="sm"
+   346→            className="w-full border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+   347→            label="🖨️ طباعة التقرير"
+   348→          />
+   349→        )}
+   350→      </div>
+   351→
+   352→      {data && (
+   353→        <>
+   354→          {/* Net profit hero */}
+   355→          <div
+   356→            className={`rounded-2xl p-4 shadow-md text-white ${
+   357→              data.summary.netProfit >= 0
+   358→                ? 'bg-gradient-to-br from-emerald-500 to-teal-600'
+   359→                : 'bg-gradient-to-br from-rose-500 to-red-600'
+   360→            }`}
+   361→          >
+   362→            <div className="flex items-center justify-between">
+   363→              <div>
+   364→                <p className="text-xs opacity-90">
+   365→                  صافي الربح للفترة
+   366→                </p>
+   367→                <p className="text-2xl font-bold">
+   368→                  {formatCurrency(data.summary.netProfit)}
+   369→                </p>
+   370→                <p className="text-[10px] opacity-75 mt-1">
+   371→                  من {from ? formatDate(from) : 'البداية'} إلى {to ? formatDate(to) : 'اليوم'}
+   372→                </p>
+   373→              </div>
+   374→              <div className="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur flex items-center justify-center">
+   375→                {data.summary.netProfit >= 0 ? (
+   376→                  <TrendingUp className="w-7 h-7" />
+   377→                ) : (
+   378→                  <TrendingDown className="w-7 h-7" />
+   379→                )}
+   380→              </div>
+   381→            </div>
+   382→          </div>
+   383→
+   384→          {/* Summary cards */}
+   385→          <div className="grid grid-cols-2 gap-2">
+   386→            <SummaryCard
+   387→              label="إجمالي المبيعات"
+   388→              value={data.summary.salesTotal}
+   389→              icon={TrendingUp}
+   390→              color="emerald"
+   391→              count={data.sales.length}
+   392→            />
+   393→            <SummaryCard
+   394→              label="إجمالي المشتريات"
+   395→              value={data.summary.purchasesTotal}
+   396→              icon={TrendingDown}
+   397→              color="amber"
+   398→              count={data.purchases.length}
+   399→            />
+   400→            <SummaryCard
+   401→              label="إجمالي المصاريف"
+   402→              value={data.summary.expensesTotal}
+   403→              icon={Wallet}
+   404→              color="rose"
+   405→              count={data.expenses.length}
+   406→            />
+   407→            <SummaryCard
+   408→              label="سلف العمال"
+   409→              value={data.summary.advancesTotal}
+   410→              icon={Users}
+   411→              color="purple"
+   412→              count={data.advances.length}
+   413→            />
+   414→          </div>
+   415→
+   416→          {/* Detailed tabs */}
+   417→          <Tabs defaultValue="summary" dir="rtl">
+   418→            <TabsList className="grid grid-cols-5 w-full bg-slate-100 h-9">
+   419→              <TabsTrigger value="summary" className="text-[11px]">ملخص</TabsTrigger>
+   420→              <TabsTrigger value="sales" className="text-[11px]">المبيعات</TabsTrigger>
+   421→              <TabsTrigger value="purchases" className="text-[11px]">المشتريات</TabsTrigger>
+   422→              <TabsTrigger value="workers" className="text-[11px]">العمال</TabsTrigger>
+   423→              <TabsTrigger value="expenses" className="text-[11px]">المصاريف</TabsTrigger>
+   424→            </TabsList>
+   425→
+   426→            {/* Summary tab */}
+   427→            <TabsContent value="summary" className="space-y-3 mt-3">
+   428→              <div className="bg-white rounded-xl p-3 shadow-sm border border-slate-100">
+   429→                <p className="text-xs font-bold text-slate-700 mb-2">المالية</p>
+   430→                <div className="space-y-1.5">
+   431→                  <Row label="إجمالي المبيعات" value={formatCurrency(data.summary.salesTotal)} color="emerald" />
+   432→                  <Row label="المحصل من المبيعات" value={formatCurrency(data.summary.salesPaid)} color="blue" />
+   433→                  <Row label="متبقي المبيعات" value={formatCurrency(data.summary.salesRemaining)} color="amber" />
+   434→                  <div className="h-px bg-slate-100 my-1" />
+   435→                  <Row label="إجمالي المشتريات" value={formatCurrency(data.summary.purchasesTotal)} color="amber" />
+   436→                  <Row label="المدفوع للموردين" value={formatCurrency(data.summary.purchasesPaid)} color="blue" />
+   437→                  <Row label="متبقي للموردين" value={formatCurrency(data.summary.purchasesRemaining)} color="rose" />
+   438→                  <div className="h-px bg-slate-100 my-1" />
+   439→                  <Row label="إجمالي المصاريف" value={formatCurrency(data.summary.expensesTotal)} color="rose" />
+   440→                  <Row label="سلف العمال" value={formatCurrency(data.summary.advancesTotal)} color="purple" />
+   441→                  <Row label="قبض العمال" value={formatCurrency(data.summary.receiptsTotal)} color="emerald" />
+   442→                  <div className="h-px bg-slate-200 my-1" />
+   443→                  <div className="flex items-center justify-between p-2 bg-slate-50 rounded-lg">
+   444→                    <span className="text-sm font-bold text-slate-800">صافي الربح</span>
+   445→                    <span
+   446→                      className={`text-sm font-bold ${
+   447→                        data.summary.netProfit >= 0 ? 'text-emerald-700' : 'text-rose-700'
+   448→                      }`}
+   449→                    >
+   450→                      {formatCurrency(data.summary.netProfit)}
+   451→                    </span>
+   452→                  </div>
+   453→                </div>
+   454→              </div>
+   455→
+   456→              {/* Expenses by category */}
+   457→              {Object.keys(data.expensesByCategory).length > 0 && (
+   458→                <div className="bg-white rounded-xl p-3 shadow-sm border border-slate-100">
+   459→                  <p className="text-xs font-bold text-slate-700 mb-2">
+   460→                    المصاريف حسب البند
+   461→                  </p>
+   462→                  <div className="space-y-1">
+   463→                    {Object.entries(data.expensesByCategory)
+   464→                      .sort((a, b) => b[1] - a[1])
+   465→                      .map(([name, amount]) => (
+   466→                        <div
+   467→                          key={name}
+   468→                          className="flex items-center justify-between text-xs py-1.5 border-b border-slate-50 last:border-0"
+   469→                        >
+   470→                          <span className="text-slate-700">{name}</span>
+   471→                          <span className="font-bold text-rose-700">
+   472→                            {formatCurrency(amount)}
+   473→                          </span>
+   474→                        </div>
+   475→                      ))}
+   476→                  </div>
+   477→                </div>
+   478→              )}
+   479→
+   480→              {/* Top selling items */}
+   481→              {data.topItems.length > 0 && (
+   482→                <div className="bg-white rounded-xl p-3 shadow-sm border border-slate-100">
+   483→                  <p className="text-xs font-bold text-slate-700 mb-2">
+   484→                    أكثر الأصناف مبيعاً
+   485→                  </p>
+   486→                  <div className="space-y-1">
+   487→                    {data.topItems.map((it, i) => (
+   488→                      <div
+   489→                        key={i}
+   490→                        className="flex items-center justify-between text-xs py-1.5 border-b border-slate-50 last:border-0"
+   491→                      >
+   492→                        <div className="flex items-center gap-2">
+   493→                          <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold flex items-center justify-center">
+   494→                            {i + 1}
+   495→                          </span>
+   496→                          <span className="text-slate-700">{it.name}</span>
+   497→                        </div>
+   498→                        <div className="text-left">
+   499→                          <span className="font-bold text-emerald-700">
+   500→                            {formatCurrency(it.total)}
+   501→                          </span>
+   502→                          <span className="text-[10px] text-slate-500 block">
+   503→                            {it.qty} وحدة
+   504→                          </span>
+   505→                        </div>
+   506→                      </div>
+   507→                    ))}
+   508→                  </div>
+   509→                </div>
+   510→              )}
+   511→            </TabsContent>
+   512→
+   513→            {/* Sales tab */}
+   514→            <TabsContent value="sales" className="mt-3">
+   515→              <TransactionList
+   516→                items={data.sales}
+   517→                empty="لا توجد مبيعات في هذه الفترة"
+   518→                titleKey="customerName"
+   519→                amountKey="total"
+   520→                dateKey="date"
+   521→                color="emerald"
+   522→                extra={(s) => (
+   523→                  <span className="text-[10px] text-slate-500">
+   524→                    {s.items?.length || 0} صنف
+   525→                  </span>
+   526→                )}
+   527→              />
+   528→            </TabsContent>
+   529→
+   530→            {/* Purchases tab */}
+   531→            <TabsContent value="purchases" className="mt-3">
+   532→              <TransactionList
+   533→                items={data.purchases}
+   534→                empty="لا توجد مشتريات في هذه الفترة"
+   535→                titleKey="supplierName"
+   536→                amountKey="total"
+   537→                dateKey="date"
+   538→                color="amber"
+   539→                extra={(p) => (
+   540→                  <span className="text-[10px] text-slate-500">
+   541→                    {p.items?.length || 0} صنف
+   542→                  </span>
+   543→                )}
+   544→              />
+   545→            </TabsContent>
+   546→
+   547→            {/* Workers tab */}
+   548→            <TabsContent value="workers" className="mt-3 space-y-3">
+   549→              <div>
+   550→                <p className="text-xs font-bold text-rose-700 mb-2">السلف</p>
+   551→                <TransactionList
+   552→                  items={data.advances}
+   553→                  empty="لا توجد سلف في هذه الفترة"
+   554→                  titleKey={(a) => a.worker?.name || ''}
+   555→                  amountKey="amount"
+   556→                  dateKey="date"
+   557→                  color="rose"
+   558→                  extra={(a) => a.notes && <span className="text-[10px] text-slate-500">{a.notes}</span>}
+   559→                />
+   560→              </div>
+   561→              <div>
+   562→                <p className="text-xs font-bold text-emerald-700 mb-2">القبض</p>
+   563→                <TransactionList
+   564→                  items={data.receipts}
+   565→                  empty="لا يوجد قبض في هذه الفترة"
+   566→                  titleKey={(r) => r.worker?.name || ''}
+   567→                  amountKey="amount"
+   568→                  dateKey="date"
+   569→                  color="emerald"
+   570→                  extra={(r) => r.notes && <span className="text-[10px] text-slate-500">{r.notes}</span>}
+   571→                />
+   572→              </div>
+   573→            </TabsContent>
+   574→
+   575→            {/* Expenses tab */}
+   576→            <TabsContent value="expenses" className="mt-3">
+   577→              <TransactionList
+   578→                items={data.expenses}
+   579→                empty="لا توجد مصاريف في هذه الفترة"
+   580→                titleKey="categoryName"
+   581→                amountKey="amount"
+   582→                dateKey="date"
+   583→                color="rose"
+   584→                extra={(e) => e.notes && <span className="text-[10px] text-slate-500">{e.notes}</span>}
+   585→              />
+   586→            </TabsContent>
+   587→          </Tabs>
+   588→        </>
+   589→      )}
+   590→    </div>
+   591→  )
+   592→}
+   593→
+   594→function SummaryCard({
+   595→  label,
+   596→  value,
+   597→  icon: Icon,
+   598→  color,
+   599→  count,
+   600→}: {
+   601→  label: string
+   602→  value: number
+   603→  icon: any
+   604→  color: 'emerald' | 'rose' | 'amber' | 'purple' | 'blue'
+   605→  count: number
+   606→}) {
+   607→  const colors: Record<string, string> = {
+   608→    emerald: 'bg-emerald-50 text-emerald-700 border-emerald-100',
+   609→    rose: 'bg-rose-50 text-rose-700 border-rose-100',
+   610→    amber: 'bg-amber-50 text-amber-700 border-amber-100',
+   611→    purple: 'bg-purple-50 text-purple-700 border-purple-100',
+   612→    blue: 'bg-blue-50 text-blue-700 border-blue-100',
+   613→  }
+   614→  return (
+   615→    <div className={`rounded-xl p-3 border ${colors[color]}`}>
+   616→      <div className="flex items-center justify-between mb-1">
+   617→        <p className="text-[10px] font-medium opacity-80">{label}</p>
+   618→        <Icon className="w-3.5 h-3.5 opacity-70" />
+   619→      </div>
+   620→      <p className="text-sm font-bold">{formatCurrency(value)}</p>
+   621→      <p className="text-[10px] opacity-60 mt-0.5">{count} عملية</p>
+   622→    </div>
+   623→  )
+   624→}
+   625→
+   626→function Row({
+   627→  label,
+   628→  value,
+   629→  color,
+   630→}: {
+   631→  label: string
+   632→  value: string
+   633→  color: 'emerald' | 'rose' | 'amber' | 'purple' | 'blue'
+   634→}) {
+   635→  const colors: Record<string, string> = {
+   636→    emerald: 'text-emerald-700',
+   637→    rose: 'text-rose-700',
+   638→    amber: 'text-amber-700',
+   639→    purple: 'text-purple-700',
+   640→    blue: 'text-blue-700',
+   641→  }
+   642→  return (
+   643→    <div className="flex items-center justify-between text-xs py-1">
+   644→      <span className="text-slate-600">{label}</span>
+   645→      <span className={`font-bold ${colors[color]}`}>{value}</span>
+   646→    </div>
+   647→  )
+   648→}
+   649→
+   650→function TransactionList({
+   651→  items,
+   652→  empty,
+   653→  titleKey,
+   654→  amountKey,
+   655→  dateKey,
+   656→  color,
+   657→  extra,
+   658→}: {
+   659→  items: any[]
+   660→  empty: string
+   661→  titleKey: string | ((item: any) => string)
+   662→  amountKey: string
+   663→  dateKey: string
+   664→  color: 'emerald' | 'rose' | 'amber' | 'purple' | 'blue'
+   665→  extra?: (item: any) => React.ReactNode
+   666→}) {
+   667→  const colors: Record<string, string> = {
+   668→    emerald: 'text-emerald-700',
+   669→    rose: 'text-rose-700',
+   670→    amber: 'text-amber-700',
+   671→    purple: 'text-purple-700',
+   672→    blue: 'text-blue-700',
+   673→  }
+   674→
+   675→  if (items.length === 0) {
+   676→    return (
+   677→      <div className="bg-white rounded-xl p-6 text-center border border-slate-100">
+   678→        <Receipt className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+   679→        <p className="text-xs text-slate-500">{empty}</p>
+   680→      </div>
+   681→    )
+   682→  }
+   683→
+   684→  return (
+   685→    <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+   686→      <div className="max-h-96 overflow-y-auto">
+   687→        {items.map((item, i) => {
+   688→          const title = typeof titleKey === 'function' ? titleKey(item) : item[titleKey]
+   689→          const amount = item[amountKey]
+   690→          const date = item[dateKey]
+   691→          return (
+   692→            <div
+   693→              key={item.id || i}
+   694→              className="flex items-center justify-between p-3 border-b border-slate-50 last:border-0"
+   695→            >
+   696→              <div className="flex-1">
+   697→                <p className="text-sm font-medium text-slate-800">{title}</p>
+   698→                <div className="flex items-center gap-2 mt-0.5">
+   699→                  <span className="flex items-center gap-1 text-[10px] text-slate-500">
+   700→                    <Calendar className="w-2.5 h-2.5" />
+   701→                    {formatDate(date)}
+   702→                  </span>
+   703→                  {extra && extra(item)}
+   704→                </div>
+   705→              </div>
+   706→              <p className={`text-sm font-bold ${colors[color]}`}>
+   707→                {formatCurrency(amount)}
+   708→              </p>
+   709→            </div>
+   710→          )
+   711→        })}
+   712→      </div>
+   713→    </div>
+   714→  )
+   715→}
+   716→

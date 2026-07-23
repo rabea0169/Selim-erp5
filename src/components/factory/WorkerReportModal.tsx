@@ -1,20 +1,13 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   FileText,
-  X,
-  TrendingUp,
-  Users,
-  Calendar,
-  Scissors,
-  LogIn,
   Download,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Badge } from '@/components/ui/badge'
 import {
   Dialog,
   DialogContent,
@@ -23,6 +16,11 @@ import {
 } from '@/components/ui/dialog'
 import { useToast } from '@/hooks/use-toast'
 import { formatCurrency, formatDate, todayStr, startOfMonth } from '@/lib/format'
+import {
+  workerRepository,
+  workerAttendanceRepository,
+  productionRepository,
+} from '@/lib/db'
 
 interface Worker {
   id: string
@@ -47,22 +45,60 @@ export function WorkerReportModal({
   const [exporting, setExporting] = useState(false)
   const { toast } = useToast()
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch(`/api/worker-report/${worker.id}?from=${from}&to=${to}`).then((r) => r.json())
-      setData(res)
+      const [stats, attendance, productions] = await Promise.all([
+        workerRepository.getWithStats(worker.id),
+        workerAttendanceRepository.getByDateRange(from || undefined, to || undefined, worker.id),
+        productionRepository.getByDateRange(from || undefined, to || undefined, worker.id),
+      ])
+
+      if (!stats) {
+        setData(null)
+        return
+      }
+
+      // فلترة السلف والقبض حسب النطاق الزمني
+      const fromTime = from ? new Date(from).getTime() : 0
+      const toTime = to ? new Date(to).getTime() + 24 * 60 * 60 * 1000 - 1 : Date.now()
+      const inRange = (d: string) => {
+        const t = new Date(d).getTime()
+        return t >= fromTime && t <= toTime
+      }
+      const advances = stats.advances.filter((a) => inRange(a.date))
+      const receipts = stats.receipts.filter((r) => inRange(r.date))
+
+      const totalAdvances = advances.reduce((s, a) => s + a.amount, 0)
+      const totalReceipts = receipts.reduce((s, r) => s + r.amount, 0)
+      const totalProduction = productions.reduce((s, p) => s + p.total, 0)
+      const totalPieces = productions.reduce((s, p) => s + p.quantity, 0)
+      const presentDays = attendance.filter((a) => a.status === 'present').length
+
+      setData({
+        advances,
+        receipts,
+        productions,
+        attendance,
+        summary: {
+          totalAdvances,
+          totalReceipts,
+          balance: totalAdvances - totalReceipts,
+          presentDays,
+          totalProduction,
+          totalPieces,
+        },
+      })
     } catch {
       toast({ title: 'خطأ', description: 'فشل تحميل التقرير', variant: 'destructive' })
     } finally {
       setLoading(false)
     }
-  }
+  }, [worker.id, from, to, toast])
 
   useEffect(() => {
-    load()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    Promise.resolve().then(() => load())
+  }, [load])
 
   const exportPDF = async () => {
     if (!data) return

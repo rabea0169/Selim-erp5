@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   Plus,
   Trash2,
@@ -38,6 +38,14 @@ import {
 } from '@/components/ui/select'
 import { useToast } from '@/hooks/use-toast'
 import { formatCurrency, formatDate, todayStr } from '@/lib/format'
+import {
+  workerRepository,
+  workerAdvanceRepository,
+  workerReceiptRepository,
+  type Worker as WorkerType,
+  type WorkerAdvance,
+  type WorkerReceipt,
+} from '@/lib/db'
 import { WorkerReportModal } from './WorkerReportModal'
 import { AttendanceView } from './AttendanceView'
 import { ProductionView } from './ProductionView'
@@ -45,27 +53,12 @@ import { pickContactFromPhone, isContactsPickerSupported } from '@/lib/contacts'
 
 type SubView = 'list' | 'attendance' | 'production'
 
-interface WorkerAdvance {
-  id: string
-  workerId: string
-  amount: number
-  date: string
-  notes: string | null
-}
-
-interface WorkerReceipt {
-  id: string
-  workerId: string
-  amount: number
-  date: string
-  notes: string | null
-}
-
 interface Worker {
   id: string
   name: string
   phone: string | null
   job: string | null
+  type: string
   notes: string | null
   advances: WorkerAdvance[]
   receipts: WorkerReceipt[]
@@ -82,24 +75,59 @@ export function WorkersView() {
   const [subView, setSubView] = useState<SubView>('list')
   const { toast } = useToast()
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true)
     try {
-      const params = new URLSearchParams()
-      if (search) params.set('q', search)
-      const res = await fetch(`/api/workers?${params.toString()}`).then((r) => r.json())
-      setWorkers(res.workers || [])
+      const data = search
+        ? await workerRepository.search(search)
+        : await workerRepository.getAllWithStats()
+      // getAllWithStats returns workers with embedded advances/receipts/balance
+      // search() returns plain Worker[] without stats, so normalize
+      const normalized: Worker[] = await Promise.all(
+        data.map(async (w: any) => {
+          if (w.advances !== undefined) {
+            return {
+              id: w.id,
+              name: w.name,
+              phone: w.phone ?? null,
+              job: w.job ?? null,
+              type: (w as WorkerType).type ?? 'monthly',
+              notes: w.notes ?? null,
+              advances: w.advances || [],
+              receipts: w.receipts || [],
+              totalAdvances: w.totalAdvances || 0,
+              totalReceipts: w.totalReceipts || 0,
+              balance: w.balance || 0,
+            }
+          }
+          // search() path: fetch stats
+          const stats = await workerRepository.getWithStats(w.id)
+          return {
+            id: w.id,
+            name: w.name,
+            phone: w.phone ?? null,
+            job: w.job ?? null,
+            type: w.type ?? 'monthly',
+            notes: w.notes ?? null,
+            advances: stats?.advances || [],
+            receipts: stats?.receipts || [],
+            totalAdvances: stats?.totalAdvances || 0,
+            totalReceipts: stats?.totalReceipts || 0,
+            balance: stats?.balance || 0,
+          }
+        })
+      )
+      setWorkers(normalized)
     } catch {
       toast({ title: 'خطأ', description: 'فشل تحميل العمال', variant: 'destructive' })
     } finally {
       setLoading(false)
     }
-  }
+  }, [search, toast])
 
   useEffect(() => {
     if (subView === 'list') load()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, subView])
+  }, [load, subView])
 
   if (subView === 'attendance') {
     return <AttendanceView onBack={() => setSubView('list')} />
@@ -238,7 +266,7 @@ function WorkerCard({
   const handleDeleteAdvance = async (id: string) => {
     if (!confirm('حذف هذه السلفة؟')) return
     try {
-      await fetch(`/api/worker-advances/${id}`, { method: 'DELETE' })
+      await workerAdvanceRepository.delete(id)
       toast({ title: 'تم الحذف' })
       onChanged()
     } catch {
@@ -249,7 +277,7 @@ function WorkerCard({
   const handleDeleteReceipt = async (id: string) => {
     if (!confirm('حذف هذا القبض؟')) return
     try {
-      await fetch(`/api/worker-receipts/${id}`, { method: 'DELETE' })
+      await workerReceiptRepository.delete(id)
       toast({ title: 'تم الحذف' })
       onChanged()
     } catch {
@@ -260,7 +288,7 @@ function WorkerCard({
   const handleDeleteWorker = async () => {
     if (!confirm(`حذف العامل ${worker.name} وكل سجلاته؟`)) return
     try {
-      await fetch(`/api/workers/${worker.id}`, { method: 'DELETE' })
+      await workerRepository.deleteWithRelations(worker.id)
       toast({ title: 'تم حذف العامل' })
       onChanged()
     } catch {
@@ -473,7 +501,7 @@ function WorkerForm({
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
   const [job, setJob] = useState('')
-  const [type, setType] = useState('monthly')
+  const [type, setType] = useState<'monthly' | 'production'>('monthly')
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const [picking, setPicking] = useState(false)
@@ -503,12 +531,13 @@ function WorkerForm({
     }
     setSaving(true)
     try {
-      const res = await fetch('/api/workers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, phone, job, type, notes }),
-      }).then((r) => r.json())
-      if (res.error) throw new Error(res.error)
+      await workerRepository.create({
+        name,
+        phone: phone || undefined,
+        job: job || undefined,
+        type,
+        notes: notes || undefined,
+      })
       toast({ title: 'تم', description: 'تمت إضافة العامل' })
       setName('')
       setPhone('')
@@ -558,7 +587,7 @@ function WorkerForm({
           </div>
           <div>
             <Label className="text-xs">نوع العامل</Label>
-            <Select value={type} onValueChange={setType}>
+            <Select value={type} onValueChange={(v) => setType(v as 'monthly' | 'production')}>
               <SelectTrigger className="bg-slate-50">
                 <SelectValue />
               </SelectTrigger>
@@ -610,7 +639,6 @@ function TransactionForm({
   const { toast } = useToast()
 
   const isAdvance = type === 'advance'
-  const endpoint = isAdvance ? '/api/worker-advances' : '/api/worker-receipts'
 
   const save = async () => {
     if (!amount || Number(amount) <= 0) {
@@ -619,21 +647,19 @@ function TransactionForm({
     }
     setSaving(true)
     try {
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          workerId: worker.id,
-          amount: Number(amount),
-          date,
-          notes,
-        }),
-      }).then((r) => r.json())
-      if (res.error) throw new Error(res.error)
-      toast({
-        title: 'تم',
-        description: isAdvance ? 'تم تسجيل السلفة' : 'تم تسجيل القبض',
-      })
+      const payload = {
+        workerId: worker.id,
+        amount: Number(amount),
+        date,
+        notes: notes || undefined,
+      }
+      if (isAdvance) {
+        await workerAdvanceRepository.create(payload)
+        toast({ title: 'تم', description: 'تم تسجيل السلفة' })
+      } else {
+        await workerReceiptRepository.create(payload)
+        toast({ title: 'تم', description: 'تم تسجيل القبض' })
+      }
       setAmount('')
       setNotes('')
       setDate(todayStr())

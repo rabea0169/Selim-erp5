@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   Calendar,
   Clock,
@@ -33,7 +33,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useToast } from '@/hooks/use-toast'
-import { formatDateTime, todayStr, formatDate } from '@/lib/format'
+import { todayStr, formatDate } from '@/lib/format'
+import { workerRepository, workerAttendanceRepository, type WorkerAttendance } from '@/lib/db'
 
 interface Worker {
   id: string
@@ -114,26 +115,48 @@ export function AttendanceView({ onBack }: { onBack: () => void }) {
     notes: '',
   })
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [wRes, aRes] = await Promise.all([
-        fetch('/api/workers').then((r) => r.json()),
-        fetch(`/api/attendance?date=${date}`).then((r) => r.json()),
+      const [workersData, attendanceData] = await Promise.all([
+        workerRepository.getAll(),
+        workerAttendanceRepository.getByDate(date),
       ])
-      setWorkers(wRes.workers || [])
-      setRecords(aRes.attendance || [])
+      const workersList: Worker[] = workersData.map((w) => ({
+        id: w.id,
+        name: w.name,
+        job: w.job ?? null,
+        type: w.type,
+      }))
+      const workerMap = new Map(workersList.map((w) => [w.id, w]))
+      const recs: Attendance[] = attendanceData
+        .map((a) => {
+          const w = workerMap.get(a.workerId)
+          if (!w) return null
+          return {
+            id: a.id,
+            workerId: a.workerId,
+            date: a.date,
+            checkIn: a.checkIn ?? null,
+            checkOut: a.checkOut ?? null,
+            status: a.status,
+            notes: a.notes ?? null,
+            worker: w,
+          } as Attendance
+        })
+        .filter((x): x is Attendance => x !== null)
+      setWorkers(workersList)
+      setRecords(recs)
     } catch {
       toast({ title: 'خطأ', description: 'فشل تحميل البيانات', variant: 'destructive' })
     } finally {
       setLoading(false)
     }
-  }
+  }, [date, toast])
 
   useEffect(() => {
-    load()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [date])
+    Promise.resolve().then(() => load())
+  }, [load])
 
   // فتح نافذة اختيار وقت الحضور
   const openCheckInDialog = (worker: Worker) => {
@@ -165,32 +188,28 @@ export function AttendanceView({ onBack }: { onBack: () => void }) {
 
   // حفظ الوقت المختار
   const saveTime = async () => {
-    const { workerId, type, time, notes, existingId } = timeDialog
+    const { workerId, type, time, notes } = timeDialog
     if (!time) {
       toast({ title: 'تنبيه', description: 'اختر الوقت', variant: 'destructive' })
       return
     }
 
     const dateTimeISO = combineDateTime(date, time)
-    const payload: any = {
+    const payload: Partial<WorkerAttendance> & { workerId: string; date: string } = {
       workerId,
-      date,
-      notes,
+      date: combineDateTime(date, '00:00'),
+      notes: notes || undefined,
     }
     if (type === 'checkIn') {
       payload.checkIn = dateTimeISO
       payload.status = 'present'
     } else {
       payload.checkOut = dateTimeISO
+      payload.status = 'present'
     }
 
     try {
-      const res = await fetch('/api/attendance', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      }).then((r) => r.json())
-      if (res.error) throw new Error(res.error)
+      await workerAttendanceRepository.upsert(payload)
       toast({
         title: 'تم',
         description: type === 'checkIn' ? 'تم تسجيل الحضور' : 'تم تسجيل الانصراف',
@@ -206,17 +225,12 @@ export function AttendanceView({ onBack }: { onBack: () => void }) {
   const saveStatus = async () => {
     const { workerId, status, notes } = statusDialog
     try {
-      const res = await fetch('/api/attendance', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          workerId,
-          date,
-          status,
-          notes,
-        }),
-      }).then((r) => r.json())
-      if (res.error) throw new Error(res.error)
+      await workerAttendanceRepository.upsert({
+        workerId,
+        date: combineDateTime(date, '00:00'),
+        status,
+        notes: notes || undefined,
+      })
       toast({ title: 'تم', description: status === 'absent' ? 'تم تسجيل الغياب' : 'تم تسجيل الإجازة' })
       setStatusDialog({ ...statusDialog, open: false })
       load()
@@ -228,7 +242,7 @@ export function AttendanceView({ onBack }: { onBack: () => void }) {
   const handleDelete = async (id: string) => {
     if (!confirm('حذف هذا السجل؟')) return
     try {
-      await fetch(`/api/attendance/${id}`, { method: 'DELETE' })
+      await workerAttendanceRepository.delete(id)
       toast({ title: 'تم الحذف' })
       load()
     } catch {

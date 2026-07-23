@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   Plus,
   Trash2,
@@ -28,6 +28,7 @@ import {
 import { useToast } from '@/hooks/use-toast'
 import { formatCurrency, formatDate, todayStr, startOfMonth } from '@/lib/format'
 import { pickContactFromPhone, isContactsPickerSupported } from '@/lib/contacts'
+import { supplierRepository } from '@/lib/db'
 
 interface Supplier {
   id: string
@@ -50,29 +51,28 @@ export function SuppliersView({ onBack }: { onBack: () => void }) {
   const [reportSupplier, setReportSupplier] = useState<Supplier | null>(null)
   const { toast } = useToast()
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true)
     try {
-      const params = new URLSearchParams()
-      if (search) params.set('q', search)
-      const res = await fetch(`/api/suppliers?${params.toString()}`).then((r) => r.json())
-      setSuppliers(res.suppliers || [])
+      const data = search
+        ? await supplierRepository.search(search)
+        : await supplierRepository.getAllWithStats()
+      setSuppliers(data as Supplier[])
     } catch {
       toast({ title: 'خطأ', description: 'فشل تحميل الموردين', variant: 'destructive' })
     } finally {
       setLoading(false)
     }
-  }
+  }, [search, toast])
 
   useEffect(() => {
     load()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search])
+  }, [load])
 
   const handleDelete = async (id: string) => {
     if (!confirm('حذف هذا المورد؟')) return
     try {
-      await fetch(`/api/suppliers/${id}`, { method: 'DELETE' })
+      await supplierRepository.delete(id)
       toast({ title: 'تم الحذف' })
       load()
     } catch {
@@ -278,15 +278,14 @@ function SupplierForm({
     }
     setSaving(true)
     try {
-      const url = supplier ? `/api/suppliers/${supplier.id}` : '/api/suppliers'
-      const method = supplier ? 'PUT' : 'POST'
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, phone, address, notes }),
-      }).then((r) => r.json())
-      if (res.error) throw new Error(res.error)
-      toast({ title: 'تم', description: supplier ? 'تم التحديث' : 'تمت الإضافة' })
+      const payload = { name, phone: phone || undefined, address: address || undefined, notes: notes || undefined }
+      if (supplier) {
+        await supplierRepository.update(supplier.id, payload)
+        toast({ title: 'تم', description: 'تم التحديث' })
+      } else {
+        await supplierRepository.create(payload)
+        toast({ title: 'تم', description: 'تمت الإضافة' })
+      }
       onSaved()
     } catch (e: any) {
       toast({ title: 'خطأ', description: e.message, variant: 'destructive' })
@@ -356,22 +355,46 @@ function SupplierReport({ supplier, onClose }: { supplier: Supplier; onClose: ()
   const [exporting, setExporting] = useState(false)
   const { toast } = useToast()
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch(`/api/supplier-report/${supplier.id}?from=${from}&to=${to}`).then((r) => r.json())
-      setData(res)
+      const stats = await supplierRepository.getWithStats(supplier.id)
+      if (!stats) {
+        setData(null)
+        return
+      }
+      const fromTime = from ? new Date(from).getTime() : 0
+      const toTime = to ? new Date(to).getTime() + 24 * 60 * 60 * 1000 - 1 : Date.now()
+      const filteredPurchases = stats.purchases.filter((p) => {
+        const t = new Date(p.date).getTime()
+        return t >= fromTime && t <= toTime
+      })
+      const totalPurchases = filteredPurchases.reduce((sum, p) => sum + p.total, 0)
+      const totalPaid = filteredPurchases.reduce((sum, p) => sum + p.paid, 0)
+      setData({
+        ...stats,
+        purchases: filteredPurchases,
+        totalPurchases,
+        totalPaid,
+        totalRemaining: totalPurchases - totalPaid,
+        purchasesCount: filteredPurchases.length,
+        summary: {
+          purchasesCount: filteredPurchases.length,
+          totalPurchases,
+          totalPaid,
+          totalRemaining: totalPurchases - totalPaid,
+        },
+      })
     } catch {
       toast({ title: 'خطأ', description: 'فشل تحميل التقرير', variant: 'destructive' })
     } finally {
       setLoading(false)
     }
-  }
+  }, [supplier.id, from, to, toast])
 
   useEffect(() => {
-    load()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    Promise.resolve().then(() => load())
+  }, [load])
 
   const exportPDF = async () => {
     if (!data) return

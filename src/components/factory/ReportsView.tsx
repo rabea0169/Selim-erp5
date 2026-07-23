@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   FileText,
   TrendingUp,
@@ -24,34 +24,7 @@ import {
 } from '@/components/ui/tabs'
 import { useToast } from '@/hooks/use-toast'
 import { formatCurrency, formatDate, todayStr, startOfMonth } from '@/lib/format'
-
-interface ReportData {
-  range: { from: string | null; to: string | null }
-  summary: {
-    salesTotal: number
-    salesPaid: number
-    salesRemaining: number
-    purchasesTotal: number
-    purchasesPaid: number
-    purchasesRemaining: number
-    advancesTotal: number
-    receiptsTotal: number
-    productionTotal: number
-    productionPieces: number
-    expensesTotal: number
-    netProfit: number
-  }
-  sales: any[]
-  purchases: any[]
-  advances: any[]
-  receipts: any[]
-  productions: any[]
-  attendance: any[]
-  expenses: any[]
-  expensesByCategory: Record<string, number>
-  topItems: { name: string; qty: number; total: number }[]
-  topModels: { name: string; qty: number; total: number }[]
-}
+import { reportRepository, workerRepository, type ReportData } from '@/lib/db'
 
 // بناء HTML للطباعة
 function buildPrintHtml(data: ReportData, from: string, to: string): string {
@@ -119,22 +92,40 @@ export function ReportsView() {
   const [exporting, setExporting] = useState(false)
   const { toast } = useToast()
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch(`/api/reports?from=${from}&to=${to}`).then((r) => r.json())
-      setData(res)
+      const [res, workers] = await Promise.all([
+        reportRepository.getFullReport(from || undefined, to || undefined),
+        workerRepository.getAll(),
+      ])
+      const workerMap = new Map(workers.map((w) => [w.id, w]))
+      // إرفاق اسم العامل بسجلات السلف والقبض والإنتاج والحضور لعرضها في القوائم
+      const withWorker = <T extends { workerId: string }>(arr: T[]): (T & { worker?: { id: string; name: string } })[] =>
+        arr.map((x) => ({
+          ...x,
+          worker: workerMap.get(x.workerId)
+            ? { id: workerMap.get(x.workerId)!.id, name: workerMap.get(x.workerId)!.name }
+            : undefined,
+        }))
+      const enriched: ReportData = {
+        ...res,
+        advances: withWorker(res.advances) as any,
+        receipts: withWorker(res.receipts) as any,
+        productions: withWorker(res.productions) as any,
+        attendance: withWorker(res.attendance) as any,
+      }
+      setData(enriched)
     } catch {
       toast({ title: 'خطأ', description: 'فشل تحميل التقرير', variant: 'destructive' })
     } finally {
       setLoading(false)
     }
-  }
+  }, [from, to, toast])
 
   useEffect(() => {
-    load()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    Promise.resolve().then(() => load())
+  }, [load])
 
   const setPreset = (preset: 'today' | 'week' | 'month' | 'year') => {
     const now = new Date()
