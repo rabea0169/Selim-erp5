@@ -28,7 +28,12 @@ export async function GET(req: NextRequest) {
     const workersWithTotals = workers.map((w) => {
       const totalAdvances = w.advances.reduce((s, a) => s + a.amount, 0)
       const totalReceipts = w.receipts.reduce((s, r) => s + r.amount, 0)
-      return { ...w, totalAdvances, totalReceipts, balance: totalAdvances - totalReceipts }
+      return {
+        ...w,
+        totalAdvances,
+        totalReceipts,
+        balance: totalAdvances - totalReceipts,
+      }
     })
 
     return NextResponse.json({ workers: workersWithTotals })
@@ -40,9 +45,26 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { name, phone, job, notes } = body
+    const { name, phone, job, type, notes } = body
+
+    // التحقق من البيانات
+    if (!name?.trim()) {
+      return NextResponse.json(
+        { error: 'اسم العامل مطلوب' },
+        { status: 400 }
+      )
+    }
+
+    const validType = type === 'production' ? 'production' : 'monthly'
+
     const worker = await db.worker.create({
-      data: { name, phone: phone || null, job: job || null, notes: notes || null },
+      data: {
+        name: name.trim(),
+        phone: phone?.trim() || null,
+        job: job?.trim() || null,
+        type: validType,
+        notes: notes?.trim() || null,
+      },
     })
     return NextResponse.json({ worker })
   } catch (e: any) {

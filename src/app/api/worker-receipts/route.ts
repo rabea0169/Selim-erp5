@@ -36,12 +36,43 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
     const { workerId, amount, date, notes } = body
+
+    // التحقق من البيانات
+    if (!workerId) {
+      return NextResponse.json(
+        { error: 'العامل مطلوب' },
+        { status: 400 }
+      )
+    }
+    if (!date) {
+      return NextResponse.json(
+        { error: 'التاريخ مطلوب' },
+        { status: 400 }
+      )
+    }
+    const amt = Number(amount)
+    if (isNaN(amt) || amt <= 0) {
+      return NextResponse.json(
+        { error: 'المبلغ يجب أن يكون رقماً موجباً' },
+        { status: 400 }
+      )
+    }
+
+    // التحقق من وجود العامل
+    const worker = await db.worker.findUnique({ where: { id: workerId } })
+    if (!worker) {
+      return NextResponse.json(
+        { error: 'العامل غير موجود' },
+        { status: 404 }
+      )
+    }
+
     const receipt = await db.workerReceipt.create({
       data: {
         workerId,
-        amount: Number(amount),
+        amount: amt,
         date: new Date(date),
-        notes: notes || null,
+        notes: notes?.trim() || null,
       },
       include: { worker: true },
     })

@@ -5,10 +5,35 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   try {
     const { id } = await params
     const body = await req.json()
-    const { name, phone, job, notes } = body
+    const { name, phone, job, type, notes } = body
+
+    if (!name?.trim()) {
+      return NextResponse.json(
+        { error: 'اسم العامل مطلوب' },
+        { status: 400 }
+      )
+    }
+
+    // التحقق من وجود العامل
+    const existing = await db.worker.findUnique({ where: { id } })
+    if (!existing) {
+      return NextResponse.json(
+        { error: 'العامل غير موجود' },
+        { status: 404 }
+      )
+    }
+
+    const validType = type === 'production' ? 'production' : 'monthly'
+
     const worker = await db.worker.update({
       where: { id },
-      data: { name, phone: phone || null, job: job || null, notes: notes || null },
+      data: {
+        name: name.trim(),
+        phone: phone?.trim() || null,
+        job: job?.trim() || null,
+        type: validType,
+        notes: notes?.trim() || null,
+      },
     })
     return NextResponse.json({ worker })
   } catch (e: any) {
@@ -19,6 +44,17 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
+
+    // التحقق من وجود العامل
+    const existing = await db.worker.findUnique({ where: { id } })
+    if (!existing) {
+      return NextResponse.json(
+        { error: 'العامل غير موجود' },
+        { status: 404 }
+      )
+    }
+
+    // حذف العامل - سيتم حذف كل السجلات المرتبطة تلقائياً (Cascade)
     await db.worker.delete({ where: { id } })
     return NextResponse.json({ success: true })
   } catch (e: any) {

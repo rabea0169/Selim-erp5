@@ -27,13 +27,16 @@ export async function GET(req: NextRequest) {
       const totalSales = c.sales.reduce((s, x) => s + x.total, 0)
       const totalPaid = c.sales.reduce((s, x) => s + x.paid, 0)
       return {
-        ...c,
+        id: c.id,
+        name: c.name,
+        phone: c.phone,
+        address: c.address,
+        notes: c.notes,
+        createdAt: c.createdAt,
         totalSales,
         totalPaid,
         totalRemaining: totalSales - totalPaid,
         salesCount: c._count.sales,
-        sales: undefined,
-        _count: undefined,
       }
     })
     return NextResponse.json({ customers: withTotals })
@@ -46,11 +49,21 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
     const { name, phone, address, notes } = body
+
     if (!name?.trim()) {
-      return NextResponse.json({ error: 'الاسم مطلوب' }, { status: 400 })
+      return NextResponse.json(
+        { error: 'اسم العميل مطلوب' },
+        { status: 400 }
+      )
     }
+
     const customer = await db.customer.create({
-      data: { name, phone: phone || null, address: address || null, notes: notes || null },
+      data: {
+        name: name.trim(),
+        phone: phone?.trim() || null,
+        address: address?.trim() || null,
+        notes: notes?.trim() || null,
+      },
     })
     return NextResponse.json({ customer })
   } catch (e: any) {

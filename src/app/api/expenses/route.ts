@@ -39,16 +39,43 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const { categoryId, amount, date, notes } = body
 
+    // التحقق من البيانات
+    if (!categoryId) {
+      return NextResponse.json(
+        { error: 'بند المصروف مطلوب' },
+        { status: 400 }
+      )
+    }
+    if (!date) {
+      return NextResponse.json(
+        { error: 'التاريخ مطلوب' },
+        { status: 400 }
+      )
+    }
+    const amt = Number(amount)
+    if (isNaN(amt) || amt <= 0) {
+      return NextResponse.json(
+        { error: 'المبلغ يجب أن يكون رقماً موجباً' },
+        { status: 400 }
+      )
+    }
+
+    // التحقق من وجود الفئة
     const cat = await db.expenseCategory.findUnique({ where: { id: categoryId } })
-    if (!cat) return NextResponse.json({ error: 'الفئة غير موجودة' }, { status: 400 })
+    if (!cat) {
+      return NextResponse.json(
+        { error: 'فئة المصروف غير موجودة' },
+        { status: 404 }
+      )
+    }
 
     const expense = await db.expense.create({
       data: {
         categoryId,
-        categoryName: cat.name,
-        amount: Number(amount),
+        categoryName: cat.name, // تخزين اسم الفئة لسرعة العرض
+        amount: amt,
         date: new Date(date),
-        notes: notes || null,
+        notes: notes?.trim() || null,
       },
       include: { category: true },
     })

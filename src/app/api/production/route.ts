@@ -36,20 +36,59 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
     const { workerId, date, modelName, quantity, unitPrice, notes } = body
-    if (!workerId || !modelName?.trim() || !quantity || !unitPrice) {
-      return NextResponse.json({ error: 'بيانات ناقصة' }, { status: 400 })
+
+    // التحقق من البيانات
+    if (!workerId) {
+      return NextResponse.json(
+        { error: 'العامل مطلوب' },
+        { status: 400 }
+      )
+    }
+    if (!date) {
+      return NextResponse.json(
+        { error: 'التاريخ مطلوب' },
+        { status: 400 }
+      )
+    }
+    if (!modelName?.trim()) {
+      return NextResponse.json(
+        { error: 'اسم الموديل مطلوب' },
+        { status: 400 }
+      )
     }
     const qty = Number(quantity)
     const price = Number(unitPrice)
+    if (isNaN(qty) || qty <= 0) {
+      return NextResponse.json(
+        { error: 'الكمية يجب أن تكون رقماً موجباً' },
+        { status: 400 }
+      )
+    }
+    if (isNaN(price) || price < 0) {
+      return NextResponse.json(
+        { error: 'سعر القطعة يجب أن يكون رقماً موجباً' },
+        { status: 400 }
+      )
+    }
+
+    // التحقق من وجود العامل
+    const worker = await db.worker.findUnique({ where: { id: workerId } })
+    if (!worker) {
+      return NextResponse.json(
+        { error: 'العامل غير موجود' },
+        { status: 404 }
+      )
+    }
+
     const production = await db.production.create({
       data: {
         workerId,
         date: new Date(date),
-        modelName,
+        modelName: modelName.trim(),
         quantity: qty,
         unitPrice: price,
         total: qty * price,
-        notes: notes || null,
+        notes: notes?.trim() || null,
       },
       include: { worker: true },
     })

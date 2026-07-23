@@ -124,17 +124,15 @@ model Supplier {
 model Sale {
   id         String   @id @default(cuid())
   invoiceNo  String?
-  customerId String?
   customerName String
+  customerId_ref String?
+  customer       Customer? @relation(fields: [customerId_ref], references: [id], onDelete: SetNull)
   date       DateTime
   total      Float
   paid       Float
   notes      String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
-
-  customerId_ref String?
-  customer       Customer? @relation(fields: [customerId_ref], references: [id], onDelete: SetNull)
 
   items SaleItem[]
 

@@ -41,32 +41,87 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { supplierName, supplierId_ref, invoiceNo, date, items, paid, notes } = body
+    const {
+      supplierName,
+      supplierId_ref,
+      invoiceNo,
+      date,
+      items,
+      paid,
+      notes,
+    } = body
 
-    const total = (items as any[]).reduce(
-      (sum, it) => sum + Number(it.quantity) * Number(it.unitPrice),
+    // التحقق من البيانات المدخلة
+    if (!supplierName?.trim()) {
+      return NextResponse.json(
+        { error: 'اسم المورد مطلوب' },
+        { status: 400 }
+      )
+    }
+    if (!date) {
+      return NextResponse.json(
+        { error: 'التاريخ مطلوب' },
+        { status: 400 }
+      )
+    }
+    if (!Array.isArray(items) || items.length === 0) {
+      return NextResponse.json(
+        { error: 'يجب إضافة صنف واحد على الأقل' },
+        { status: 400 }
+      )
+    }
+
+    const validItems = items.filter(
+      (it: any) => it.itemName?.trim() && Number(it.quantity) > 0 && Number(it.unitPrice) >= 0
+    )
+    if (validItems.length === 0) {
+      return NextResponse.json(
+        { error: 'أضف صنفاً صحيحاً واحداً على الأقل' },
+        { status: 400 }
+      )
+    }
+
+    const total = validItems.reduce(
+      (sum: number, it: any) => sum + Number(it.quantity) * Number(it.unitPrice),
       0
     )
+    const paidAmount = Number(paid) || 0
 
-    const purchase = await db.purchase.create({
-      data: {
-        supplierName,
-        supplierId_ref: supplierId_ref || null,
-        invoiceNo: invoiceNo || null,
-        date: new Date(date),
-        total,
-        paid: Number(paid) || 0,
-        notes: notes || null,
-        items: {
-          create: (items as any[]).map((it) => ({
-            itemName: it.itemName,
-            quantity: Number(it.quantity),
-            unitPrice: Number(it.unitPrice),
-            total: Number(it.quantity) * Number(it.unitPrice),
-          })),
+    // التحقق من وجود المورد لو تم تحديده
+    if (supplierId_ref) {
+      const supplier = await db.supplier.findUnique({
+        where: { id: supplierId_ref },
+      })
+      if (!supplier) {
+        return NextResponse.json(
+          { error: 'المورد المحدد غير موجود' },
+          { status: 400 }
+        )
+      }
+    }
+
+    const purchase = await db.$transaction(async (tx) => {
+      const newPurchase = await tx.purchase.create({
+        data: {
+          supplierName: supplierName.trim(),
+          supplierId_ref: supplierId_ref || null,
+          invoiceNo: invoiceNo?.trim() || null,
+          date: new Date(date),
+          total,
+          paid: paidAmount,
+          notes: notes?.trim() || null,
+          items: {
+            create: validItems.map((it: any) => ({
+              itemName: it.itemName.trim(),
+              quantity: Number(it.quantity),
+              unitPrice: Number(it.unitPrice),
+              total: Number(it.quantity) * Number(it.unitPrice),
+            })),
+          },
         },
-      },
-      include: { items: true },
+        include: { items: true },
+      })
+      return newPurchase
     })
 
     return NextResponse.json({ purchase })

@@ -11,8 +11,11 @@ export async function GET(req: NextRequest) {
 
     const where: any = {}
     if (workerId) where.workerId = workerId
+
     if (date) {
+      // فلترة بيوم محدد
       const d = new Date(date)
+      d.setHours(0, 0, 0, 0)
       const next = new Date(d)
       next.setDate(next.getDate() + 1)
       where.date = { gte: d, lt: next }
@@ -43,12 +46,41 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const { workerId, date, checkIn, checkOut, status, notes } = body
 
-    // Check if record exists for this worker+date
+    // التحقق من البيانات
+    if (!workerId) {
+      return NextResponse.json(
+        { error: 'العامل مطلوب' },
+        { status: 400 }
+      )
+    }
+    if (!date) {
+      return NextResponse.json(
+        { error: 'التاريخ مطلوب' },
+        { status: 400 }
+      )
+    }
+
+    // التحقق من وجود العامل
+    const worker = await db.worker.findUnique({ where: { id: workerId } })
+    if (!worker) {
+      return NextResponse.json(
+        { error: 'العامل غير موجود' },
+        { status: 404 }
+      )
+    }
+
+    // التحقق من الحالة
+    const validStatus = ['present', 'absent', 'leave'].includes(status)
+      ? status
+      : 'present'
+
+    // تحديد بداية ونهاية اليوم المحدد
     const dayStart = new Date(date)
     dayStart.setHours(0, 0, 0, 0)
     const dayEnd = new Date(dayStart)
     dayEnd.setDate(dayEnd.getDate() + 1)
 
+    // البحث عن سجل موجود لنفس العامل في نفس اليوم
     const existing = await db.workerAttendance.findFirst({
       where: {
         workerId,
@@ -57,28 +89,29 @@ export async function POST(req: NextRequest) {
     })
 
     if (existing) {
-      // Update existing record
+      // تحديث السجل الموجود
       const updated = await db.workerAttendance.update({
         where: { id: existing.id },
         data: {
           checkIn: checkIn ? new Date(checkIn) : existing.checkIn,
           checkOut: checkOut ? new Date(checkOut) : existing.checkOut,
-          status: status || existing.status,
-          notes: notes !== undefined ? notes : existing.notes,
+          status: validStatus,
+          notes: notes !== undefined ? (notes?.trim() || null) : existing.notes,
         },
         include: { worker: true },
       })
       return NextResponse.json({ attendance: updated, updated: true })
     }
 
+    // إنشاء سجل جديد
     const record = await db.workerAttendance.create({
       data: {
         workerId,
         date: new Date(date),
         checkIn: checkIn ? new Date(checkIn) : null,
         checkOut: checkOut ? new Date(checkOut) : null,
-        status: status || 'present',
-        notes: notes || null,
+        status: validStatus,
+        notes: notes?.trim() || null,
       },
       include: { worker: true },
     })
