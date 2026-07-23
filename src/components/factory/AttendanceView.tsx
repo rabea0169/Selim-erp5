@@ -12,11 +12,19 @@ import {
   CheckCircle,
   XCircle,
   CalendarOff,
+  Pencil,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog'
 import {
   Select,
   SelectContent,
@@ -45,14 +53,66 @@ interface Attendance {
   worker: Worker
 }
 
+// الحصول على الوقت الحالي بصيغة HH:MM
+function currentTimeStr(): string {
+  const d = new Date()
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+// استخراج الوقت بصيغة HH:MM من تاريخ ISO
+function timeFromISO(iso: string | null): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+// دمج التاريخ والوقت في ISO
+function combineDateTime(dateStr: string, timeStr: string): string {
+  const d = new Date(dateStr)
+  const [h, m] = timeStr.split(':').map(Number)
+  d.setHours(h, m, 0, 0)
+  return d.toISOString()
+}
+
 export function AttendanceView({ onBack }: { onBack: () => void }) {
   const [workers, setWorkers] = useState<Worker[]>([])
   const [records, setRecords] = useState<Attendance[]>([])
   const [loading, setLoading] = useState(true)
   const [date, setDate] = useState(todayStr())
-  const [selectedWorker, setSelectedWorker] = useState('')
-  const [notes, setNotes] = useState('')
   const { toast } = useToast()
+
+  // حالة نافذة اختيار الوقت
+  const [timeDialog, setTimeDialog] = useState<{
+    open: boolean
+    workerId: string
+    workerName: string
+    type: 'checkIn' | 'checkOut'
+    time: string
+    notes: string
+    existingId?: string
+  }>({
+    open: false,
+    workerId: '',
+    workerName: '',
+    type: 'checkIn',
+    time: currentTimeStr(),
+    notes: '',
+  })
+
+  // حالة نافذة الغياب/الإجازة
+  const [statusDialog, setStatusDialog] = useState<{
+    open: boolean
+    workerId: string
+    workerName: string
+    status: 'absent' | 'leave'
+    notes: string
+  }>({
+    open: false,
+    workerId: '',
+    workerName: '',
+    status: 'absent',
+    notes: '',
+  })
 
   const load = async () => {
     setLoading(true)
@@ -75,48 +135,76 @@ export function AttendanceView({ onBack }: { onBack: () => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date])
 
-  const checkIn = async (workerId: string) => {
+  // فتح نافذة اختيار وقت الحضور
+  const openCheckInDialog = (worker: Worker) => {
+    const rec = getRecord(worker.id)
+    setTimeDialog({
+      open: true,
+      workerId: worker.id,
+      workerName: worker.name,
+      type: 'checkIn',
+      time: rec?.checkIn ? timeFromISO(rec.checkIn) : currentTimeStr(),
+      notes: rec?.notes || '',
+      existingId: rec?.id,
+    })
+  }
+
+  // فتح نافذة اختيار وقت الانصراف
+  const openCheckOutDialog = (worker: Worker) => {
+    const rec = getRecord(worker.id)
+    setTimeDialog({
+      open: true,
+      workerId: worker.id,
+      workerName: worker.name,
+      type: 'checkOut',
+      time: rec?.checkOut ? timeFromISO(rec.checkOut) : currentTimeStr(),
+      notes: rec?.notes || '',
+      existingId: rec?.id,
+    })
+  }
+
+  // حفظ الوقت المختار
+  const saveTime = async () => {
+    const { workerId, type, time, notes, existingId } = timeDialog
+    if (!time) {
+      toast({ title: 'تنبيه', description: 'اختر الوقت', variant: 'destructive' })
+      return
+    }
+
+    const dateTimeISO = combineDateTime(date, time)
+    const payload: any = {
+      workerId,
+      date,
+      notes,
+    }
+    if (type === 'checkIn') {
+      payload.checkIn = dateTimeISO
+      payload.status = 'present'
+    } else {
+      payload.checkOut = dateTimeISO
+    }
+
     try {
-      const now = new Date()
       const res = await fetch('/api/attendance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          workerId,
-          date,
-          checkIn: now.toISOString(),
-          status: 'present',
-        }),
+        body: JSON.stringify(payload),
       }).then((r) => r.json())
       if (res.error) throw new Error(res.error)
-      toast({ title: 'تم', description: 'تم تسجيل الحضور' })
+      toast({
+        title: 'تم',
+        description: type === 'checkIn' ? 'تم تسجيل الحضور' : 'تم تسجيل الانصراف',
+      })
+      setTimeDialog({ ...timeDialog, open: false })
       load()
     } catch (e: any) {
       toast({ title: 'خطأ', description: e.message, variant: 'destructive' })
     }
   }
 
-  const checkOut = async (workerId: string) => {
-    try {
-      const now = new Date()
-      const res = await fetch('/api/attendance', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          workerId,
-          date,
-          checkOut: now.toISOString(),
-        }),
-      }).then((r) => r.json())
-      if (res.error) throw new Error(res.error)
-      toast({ title: 'تم', description: 'تم تسجيل الانصراف' })
-      load()
-    } catch (e: any) {
-      toast({ title: 'خطأ', description: e.message, variant: 'destructive' })
-    }
-  }
-
-  const markStatus = async (workerId: string, status: string) => {
+  // حفظ حالة الغياب/الإجازة
+  const saveStatus = async () => {
+    const { workerId, status, notes } = statusDialog
     try {
       const res = await fetch('/api/attendance', {
         method: 'POST',
@@ -129,8 +217,8 @@ export function AttendanceView({ onBack }: { onBack: () => void }) {
         }),
       }).then((r) => r.json())
       if (res.error) throw new Error(res.error)
-      toast({ title: 'تم', description: 'تم التحديث' })
-      setNotes('')
+      toast({ title: 'تم', description: status === 'absent' ? 'تم تسجيل الغياب' : 'تم تسجيل الإجازة' })
+      setStatusDialog({ ...statusDialog, open: false })
       load()
     } catch (e: any) {
       toast({ title: 'خطأ', description: e.message, variant: 'destructive' })
@@ -258,24 +346,32 @@ export function AttendanceView({ onBack }: { onBack: () => void }) {
 
                 {rec && (rec.checkIn || rec.checkOut) && (
                   <div className="grid grid-cols-2 gap-2 mb-2 text-[11px]">
-                    <div className="bg-emerald-50 rounded-lg p-2 flex items-center gap-2">
+                    <button
+                      onClick={() => openCheckInDialog(w)}
+                      className="bg-emerald-50 rounded-lg p-2 flex items-center gap-2 text-right hover:bg-emerald-100 transition-colors"
+                    >
                       <LogIn className="w-3 h-3 text-emerald-600" />
-                      <div>
+                      <div className="flex-1">
                         <p className="text-emerald-700">حضور</p>
                         <p className="font-bold text-emerald-900">
-                          {rec.checkIn ? formatDateTime(rec.checkIn).split(' ').pop() : '--'}
+                          {rec.checkIn ? timeFromISO(rec.checkIn) : '--:--'}
                         </p>
                       </div>
-                    </div>
-                    <div className="bg-blue-50 rounded-lg p-2 flex items-center gap-2">
+                      <Pencil className="w-3 h-3 text-emerald-500" />
+                    </button>
+                    <button
+                      onClick={() => openCheckOutDialog(w)}
+                      className="bg-blue-50 rounded-lg p-2 flex items-center gap-2 text-right hover:bg-blue-100 transition-colors"
+                    >
                       <LogOut className="w-3 h-3 text-blue-600" />
-                      <div>
+                      <div className="flex-1">
                         <p className="text-blue-700">انصراف</p>
                         <p className="font-bold text-blue-900">
-                          {rec.checkOut ? formatDateTime(rec.checkOut).split(' ').pop() : '--'}
+                          {rec.checkOut ? timeFromISO(rec.checkOut) : '--:--'}
                         </p>
                       </div>
-                    </div>
+                      <Pencil className="w-3 h-3 text-blue-500" />
+                    </button>
                   </div>
                 )}
 
@@ -289,7 +385,7 @@ export function AttendanceView({ onBack }: { onBack: () => void }) {
                   {!isCheckedIn && (
                     <Button
                       size="sm"
-                      onClick={() => checkIn(w.id)}
+                      onClick={() => openCheckInDialog(w)}
                       className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white h-8 text-xs"
                     >
                       <LogIn className="w-3.5 h-3.5 ml-1" />
@@ -299,7 +395,7 @@ export function AttendanceView({ onBack }: { onBack: () => void }) {
                   {isCheckedIn && !isCheckedOut && (
                     <Button
                       size="sm"
-                      onClick={() => checkOut(w.id)}
+                      onClick={() => openCheckOutDialog(w)}
                       className="flex-1 bg-blue-600 hover:bg-blue-700 text-white h-8 text-xs"
                     >
                       <LogOut className="w-3.5 h-3.5 ml-1" />
@@ -311,12 +407,20 @@ export function AttendanceView({ onBack }: { onBack: () => void }) {
                       اكتمل التسجيل اليوم
                     </div>
                   )}
-                  {!isCheckedIn && (
+                  {!isCheckedIn && !isCheckedOut && (
                     <>
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => markStatus(w.id, 'absent')}
+                        onClick={() =>
+                          setStatusDialog({
+                            open: true,
+                            workerId: w.id,
+                            workerName: w.name,
+                            status: 'absent',
+                            notes: '',
+                          })
+                        }
                         className="border-rose-200 text-rose-700 hover:bg-rose-50 h-8 text-xs"
                       >
                         غائب
@@ -324,7 +428,15 @@ export function AttendanceView({ onBack }: { onBack: () => void }) {
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => markStatus(w.id, 'leave')}
+                        onClick={() =>
+                          setStatusDialog({
+                            open: true,
+                            workerId: w.id,
+                            workerName: w.name,
+                            status: 'leave',
+                            notes: '',
+                          })
+                        }
                         className="border-amber-200 text-amber-700 hover:bg-amber-50 h-8 text-xs"
                       >
                         إجازة
@@ -347,6 +459,254 @@ export function AttendanceView({ onBack }: { onBack: () => void }) {
           })}
         </div>
       )}
+
+      {/* نافذة اختيار الوقت يدوياً */}
+      <Dialog
+        open={timeDialog.open}
+        onOpenChange={(v) => setTimeDialog({ ...timeDialog, open: v })}
+      >
+        <DialogContent className="max-w-sm" dir="rtl">
+          <DialogHeader>
+            <DialogTitle className="text-right flex items-center gap-2">
+              {timeDialog.type === 'checkIn' ? (
+                <>
+                  <LogIn className="w-5 h-5 text-emerald-600" />
+                  تسجيل حضور - {timeDialog.workerName}
+                </>
+              ) : (
+                <>
+                  <LogOut className="w-5 h-5 text-blue-600" />
+                  تسجيل انصراف - {timeDialog.workerName}
+                </>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {/* الوقت اليدوي */}
+            <div className="bg-slate-50 rounded-xl p-4">
+              <Label className="text-xs font-bold text-slate-700 mb-2 flex items-center gap-1">
+                <Clock className="w-3.5 h-3.5" />
+                اختر الوقت (ساعة ودقيقة)
+              </Label>
+
+              {/* وقت سريع */}
+              <div className="flex flex-wrap gap-1.5 mb-3">
+                {[
+                  { label: 'الوقت الحالي', value: currentTimeStr() },
+                  { label: '8:00 ص', value: '08:00' },
+                  { label: '9:00 ص', value: '09:00' },
+                  { label: '2:00 م', value: '14:00' },
+                  { label: '4:00 م', value: '16:00' },
+                  { label: '5:00 م', value: '17:00' },
+                  { label: '6:00 م', value: '18:00' },
+                ].map((q) => (
+                  <button
+                    key={q.label}
+                    onClick={() => setTimeDialog({ ...timeDialog, time: q.value })}
+                    className={`px-2 py-1 rounded-md text-[11px] font-medium transition-colors ${
+                      timeDialog.time === q.value
+                        ? timeDialog.type === 'checkIn'
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-blue-600 text-white'
+                        : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    {q.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* اختيار يدوي للساعة والدقيقة */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label className="text-[10px] text-slate-500">الساعة</Label>
+                  <Select
+                    value={timeDialog.time.split(':')[0]}
+                    onValueChange={(h) =>
+                      setTimeDialog({
+                        ...timeDialog,
+                        time: `${h}:${timeDialog.time.split(':')[1] || '00'}`,
+                      })
+                    }
+                  >
+                    <SelectTrigger className="bg-white">
+                      <SelectValue placeholder="ساعة" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-60">
+                      {Array.from({ length: 24 }, (_, i) => {
+                        const h = String(i).padStart(2, '0')
+                        const period = i < 12 ? 'ص' : 'م'
+                        const display12 = i === 0 ? 12 : i > 12 ? i - 12 : i
+                        return (
+                          <SelectItem key={i} value={h}>
+                            {h} ({display12} {period})
+                          </SelectItem>
+                        )
+                      })}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-[10px] text-slate-500">الدقيقة</Label>
+                  <Select
+                    value={timeDialog.time.split(':')[1] || '00'}
+                    onValueChange={(m) =>
+                      setTimeDialog({
+                        ...timeDialog,
+                        time: `${timeDialog.time.split(':')[0] || '08'}:${m}`,
+                      })
+                    }
+                  >
+                    <SelectTrigger className="bg-white">
+                      <SelectValue placeholder="دقيقة" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-60">
+                      {['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'].map(
+                        (m) => (
+                          <SelectItem key={m} value={m}>
+                            {m}
+                          </SelectItem>
+                        )
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* عرض الوقت المختار */}
+              <div
+                className={`mt-3 p-3 rounded-lg text-center ${
+                  timeDialog.type === 'checkIn'
+                    ? 'bg-emerald-100'
+                    : 'bg-blue-100'
+                }`}
+              >
+                <p className="text-[10px] text-slate-600 mb-0.5">الوقت المختار</p>
+                <p
+                  className={`text-2xl font-bold ${
+                    timeDialog.type === 'checkIn' ? 'text-emerald-700' : 'text-blue-700'
+                  }`}
+                >
+                  {timeDialog.time}
+                </p>
+                <p className="text-[10px] text-slate-500 mt-0.5">
+                  يوم {formatDate(date)}
+                </p>
+              </div>
+            </div>
+
+            {/* ملاحظات */}
+            <div>
+              <Label className="text-xs">ملاحظات (اختياري)</Label>
+              <Input
+                value={timeDialog.notes}
+                onChange={(e) =>
+                  setTimeDialog({ ...timeDialog, notes: e.target.value })
+                }
+                placeholder="مثال: تأخير، استئذان..."
+                className="bg-slate-50"
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setTimeDialog({ ...timeDialog, open: false })}
+            >
+              إلغاء
+            </Button>
+            <Button
+              onClick={saveTime}
+              className={
+                timeDialog.type === 'checkIn'
+                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                  : 'bg-blue-600 hover:bg-blue-700 text-white'
+              }
+            >
+              {timeDialog.type === 'checkIn' ? 'حفظ الحضور' : 'حفظ الانصراف'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* نافذة تسجيل الغياب/الإجازة */}
+      <Dialog
+        open={statusDialog.open}
+        onOpenChange={(v) => setStatusDialog({ ...statusDialog, open: v })}
+      >
+        <DialogContent className="max-w-sm" dir="rtl">
+          <DialogHeader>
+            <DialogTitle className="text-right flex items-center gap-2">
+              {statusDialog.status === 'absent' ? (
+                <>
+                  <XCircle className="w-5 h-5 text-rose-600" />
+                  تسجيل غياب - {statusDialog.workerName}
+                </>
+              ) : (
+                <>
+                  <CalendarOff className="w-5 h-5 text-amber-600" />
+                  تسجيل إجازة - {statusDialog.workerName}
+                </>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div
+              className={`p-3 rounded-lg ${
+                statusDialog.status === 'absent'
+                  ? 'bg-rose-50'
+                  : 'bg-amber-50'
+              }`}
+            >
+              <p className="text-xs text-slate-700">
+                سيتم تسجيل{' '}
+                <span className="font-bold">
+                  {statusDialog.status === 'absent' ? 'غياب' : 'إجازة'}
+                </span>{' '}
+                للعامل <span className="font-bold">{statusDialog.workerName}</span> في يوم{' '}
+                <span className="font-bold">{formatDate(date)}</span>
+              </p>
+            </div>
+            <div>
+              <Label className="text-xs">السبب / ملاحظات</Label>
+              <Input
+                value={statusDialog.notes}
+                onChange={(e) =>
+                  setStatusDialog({ ...statusDialog, notes: e.target.value })
+                }
+                placeholder={
+                  statusDialog.status === 'absent'
+                    ? 'سبب الغياب...'
+                    : 'نوع الإجازة (مرضية / سنوية...)'
+                }
+                className="bg-slate-50"
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setStatusDialog({ ...statusDialog, open: false })}
+            >
+              إلغاء
+            </Button>
+            <Button
+              onClick={saveStatus}
+              className={
+                statusDialog.status === 'absent'
+                  ? 'bg-rose-600 hover:bg-rose-700 text-white'
+                  : 'bg-amber-600 hover:bg-amber-700 text-white'
+              }
+            >
+              تأكيد
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
