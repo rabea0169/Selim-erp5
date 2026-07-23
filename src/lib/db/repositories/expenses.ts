@@ -1,5 +1,6 @@
 import { BaseRepository } from './base'
 import { expenseCategoryRepository } from './expense-categories'
+import { getDB, generateId, nowISO } from '../connection'
 import type { Expense } from '../types'
 
 class ExpenseRepository extends BaseRepository<Expense> {
@@ -49,13 +50,58 @@ class ExpenseRepository extends BaseRepository<Expense> {
     const category = await expenseCategoryRepository.getById(data.categoryId)
     if (!category) throw new Error('فئة المصروف غير موجودة')
 
-    return this.create({
+    const db = await getDB()
+    const tx = db.transaction(['expenses', 'treasuryTransactions'], 'readwrite')
+
+    const now = nowISO()
+    const expenseId = generateId()
+
+    const expense: Expense = {
+      id: expenseId,
       categoryId: data.categoryId,
       categoryName: category.name,
       amount: data.amount,
       date: data.date,
       notes: data.notes,
-    })
+      createdAt: now,
+    }
+
+    await tx.objectStore('expenses').add(expense)
+
+    // سحب من الخزينة تلقائياً
+    const treasuryTx = {
+      id: generateId(),
+      type: 'withdrawal' as const,
+      amount: data.amount,
+      date: data.date,
+      description: `مصروف - ${category.name}`,
+      category: 'مصاريف',
+      referenceType: 'expense',
+      referenceId: expenseId,
+      notes: data.notes,
+      createdAt: now,
+    }
+    await tx.objectStore('treasuryTransactions').add(treasuryTx)
+
+    await tx.done
+
+    return expense
+  }
+
+  async delete(id: string): Promise<void> {
+    const db = await getDB()
+    const tx = db.transaction(['expenses', 'treasuryTransactions'], 'readwrite')
+
+    // حذف المعاملة المرتبطة في الخزينة
+    const allTreasury = await tx.objectStore('treasuryTransactions').getAll()
+    for (const t of allTreasury) {
+      if (t.referenceType === 'expense' && t.referenceId === id) {
+        await tx.objectStore('treasuryTransactions').delete(t.id)
+      }
+    }
+
+    await tx.objectStore('expenses').delete(id)
+    await tx.done
   }
 
   async getByCategory(categoryId: string): Promise<Expense[]> {

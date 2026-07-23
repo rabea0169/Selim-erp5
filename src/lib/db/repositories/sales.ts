@@ -70,7 +70,7 @@ class SaleRepository extends BaseRepository<Sale> {
     items: Array<{ itemName: string; quantity: number; unitPrice: number }>
   }): Promise<Sale> {
     const db = await this.getDB()
-    const tx = db.transaction(['sales', 'saleItems'], 'readwrite')
+    const tx = db.transaction(['sales', 'saleItems', 'treasuryTransactions'], 'readwrite')
 
     const total = data.items.reduce((s, it) => s + it.quantity * it.unitPrice, 0)
     const now = nowISO()
@@ -106,6 +106,23 @@ class SaleRepository extends BaseRepository<Sale> {
       items.push(item)
     }
 
+    // إيداع المبلغ المدفوع في الخزينة تلقائياً
+    if (data.paid > 0) {
+      const treasuryTx = {
+        id: generateId(),
+        type: 'deposit' as const,
+        amount: data.paid,
+        date: data.date,
+        description: `تحصيل من مبيعة - ${data.customerName}`,
+        category: 'مبيعات',
+        referenceType: 'sale',
+        referenceId: saleId,
+        notes: data.invoiceNo ? `فاتورة رقم ${data.invoiceNo}` : undefined,
+        createdAt: now,
+      }
+      await tx.objectStore('treasuryTransactions').add(treasuryTx)
+    }
+
     await tx.done
 
     return { ...sale, items }
@@ -113,7 +130,15 @@ class SaleRepository extends BaseRepository<Sale> {
 
   async delete(id: string): Promise<void> {
     const db = await this.getDB()
-    const tx = db.transaction(['sales', 'saleItems'], 'readwrite')
+    const tx = db.transaction(['sales', 'saleItems', 'treasuryTransactions'], 'readwrite')
+
+    // حذف المعاملات المرتبطة في الخزينة
+    const allTreasury = await tx.objectStore('treasuryTransactions').getAll()
+    for (const t of allTreasury) {
+      if (t.referenceType === 'sale' && t.referenceId === id) {
+        await tx.objectStore('treasuryTransactions').delete(t.id)
+      }
+    }
 
     // حذف الأصناف أولاً
     const itemKeys = await tx.objectStore('saleItems').index('by-sale').getAllKeys(id)

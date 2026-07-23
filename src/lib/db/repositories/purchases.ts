@@ -70,7 +70,7 @@ class PurchaseRepository extends BaseRepository<Purchase> {
     items: Array<{ itemName: string; quantity: number; unitPrice: number }>
   }): Promise<Purchase> {
     const db = await this.getDB()
-    const tx = db.transaction(['purchases', 'purchaseItems'], 'readwrite')
+    const tx = db.transaction(['purchases', 'purchaseItems', 'treasuryTransactions'], 'readwrite')
 
     const total = data.items.reduce((s, it) => s + it.quantity * it.unitPrice, 0)
     const now = nowISO()
@@ -106,6 +106,23 @@ class PurchaseRepository extends BaseRepository<Purchase> {
       items.push(item)
     }
 
+    // سحب المبلغ المدفوع من الخزينة تلقائياً
+    if (data.paid > 0) {
+      const treasuryTx = {
+        id: generateId(),
+        type: 'withdrawal' as const,
+        amount: data.paid,
+        date: data.date,
+        description: `دفع لمورد - ${data.supplierName}`,
+        category: 'مشتريات',
+        referenceType: 'purchase',
+        referenceId: purchaseId,
+        notes: data.invoiceNo ? `فاتورة رقم ${data.invoiceNo}` : undefined,
+        createdAt: now,
+      }
+      await tx.objectStore('treasuryTransactions').add(treasuryTx)
+    }
+
     await tx.done
 
     return { ...purchase, items }
@@ -113,7 +130,15 @@ class PurchaseRepository extends BaseRepository<Purchase> {
 
   async delete(id: string): Promise<void> {
     const db = await this.getDB()
-    const tx = db.transaction(['purchases', 'purchaseItems'], 'readwrite')
+    const tx = db.transaction(['purchases', 'purchaseItems', 'treasuryTransactions'], 'readwrite')
+
+    // حذف المعاملات المرتبطة في الخزينة
+    const allTreasury = await tx.objectStore('treasuryTransactions').getAll()
+    for (const t of allTreasury) {
+      if (t.referenceType === 'purchase' && t.referenceId === id) {
+        await tx.objectStore('treasuryTransactions').delete(t.id)
+      }
+    }
 
     const itemKeys = await tx.objectStore('purchaseItems').index('by-purchase').getAllKeys(id)
     await Promise.all(itemKeys.map((k) => tx.objectStore('purchaseItems').delete(k)))
