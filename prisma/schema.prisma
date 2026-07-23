@@ -1,0 +1,174 @@
+// Prisma schema for Clothing Factory Management System
+// نظام إدارة مصنع ملابس جاهزة
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// العمال
+model Worker {
+  id        String   @id @default(cuid())
+  name      String
+  phone     String?
+  job       String?  // الوظيفة: خياط، تفصيل، تشطيب...إلخ
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  advances  WorkerAdvance[]
+  receipts  WorkerReceipt[]
+}
+
+// سلف العمال
+model WorkerAdvance {
+  id        String   @id @default(cuid())
+  workerId  String
+  amount    Float    // المبلغ
+  date      DateTime // تاريخ السلفة
+  notes     String?
+  createdAt DateTime @default(now())
+
+  worker    Worker   @relation(fields: [workerId], references: [id], onDelete: Cascade)
+
+  @@index([workerId])
+  @@index([date])
+}
+
+// قبض العمال (مبالغ مستلمة من العامل أو دفعات)
+model WorkerReceipt {
+  id        String   @id @default(cuid())
+  workerId  String
+  amount    Float
+  date      DateTime
+  notes     String?
+  createdAt DateTime @default(now())
+
+  worker    Worker   @relation(fields: [workerId], references: [id], onDelete: Cascade)
+
+  @@index([workerId])
+  @@index([date])
+}
+
+// العملاء (للمبيعات)
+model Customer {
+  id    String @id @default(cuid())
+  name  String
+  phone String?
+  notes String?
+
+  sales Sale[]
+
+  createdAt DateTime @default(now())
+}
+
+// الموردين (للمشتريات)
+model Supplier {
+  id    String @id @default(cuid())
+  name  String
+  phone String?
+  notes String?
+
+  purchases Purchase[]
+
+  createdAt DateTime @default(now())
+}
+
+// المبيعات
+model Sale {
+  id         String   @id @default(cuid())
+  invoiceNo  String?  // رقم الفاتورة
+  customerId String?
+  customerName String // اسم العميل (يدوي سريع)
+  date       DateTime // تاريخ البيع
+  total      Float    // الإجمالي
+  paid       Float    // المدفوع
+  notes      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  customerId_ref String?
+  customer       Customer? @relation(fields: [customerId_ref], references: [id])
+
+  items SaleItem[]
+
+  @@index([date])
+}
+
+// أصناف البيع
+model SaleItem {
+  id        String @id @default(cuid())
+  saleId    String
+  itemName  String // اسم الصنف / الموديل
+  quantity  Float  // الكمية
+  unitPrice Float  // سعر الوحدة
+  total     Float  // الإجمالي لهذا الصنف
+
+  sale      Sale   @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  @@index([saleId])
+}
+
+// المشتريات
+model Purchase {
+  id           String   @id @default(cuid())
+  invoiceNo    String?
+  supplierName String   // اسم المورد
+  supplierId_ref String?
+  supplier     Supplier? @relation(fields: [supplierId_ref], references: [id])
+  date         DateTime
+  total        Float
+  paid         Float
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  items PurchaseItem[]
+
+  @@index([date])
+}
+
+// أصناف المشتريات
+model PurchaseItem {
+  id        String @id @default(cuid())
+  purchaseId String
+  itemName  String
+  quantity  Float
+  unitPrice Float
+  total     Float
+
+  purchase  Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+
+  @@index([purchaseId])
+}
+
+// بنود المصاريف (فئات)
+model ExpenseCategory {
+  id      String @id @default(cuid())
+  name    String // مثل: كهرباء، مياه، إيجار، مرتبات، خامات، صيانة...إلخ
+  notes   String?
+
+  expenses Expense[]
+
+  createdAt DateTime @default(now())
+}
+
+// المصاريف
+model Expense {
+  id         String   @id @default(cuid())
+  categoryId String
+  categoryName String // مخزن لسرعة العرض
+  amount     Float
+  date       DateTime
+  notes      String?
+  createdAt  DateTime @default(now())
+
+  category   ExpenseCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@index([date])
+  @@index([categoryId])
+}
