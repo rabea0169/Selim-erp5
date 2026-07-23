@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
           })
         }
       }
-      // 3. العمال
+      // 3. الموظفين
       if (data.workers?.length) {
         for (const w of data.workers) {
           await tx.worker.create({
@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
           })
         }
       }
-      // 4. سلف/قبض/حضور/إنتاج العمال (تعتمد على العمال)
+      // 4. سلف/قبض/حضور/إنتاج الموظفين (تعتمد على الموظفين)
       if (data.workerAdvances?.length) {
         for (const a of data.workerAdvances) {
           await tx.workerAdvance.create({

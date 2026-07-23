@@ -10,7 +10,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const to = searchParams.get('to')
 
     const worker = await db.worker.findUnique({ where: { id } })
-    if (!worker) return NextResponse.json({ error: 'العامل غير موجود' }, { status: 404 })
+    if (!worker) return NextResponse.json({ error: 'الموظف غير موجود' }, { status: 404 })
 
     const dateRange: any = {}
     if (from) dateRange.gte = new Date(from)

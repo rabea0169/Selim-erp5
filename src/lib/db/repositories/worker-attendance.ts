@@ -1,4 +1,6 @@
 import { BaseRepository } from './base'
+import { workerRepository } from './workers'
+import { calculateAttendance } from '@/lib/attendance-calc'
 import type { WorkerAttendance } from '../types'
 
 class WorkerAttendanceRepository extends BaseRepository<WorkerAttendance> {
@@ -56,7 +58,7 @@ class WorkerAttendanceRepository extends BaseRepository<WorkerAttendance> {
     return result.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
   }
 
-  // البحث عن سجل موجود لنفس العامل في نفس اليوم
+  // البحث عن سجل موجود لنفس الموظف في نفس اليوم
   async findExistingForDay(workerId: string, date: string): Promise<WorkerAttendance | undefined> {
     const startOfDay = new Date(date)
     startOfDay.setHours(0, 0, 0, 0)
@@ -72,14 +74,31 @@ class WorkerAttendanceRepository extends BaseRepository<WorkerAttendance> {
     return records.find((r) => r.workerId === workerId)
   }
 
-  // حفظ أو تحديث (upsert) سجل الحضور
+  // حفظ أو تحديث (upsert) سجل الحضور - مع حساب الساعات تلقائياً
   async upsert(data: Partial<WorkerAttendance> & { workerId: string; date: string }): Promise<WorkerAttendance> {
+    // جلب بيانات الموظف لحساب الساعات
+    const worker = await workerRepository.getById(data.workerId)
+
+    // دمج مع البيانات الموجودة (لو update)
     const existing = await this.findExistingForDay(data.workerId, data.date)
+    const merged: Partial<WorkerAttendance> = existing ? { ...existing, ...data } : data
+
+    // حساب الساعات لو فيه checkIn و checkOut
+    if (merged.checkIn && merged.checkOut && worker && merged.status === 'present') {
+      const calc = calculateAttendance(
+        merged as WorkerAttendance,
+        worker
+      )
+      merged.workHours = calc.workHours
+      merged.overtimeHours = calc.overtimeHours
+      merged.lateMinutes = calc.lateMinutes
+    }
+
     if (existing) {
-      const updated = await this.update(existing.id, data)
+      const updated = await this.update(existing.id, merged)
       return updated || existing
     }
-    return this.create(data)
+    return this.create(merged)
   }
 }
 

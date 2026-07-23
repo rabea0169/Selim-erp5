@@ -67,7 +67,7 @@ export function StatusDialog({ state, onChange, date, onSave }: StatusDialogProp
               <span className="font-bold">
                 {isAbsent ? 'غياب' : 'إجازة'}
               </span>{' '}
-              للعامل <span className="font-bold">{state.workerName}</span> في يوم{' '}
+              للموظف <span className="font-bold">{state.workerName}</span> في يوم{' '}
               <span className="font-bold">{formatDate(date)}</span>
             </p>
           </div>

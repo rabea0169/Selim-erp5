@@ -25,7 +25,7 @@ import type { WorkerWithStats } from './workers/types'
 
 type SubView = 'list' | 'attendance' | 'production'
 
-// جلب العمال مع الإحصائيات (يدعم البحث)
+// جلب الموظفين مع الإحصائيات (يدعم البحث)
 async function fetchWorkers(search: string): Promise<WorkerWithStats[]> {
   const data = search
     ? await workerRepository.search(search)
@@ -76,7 +76,7 @@ export function WorkersView() {
   const [subView, setSubView] = useState<SubView>('list')
   const { toast } = useToast()
 
-  // تحميل العمال مع التحديث الفوري عند تغير السلف/القبض/الإنتاج
+  // تحميل الموظفين مع التحديث الفوري عند تغير السلف/القبض/الإنتاج
   const { data: workers, loading, reload } = useLiveData<WorkerWithStats[]>(
     () => fetchWorkers(search),
     ['workers', 'workerAdvances', 'workerReceipts', 'production']
@@ -102,15 +102,15 @@ export function WorkersView() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-bold text-slate-800">العمال</h2>
-          <p className="text-xs text-slate-500">إدارة العمال والسلف والقبض</p>
+          <h2 className="text-xl font-bold text-slate-800">الموظفين</h2>
+          <p className="text-xs text-slate-500">إدارة الموظفين والسلف والقبض</p>
         </div>
         <Button
           onClick={() => setOpen(true)}
           className="bg-purple-600 hover:bg-purple-700 text-white shadow-sm"
         >
           <Plus className="w-4 h-4 ml-1" />
-          عامل جديد
+          موظف جديد
         </Button>
       </div>
 
@@ -125,7 +125,7 @@ export function WorkersView() {
           }`}
         >
           <Users className="w-4 h-4 mx-auto mb-1" />
-          بيانات العمال
+          بيانات الموظفين
         </button>
         <button
           onClick={() => setSubView('attendance')}
@@ -153,7 +153,7 @@ export function WorkersView() {
 
       <div className="grid grid-cols-3 gap-2">
         <div className="bg-purple-50 rounded-xl p-3 border border-purple-100">
-          <p className="text-[10px] text-purple-700">عدد العمال</p>
+          <p className="text-[10px] text-purple-700">عدد الموظفين</p>
           <p className="text-sm font-bold text-purple-900">{workersList.length}</p>
         </div>
         <div className="bg-rose-50 rounded-xl p-3 border border-rose-100">
@@ -170,7 +170,7 @@ export function WorkersView() {
         <div className="relative">
           <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <Input
-            placeholder="بحث باسم العامل أو الهاتف..."
+            placeholder="بحث باسم الموظف أو الهاتف..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pr-9 bg-slate-50 border-slate-200"
@@ -187,7 +187,7 @@ export function WorkersView() {
       ) : workersList.length === 0 ? (
         <div className="bg-white rounded-xl p-8 text-center border border-slate-100">
           <Users className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-          <p className="text-sm text-slate-500">لا يوجد عمال مسجلين</p>
+          <p className="text-sm text-slate-500">لا يوجد موظفين مسجلين</p>
         </div>
       ) : (
         <div className="space-y-2">

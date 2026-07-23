@@ -113,7 +113,7 @@ export async function GET(req: NextRequest) {
       .slice(0, 10)
 
     // Net calculation
-    // الإنتاج بالقطعة يُعتبر مصروف لأنه يستحق للعامل
+    // الإنتاج بالقطعة يُعتبر مصروف لأنه يستحق للموظف
     const netProfit =
       salesTotal - purchasesTotal - expensesTotal - advancesTotal + receiptsTotal - productionTotal
 

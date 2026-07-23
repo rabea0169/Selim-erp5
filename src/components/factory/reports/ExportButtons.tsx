@@ -38,8 +38,8 @@ function buildExcelSheets(data: ReportData): ExcelSheet[] {
       ['المدفوع للموردين', s.purchasesPaid],
       ['متبقي للموردين', s.purchasesRemaining],
       ['إجمالي المصاريف', s.expensesTotal],
-      ['سلف العمال', s.advancesTotal],
-      ['قبض العمال', s.receiptsTotal],
+      ['سلف الموظفين', s.advancesTotal],
+      ['قبض الموظفين', s.receiptsTotal],
       ...(s.productionTotal > 0
         ? ([
             ['إنتاج بالقطعة', s.productionTotal],

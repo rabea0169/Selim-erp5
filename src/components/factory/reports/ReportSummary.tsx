@@ -73,7 +73,7 @@ export function ReportSummary({ data, from, to }: ReportSummaryProps) {
           count={data.expenses.length}
         />
         <SummaryCard
-          label="سلف العمال"
+          label="سلف الموظفين"
           value={data.summary.advancesTotal}
           icon={Users}
           color="purple"

@@ -39,7 +39,7 @@ export function buildReportContentHtml(data: ReportData, from: string, to: strin
           <div style="display:flex;justify-content:space-between;"><span>المبيعات:</span><span style="color:#059669;font-weight:bold;">${formatCurrency(s.salesTotal)}</span></div>
           <div style="display:flex;justify-content:space-between;"><span>المشتريات:</span><span style="color:#d97706;font-weight:bold;">${formatCurrency(s.purchasesTotal)}</span></div>
           <div style="display:flex;justify-content:space-between;"><span>المصاريف:</span><span style="color:#dc2626;font-weight:bold;">${formatCurrency(s.expensesTotal)}</span></div>
-          <div style="display:flex;justify-content:space-between;"><span>سلف العمال:</span><span style="color:#dc2626;font-weight:bold;">${formatCurrency(s.advancesTotal)}</span></div>
+          <div style="display:flex;justify-content:space-between;"><span>سلف الموظفين:</span><span style="color:#dc2626;font-weight:bold;">${formatCurrency(s.advancesTotal)}</span></div>
           ${s.productionTotal > 0 ? `<div style="display:flex;justify-content:space-between;"><span>إنتاج بالقطعة:</span><span style="color:#4f46e5;font-weight:bold;">${formatCurrency(s.productionTotal)}</span></div>` : ''}
         </div>
       </div>
@@ -100,7 +100,7 @@ export function buildPrintHtml(
       <tr><td style="padding: 4px 8px; border: 1px solid #000;">إجمالي المبيعات</td><td style="padding: 4px 8px; border: 1px solid #000; text-align: left; color: #059669; font-weight: bold;">${formatCurrency(s.salesTotal)}</td></tr>
       <tr><td style="padding: 4px 8px; border: 1px solid #000;">إجمالي المشتريات</td><td style="padding: 4px 8px; border: 1px solid #000; text-align: left; color: #d97706; font-weight: bold;">${formatCurrency(s.purchasesTotal)}</td></tr>
       <tr><td style="padding: 4px 8px; border: 1px solid #000;">إجمالي المصاريف</td><td style="padding: 4px 8px; border: 1px solid #000; text-align: left; color: #dc2626; font-weight: bold;">${formatCurrency(s.expensesTotal)}</td></tr>
-      <tr><td style="padding: 4px 8px; border: 1px solid #000;">سلف العمال</td><td style="padding: 4px 8px; border: 1px solid #000; text-align: left; color: #dc2626; font-weight: bold;">${formatCurrency(s.advancesTotal)}</td></tr>
+      <tr><td style="padding: 4px 8px; border: 1px solid #000;">سلف الموظفين</td><td style="padding: 4px 8px; border: 1px solid #000; text-align: left; color: #dc2626; font-weight: bold;">${formatCurrency(s.advancesTotal)}</td></tr>
       ${s.productionTotal > 0 ? `<tr><td style="padding: 4px 8px; border: 1px solid #000;">إنتاج بالقطعة</td><td style="padding: 4px 8px; border: 1px solid #000; text-align: left; color: #4f46e5; font-weight: bold;">${formatCurrency(s.productionTotal)}</td></tr>` : ''}
       <tr style="background: ${s.netProfit >= 0 ? '#dcfce7' : '#fee2e2'};">
         <td style="padding: 8px; border: 2px solid #000; font-weight: bold; font-size: 14px;">صافي الربح</td>
@@ -131,7 +131,7 @@ export function buildPrintText(data: ReportData, from: string, to: string): stri
 المبيعات:     ${formatCurrency(s.salesTotal)}
 المشتريات:    ${formatCurrency(s.purchasesTotal)}
 المصاريف:     ${formatCurrency(s.expensesTotal)}
-سلف العمال:   ${formatCurrency(s.advancesTotal)}
+سلف الموظفين:   ${formatCurrency(s.advancesTotal)}
 ${s.productionTotal > 0 ? `الإنتاج:      ${formatCurrency(s.productionTotal)}\n` : ''}----------------------------
 صافي الربح:   ${formatCurrency(s.netProfit)}
 ----------------------------

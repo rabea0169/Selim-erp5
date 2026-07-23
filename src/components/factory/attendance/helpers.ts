@@ -5,6 +5,12 @@ export interface Worker {
   name: string
   job: string | null
   type: string
+  // إعدادات الساعات (للنوع hourly و monthly)
+  workStartTime?: string | null
+  workHoursPerDay?: number | null
+  hourlyRate?: number | null
+  overtimeRate?: number | null
+  monthlySalary?: number | null
 }
 
 export interface Attendance {
@@ -16,6 +22,10 @@ export interface Attendance {
   status: string
   notes: string | null
   worker: Worker
+  // حقول محسوبة (تُخزن عند الحفظ)
+  workHours?: number | null
+  overtimeHours?: number | null
+  lateMinutes?: number | null
 }
 
 /**

@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
     // التحقق من البيانات
     if (!workerId) {
       return NextResponse.json(
-        { error: 'العامل مطلوب' },
+        { error: 'الموظف مطلوب' },
         { status: 400 }
       )
     }
@@ -60,11 +60,11 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // التحقق من وجود العامل
+    // التحقق من وجود الموظف
     const worker = await db.worker.findUnique({ where: { id: workerId } })
     if (!worker) {
       return NextResponse.json(
-        { error: 'العامل غير موجود' },
+        { error: 'الموظف غير موجود' },
         { status: 404 }
       )
     }
@@ -80,7 +80,7 @@ export async function POST(req: NextRequest) {
     const dayEnd = new Date(dayStart)
     dayEnd.setDate(dayEnd.getDate() + 1)
 
-    // البحث عن سجل موجود لنفس العامل في نفس اليوم
+    // البحث عن سجل موجود لنفس الموظف في نفس اليوم
     const existing = await db.workerAttendance.findFirst({
       where: {
         workerId,

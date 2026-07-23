@@ -64,7 +64,7 @@ export function ProductionView({ onBack }: { onBack: () => void }) {
   const [to, setTo] = useState('')
   const { toast } = useToast()
 
-  // تحميل الإنتاج + العمال مع التحديث الفوري
+  // تحميل الإنتاج + الموظفين مع التحديث الفوري
   const { data: loadedData, loading, reload } = useLiveData<{
     productions: Production[]
     workers: Worker[]
@@ -168,7 +168,7 @@ export function ProductionView({ onBack }: { onBack: () => void }) {
         <div className="relative">
           <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <Input
-            placeholder="بحث برقم الموديل أو اسم العامل..."
+            placeholder="بحث برقم الموديل أو اسم الموظف..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pr-9 bg-slate-50 border-slate-200"
@@ -206,7 +206,7 @@ export function ProductionView({ onBack }: { onBack: () => void }) {
         <div className="bg-white rounded-xl p-8 text-center border border-slate-100">
           <Scissors className="w-10 h-10 text-slate-300 mx-auto mb-2" />
           <p className="text-sm text-slate-500">لا يوجد إنتاج مسجل</p>
-          <p className="text-xs text-slate-400">ابدأ بتسجيل إنتاج عامل</p>
+          <p className="text-xs text-slate-400">ابدأ بتسجيل إنتاج موظف</p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -282,7 +282,7 @@ function ProductionForm({
 
   const save = async () => {
     if (!workerId) {
-      toast({ title: 'تنبيه', description: 'اختر العامل', variant: 'destructive' })
+      toast({ title: 'تنبيه', description: 'اختر الموظف', variant: 'destructive' })
       return
     }
     if (!modelName.trim() || !quantity || !unitPrice) {
@@ -323,10 +323,10 @@ function ProductionForm({
         </DialogHeader>
         <div className="space-y-3">
           <div>
-            <Label className="text-xs">العامل *</Label>
+            <Label className="text-xs">الموظف *</Label>
             <Select value={workerId} onValueChange={setWorkerId}>
               <SelectTrigger className="bg-slate-50">
-                <SelectValue placeholder="اختر العامل" />
+                <SelectValue placeholder="اختر الموظف" />
               </SelectTrigger>
               <SelectContent>
                 {workers.map((w) => (

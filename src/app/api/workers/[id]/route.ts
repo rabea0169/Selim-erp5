@@ -9,16 +9,16 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
     if (!name?.trim()) {
       return NextResponse.json(
-        { error: 'اسم العامل مطلوب' },
+        { error: 'اسم الموظف مطلوب' },
         { status: 400 }
       )
     }
 
-    // التحقق من وجود العامل
+    // التحقق من وجود الموظف
     const existing = await db.worker.findUnique({ where: { id } })
     if (!existing) {
       return NextResponse.json(
-        { error: 'العامل غير موجود' },
+        { error: 'الموظف غير موجود' },
         { status: 404 }
       )
     }
@@ -45,16 +45,16 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   try {
     const { id } = await params
 
-    // التحقق من وجود العامل
+    // التحقق من وجود الموظف
     const existing = await db.worker.findUnique({ where: { id } })
     if (!existing) {
       return NextResponse.json(
-        { error: 'العامل غير موجود' },
+        { error: 'الموظف غير موجود' },
         { status: 404 }
       )
     }
 
-    // حذف العامل - سيتم حذف كل السجلات المرتبطة تلقائياً (Cascade)
+    // حذف الموظف - سيتم حذف كل السجلات المرتبطة تلقائياً (Cascade)
     await db.worker.delete({ where: { id } })
     return NextResponse.json({ success: true })
   } catch (e: any) {

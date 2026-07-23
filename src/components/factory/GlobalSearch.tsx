@@ -30,7 +30,7 @@ const TYPE_TO_TAB: Record<SearchResult['type'], string> = {
 const TYPE_LABEL: Record<SearchResult['type'], string> = {
   sale: 'مبيعة',
   purchase: 'مشتريات',
-  worker: 'عامل',
+  worker: 'موظف',
   customer: 'عميل',
   supplier: 'مورد',
   expense: 'مصروف',
@@ -184,7 +184,7 @@ export function GlobalSearch({ onNavigate, showTrigger = true, className }: Glob
           <DialogHeader className="sr-only">
             <DialogTitle>البحث الشامل</DialogTitle>
             <DialogDescription>
-              ابحث في كل المبيعات والمشتريات والعمال والعملاء والموردين والمصاريف
+              ابحث في كل المبيعات والمشتريات والموظفين والعملاء والموردين والمصاريف
             </DialogDescription>
           </DialogHeader>
 
@@ -196,7 +196,7 @@ export function GlobalSearch({ onNavigate, showTrigger = true, className }: Glob
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="ابحث عن فاتورة، عامل، عميل، مصروف..."
+              placeholder="ابحث عن فاتورة، موظف، عميل، مصروف..."
               className="border-0 shadow-none focus-visible:ring-0 bg-transparent h-9 text-sm"
             />
             {loading && <Loader2 className="w-4 h-4 animate-spin text-slate-400 shrink-0" />}
@@ -233,7 +233,7 @@ export function GlobalSearch({ onNavigate, showTrigger = true, className }: Glob
               <EmptyState
                 icon="🔍"
                 title="ابحث في كل بيانات المصنع"
-                hint="جرّب: اسم عميل، رقم فاتورة، عامل، أو نوع مصروف"
+                hint="جرّب: اسم عميل، رقم فاتورة، موظف، أو نوع مصروف"
               />
             ) : loading ? (
               <div className="p-8 text-center text-sm text-slate-500 flex flex-col items-center gap-2">

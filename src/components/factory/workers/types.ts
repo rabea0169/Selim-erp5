@@ -1,4 +1,4 @@
-// أنواع مشتركة لقسم العمال
+// أنواع مشتركة لقسم الموظفين
 
 import type { WorkerAdvance, WorkerReceipt } from '@/lib/db'
 

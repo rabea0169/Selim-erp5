@@ -5,10 +5,13 @@ import {
   LogOut,
   Trash2,
   Pencil,
+  Clock,
+  AlertCircle,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { timeFromISO, type Worker, type Attendance } from './helpers'
+import { calculateAttendance, formatHours, formatMinutes } from '@/lib/attendance-calc'
 
 interface AttendanceCardProps {
   worker: Worker
@@ -20,7 +23,8 @@ interface AttendanceCardProps {
 }
 
 /**
- * بطاقة عامل مع أزرار الحضور/الانصراف والغياب/الإجازة والحذف
+ * بطاقة موظف مع أزرار الحضور/الانصراف والغياب/الإجازة والحذف
+ * تعرض الساعات المحسوبة والإضافي والتأخير لما يكون فيه checkIn و checkOut
  */
 export function AttendanceCard({
   worker,
@@ -33,6 +37,26 @@ export function AttendanceCard({
   const isCheckedIn = !!record?.checkIn
   const isCheckedOut = !!record?.checkOut
 
+  // حساب الساعات لو فيه checkIn و checkOut
+  let workHours: number | null = null
+  let overtimeHours: number | null = null
+  let lateMinutes: number | null = null
+
+  if (record?.checkIn && record?.checkOut && record.status === 'present') {
+    // استخدام القيم المخزنة لو موجودة، غير كذلك احسبها لحظياً
+    if (record.workHours != null) {
+      workHours = record.workHours
+      overtimeHours = record.overtimeHours ?? 0
+      lateMinutes = record.lateMinutes ?? 0
+    } else {
+      // حساب لحظي من checkIn و checkOut باستخدام بيانات الموظف
+      const calc = calculateAttendance(record as any, worker as any)
+      workHours = calc.workHours
+      overtimeHours = calc.overtimeHours
+      lateMinutes = calc.lateMinutes
+    }
+  }
+
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-3">
       <div className="flex items-center justify-between mb-2">
@@ -42,7 +66,7 @@ export function AttendanceCard({
           </div>
           <div>
             <p className="font-bold text-slate-800 text-sm">{worker.name}</p>
-            <p className="text-[10px] text-slate-500">{worker.job || 'عامل'}</p>
+            <p className="text-[10px] text-slate-500">{worker.job || 'موظف'}</p>
           </div>
         </div>
         {record && (
@@ -93,6 +117,43 @@ export function AttendanceCard({
             </div>
             <Pencil className="w-3 h-3 text-blue-500" />
           </button>
+        </div>
+      )}
+
+      {/* عرض الساعات المحسوبة لما يكون فيه checkIn و checkOut */}
+      {workHours != null && (
+        <div className="grid grid-cols-3 gap-1.5 mb-2 text-[11px]">
+          <div className="bg-slate-50 rounded-lg p-1.5 text-center border border-slate-100">
+            <p className="text-[9px] text-slate-500 flex items-center justify-center gap-0.5">
+              <Clock className="w-2.5 h-2.5" />
+              ساعات العمل
+            </p>
+            <p className="font-bold text-slate-800 text-[11px]">
+              {formatHours(workHours)}
+            </p>
+          </div>
+          {(overtimeHours ?? 0) > 0 && (
+            <div className="bg-amber-50 rounded-lg p-1.5 text-center border border-amber-100">
+              <p className="text-[9px] text-amber-700 flex items-center justify-center gap-0.5">
+                <Clock className="w-2.5 h-2.5" />
+                إضافي
+              </p>
+              <p className="font-bold text-amber-900 text-[11px]">
+                {formatHours(overtimeHours ?? 0)}
+              </p>
+            </div>
+          )}
+          {(lateMinutes ?? 0) > 0 && (
+            <div className="bg-rose-50 rounded-lg p-1.5 text-center border border-rose-100">
+              <p className="text-[9px] text-rose-700 flex items-center justify-center gap-0.5">
+                <AlertCircle className="w-2.5 h-2.5" />
+                تأخير
+              </p>
+              <p className="font-bold text-rose-900 text-[11px]">
+                {formatMinutes(lateMinutes ?? 0)}
+              </p>
+            </div>
+          )}
         </div>
       )}
 

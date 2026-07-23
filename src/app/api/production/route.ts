@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
     // التحقق من البيانات
     if (!workerId) {
       return NextResponse.json(
-        { error: 'العامل مطلوب' },
+        { error: 'الموظف مطلوب' },
         { status: 400 }
       )
     }
@@ -71,11 +71,11 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // التحقق من وجود العامل
+    // التحقق من وجود الموظف
     const worker = await db.worker.findUnique({ where: { id: workerId } })
     if (!worker) {
       return NextResponse.json(
-        { error: 'العامل غير موجود' },
+        { error: 'الموظف غير موجود' },
         { status: 404 }
       )
     }

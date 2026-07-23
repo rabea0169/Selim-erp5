@@ -75,7 +75,7 @@ export function BackupRestore({ open, onOpenChange }: { open: boolean; onOpenCha
       const result = await reportRepository.importAll(confirmRestore)
       toast({
         title: 'تم الاسترجاع',
-        description: `تم استرجاع البيانات بنجاح (${result.counts.workers} عامل، ${result.counts.customers} عميل، ${result.counts.sales} مبيعة)`,
+        description: `تم استرجاع البيانات بنجاح (${result.counts.workers} موظف، ${result.counts.customers} عميل، ${result.counts.sales} مبيعة)`,
       })
       setConfirmRestore(null)
       onOpenChange(false)
@@ -199,7 +199,7 @@ export function BackupRestore({ open, onOpenChange }: { open: boolean; onOpenCha
               <p className="text-slate-700">سيتم استبدال البيانات الحالية ببيانات الملف التالي:</p>
               <div className="bg-slate-50 rounded-lg p-3 space-y-1 text-xs">
                 <Row label="تاريخ النسخة" value={confirmRestore?.exportedAt ? new Date(confirmRestore.exportedAt).toLocaleString('ar-EG') : '-'} />
-                <Row label="العمال" value={confirmRestore?.data?.workers?.length || 0} />
+                <Row label="الموظفين" value={confirmRestore?.data?.workers?.length || 0} />
                 <Row label="العملاء" value={confirmRestore?.data?.customers?.length || 0} />
                 <Row label="الموردين" value={confirmRestore?.data?.suppliers?.length || 0} />
                 <Row label="المبيعات" value={confirmRestore?.data?.sales?.length || 0} />

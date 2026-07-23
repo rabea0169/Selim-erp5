@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
     // التحقق من البيانات
     if (!name?.trim()) {
       return NextResponse.json(
-        { error: 'اسم العامل مطلوب' },
+        { error: 'اسم الموظف مطلوب' },
         { status: 400 }
       )
     }

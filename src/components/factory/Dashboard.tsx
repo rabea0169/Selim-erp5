@@ -77,7 +77,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
       tab: 'expenses' as TabKey,
     },
     {
-      label: 'سلف العمال',
+      label: 'سلف الموظفين',
       value: monthData.summary.advancesTotal,
       icon: Users,
       color: 'from-purple-500 to-violet-600',

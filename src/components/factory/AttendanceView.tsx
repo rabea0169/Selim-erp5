@@ -35,7 +35,7 @@ export function AttendanceView({ onBack }: { onBack: () => void }) {
   const [date, setDate] = useState(todayStr())
   const { toast } = useToast()
 
-  // تحميل العمال + سجلات الحضور مع التحديث الفوري
+  // تحميل الموظفين + سجلات الحضور مع التحديث الفوري
   const { data: loadedData, loading, reload } = useLiveData<{
     workers: Worker[]
     records: Attendance[]
@@ -49,6 +49,11 @@ export function AttendanceView({ onBack }: { onBack: () => void }) {
       name: w.name,
       job: w.job ?? null,
       type: w.type,
+      workStartTime: w.workStartTime ?? null,
+      workHoursPerDay: w.workHoursPerDay ?? null,
+      hourlyRate: w.hourlyRate ?? null,
+      overtimeRate: w.overtimeRate ?? null,
+      monthlySalary: w.monthlySalary ?? null,
     }))
     const workerMap = new Map(workersList.map((w) => [w.id, w]))
     const recs: Attendance[] = attendanceData
@@ -64,6 +69,9 @@ export function AttendanceView({ onBack }: { onBack: () => void }) {
           status: a.status,
           notes: a.notes ?? null,
           worker: w,
+          workHours: a.workHours ?? null,
+          overtimeHours: a.overtimeHours ?? null,
+          lateMinutes: a.lateMinutes ?? null,
         } as Attendance
       })
       .filter((x): x is Attendance => x !== null)
@@ -217,7 +225,7 @@ export function AttendanceView({ onBack }: { onBack: () => void }) {
           </Button>
           <div>
             <h2 className="text-xl font-bold text-slate-800">الحضور والانصراف</h2>
-            <p className="text-xs text-slate-500">تسجيل حضور وانصراف العمال يومياً</p>
+            <p className="text-xs text-slate-500">تسجيل حضور وانصراف الموظفين يومياً</p>
           </div>
         </div>
       </div>
@@ -264,8 +272,8 @@ export function AttendanceView({ onBack }: { onBack: () => void }) {
       ) : workers.length === 0 ? (
         <div className="bg-white rounded-xl p-8 text-center border border-slate-100">
           <Users className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-          <p className="text-sm text-slate-500">لا يوجد عمال مسجلين</p>
-          <p className="text-xs text-slate-400">أضف عمالاً من قسم العمال أولاً</p>
+          <p className="text-sm text-slate-500">لا يوجد موظفين مسجلين</p>
+          <p className="text-xs text-slate-400">أضف موظفين من قسم الموظفين أولاً</p>
         </div>
       ) : (
         <div className="space-y-2">

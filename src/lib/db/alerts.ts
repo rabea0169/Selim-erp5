@@ -46,7 +46,7 @@ class AlertsService {
           id: 'absent-workers',
           type: 'info',
           title: 'حضور اليوم',
-          message: `${absentWorkers} عامل لم يتم تسجيل حضورهم اليوم`,
+          message: `${absentWorkers} موظف لم يتم تسجيل حضورهم اليوم`,
           icon: '⏰',
           actionLabel: 'تسجيل الحضور',
           actionType: 'navigate',

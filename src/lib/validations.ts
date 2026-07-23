@@ -29,10 +29,10 @@ export const purchaseSchema = z.object({
 })
 
 export const workerSchema = z.object({
-  name: z.string().min(1, 'اسم العامل مطلوب'),
+  name: z.string().min(1, 'اسم الموظف مطلوب'),
   phone: z.string().optional().nullable(),
   job: z.string().optional().nullable(),
-  type: z.enum(['monthly', 'production']),
+  type: z.enum(['monthly', 'production', 'hourly']),
   notes: z.string().optional().nullable(),
 })
 
@@ -58,7 +58,7 @@ export const expenseSchema = z.object({
 })
 
 export const productionSchema = z.object({
-  workerId: z.string().min(1, 'العامل مطلوب'),
+  workerId: z.string().min(1, 'الموظف مطلوب'),
   date: z.string().min(1, 'التاريخ مطلوب'),
   modelName: z.string().min(1, 'اسم الموديل مطلوب'),
   quantity: z.number().positive('الكمية يجب أن تكون موجبة'),
@@ -67,7 +67,7 @@ export const productionSchema = z.object({
 })
 
 export const workerAdvanceSchema = z.object({
-  workerId: z.string().min(1, 'العامل مطلوب'),
+  workerId: z.string().min(1, 'الموظف مطلوب'),
   amount: z.number().positive('المبلغ يجب أن يكون موجباً'),
   date: z.string().min(1, 'التاريخ مطلوب'),
   notes: z.string().optional().nullable(),

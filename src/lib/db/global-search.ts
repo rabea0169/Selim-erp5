@@ -61,13 +61,13 @@ class GlobalSearchService {
         })
       }
 
-      // العمال
+      // الموظفين
       for (const w of workers.slice(0, 5)) {
         results.push({
           type: 'worker',
           id: w.id,
           title: w.name,
-          subtitle: w.job || 'عامل',
+          subtitle: w.job || 'موظف',
           icon: '👷',
         })
       }

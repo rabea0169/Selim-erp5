@@ -58,11 +58,11 @@ export function WorkerCard({ worker, onChanged }: WorkerCardProps) {
   }
 
   const handleDeleteWorker = async () => {
-    if (!confirm(`حذف العامل ${worker.name} وكل سجلاته؟`)) return
+    if (!confirm(`حذف الموظف ${worker.name} وكل سجلاته؟`)) return
     try {
       await workerRepository.deleteWithRelations(worker.id)
       dataChangeEmitter.notifyDelete('workers')
-      toast({ title: 'تم حذف العامل' })
+      toast({ title: 'تم حذف الموظف' })
     } catch {
       toast({ title: 'خطأ', variant: 'destructive' })
     }
@@ -150,7 +150,7 @@ export function WorkerCard({ worker, onChanged }: WorkerCardProps) {
             className="w-full bg-gradient-to-r from-purple-500 to-violet-600 hover:from-purple-600 hover:to-violet-700 text-white h-8 text-xs"
           >
             <FileText className="w-3.5 h-3.5 ml-1" />
-            تقرير العامل الكامل (PDF + واتساب)
+            تقرير الموظف الكامل (PDF + واتساب)
           </Button>
 
           {/* Advances history */}
@@ -229,7 +229,7 @@ export function WorkerCard({ worker, onChanged }: WorkerCardProps) {
             className="text-rose-600 hover:bg-rose-50 w-full text-xs"
           >
             <Trash2 className="w-3.5 h-3.5 ml-1" />
-            حذف العامل
+            حذف الموظف
           </Button>
         </div>
       )}

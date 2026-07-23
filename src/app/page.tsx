@@ -44,7 +44,7 @@ const TABS: { key: TabKey; label: string; icon: any }[] = [
   { key: 'dashboard', label: 'الرئيسية', icon: LayoutDashboard },
   { key: 'sales', label: 'المبيعات', icon: ShoppingCart },
   { key: 'purchases', label: 'المشتريات', icon: Package },
-  { key: 'workers', label: 'العمال', icon: Users },
+  { key: 'workers', label: 'الموظفين', icon: Users },
   { key: 'expenses', label: 'المصاريف', icon: Wallet },
   { key: 'reports', label: 'التقارير', icon: FileText },
 ]

@@ -71,7 +71,7 @@ class WorkerRepository extends BaseRepository<Worker> {
     return result
   }
 
-  // حذف العامل مع كل السجلات المرتبطة (cascade)
+  // حذف الموظف مع كل السجلات المرتبطة (cascade)
   async deleteWithRelations(workerId: string): Promise<void> {
     const db = await getDB()
     const tx = db.transaction(
@@ -95,7 +95,7 @@ class WorkerRepository extends BaseRepository<Worker> {
     const production = await tx.objectStore('production').index('by-worker').getAllKeys(workerId)
     await Promise.all(production.map((k) => tx.objectStore('production').delete(k)))
 
-    // حذف العامل
+    // حذف الموظف
     await tx.objectStore('workers').delete(workerId)
 
     await tx.done

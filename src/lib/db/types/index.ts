@@ -36,10 +36,32 @@ export interface Worker {
   name: string
   phone?: string
   job?: string
-  type: 'monthly' | 'production'
+  type: 'monthly' | 'production' | 'hourly'
   notes?: string
+  // إعدادات الموظف بالساعة
+  hourlyRate?: number          // سعر الساعة العادية
+  overtimeRate?: number        // سعر الساعة الإضافية
+  workStartTime?: string       // وقت بدء العمل (HH:MM)
+  workHoursPerDay?: number     // عدد ساعات العمل اليومية المطلوبة
+  // إعدادات المرتب الشهري
+  monthlySalary?: number       // المرتب الشهري (للنوع monthly)
   createdAt: string
   updatedAt: string
+}
+
+export interface WorkerAttendance {
+  id: string
+  workerId: string
+  date: string
+  checkIn?: string
+  checkOut?: string
+  status: 'present' | 'absent' | 'leave'
+  notes?: string
+  // حقول محسوبة
+  workHours?: number           // إجمالي ساعات العمل
+  overtimeHours?: number       // ساعات إضافية
+  lateMinutes?: number         // دقائق التأخير
+  createdAt: string
 }
 
 export interface WorkerAdvance {
@@ -56,17 +78,6 @@ export interface WorkerReceipt {
   workerId: string
   amount: number
   date: string
-  notes?: string
-  createdAt: string
-}
-
-export interface WorkerAttendance {
-  id: string
-  workerId: string
-  date: string
-  checkIn?: string
-  checkOut?: string
-  status: 'present' | 'absent' | 'leave'
   notes?: string
   createdAt: string
 }

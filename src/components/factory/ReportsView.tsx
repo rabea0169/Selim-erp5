@@ -31,14 +31,14 @@ import { ReportSummary } from './reports/ReportSummary'
 import { ExportButtons } from './reports/ExportButtons'
 import { ReportTabs } from './reports/ReportTabs'
 
-// تحميل التقرير الشامل + أسماء العمال
+// تحميل التقرير الشامل + أسماء الموظفين
 async function fetchReport(from: string, to: string): Promise<ReportData> {
   const [res, workers] = await Promise.all([
     reportRepository.getFullReport(from || undefined, to || undefined),
     workerRepository.getAll(),
   ])
   const workerMap = new Map(workers.map((w) => [w.id, w]))
-  // إرفاق اسم العامل بسجلات السلف والقبض والإنتاج والحضور لعرضها في القوائم
+  // إرفاق اسم الموظف بسجلات السلف والقبض والإنتاج والحضور لعرضها في القوائم
   const withWorker = <T extends { workerId: string }>(arr: T[]): (T & { worker?: { id: string; name: string } })[] =>
     arr.map((x) => ({
       ...x,

@@ -1,5 +1,6 @@
 'use client'
 
+import { Clock, AlertCircle, TrendingUp } from 'lucide-react'
 import {
   Tabs,
   TabsContent,
@@ -7,6 +8,7 @@ import {
   TabsTrigger,
 } from '@/components/ui/tabs'
 import { formatCurrency } from '@/lib/format'
+import { formatHours, formatMinutes } from '@/lib/attendance-calc'
 import type { ReportData } from '@/lib/db'
 import { TransactionList } from './TransactionList'
 
@@ -14,17 +16,64 @@ interface ReportTabsProps {
   data: ReportData
 }
 
+interface WorkerHoursAgg {
+  workerId: string
+  workerName: string
+  totalWorkHours: number
+  totalOvertimeHours: number
+  totalLateMinutes: number
+  presentDays: number
+}
+
 /**
- * تبويبات التقرير: ملخص / مبيعات / مشتريات / عمال / مصاريف
+ * تجميع ساعات العمل لكل موظف من سجلات الحضور
+ */
+function aggregateWorkerHours(data: ReportData): WorkerHoursAgg[] {
+  const map = new Map<string, WorkerHoursAgg>()
+
+  for (const a of data.attendance || []) {
+    if (a.status !== 'present') continue
+    const workerId = a.workerId
+    const workerName = (a as any).worker?.name || 'موظف محذوف'
+
+    if (!map.has(workerId)) {
+      map.set(workerId, {
+        workerId,
+        workerName,
+        totalWorkHours: 0,
+        totalOvertimeHours: 0,
+        totalLateMinutes: 0,
+        presentDays: 0,
+      })
+    }
+
+    const agg = map.get(workerId)!
+    // استخدام القيم المخزنة لو موجودة
+    agg.totalWorkHours += a.workHours || 0
+    agg.totalOvertimeHours += a.overtimeHours || 0
+    agg.totalLateMinutes += a.lateMinutes || 0
+    agg.presentDays += 1
+  }
+
+  return Array.from(map.values()).sort((a, b) => b.totalWorkHours - a.totalWorkHours)
+}
+
+/**
+ * تبويبات التقرير: ملخص / مبيعات / مشتريات / موظفين / مصاريف
  */
 export function ReportTabs({ data }: ReportTabsProps) {
+  const workerHours = aggregateWorkerHours(data)
+  const totalHours = workerHours.reduce((s, w) => s + w.totalWorkHours, 0)
+  const totalOvertime = workerHours.reduce((s, w) => s + w.totalOvertimeHours, 0)
+  const totalLate = workerHours.reduce((s, w) => s + w.totalLateMinutes, 0)
+
   return (
     <Tabs defaultValue="summary" dir="rtl">
       <TabsList className="grid grid-cols-5 w-full bg-slate-100 h-9">
         <TabsTrigger value="summary" className="text-[11px]">ملخص</TabsTrigger>
         <TabsTrigger value="sales" className="text-[11px]">المبيعات</TabsTrigger>
         <TabsTrigger value="purchases" className="text-[11px]">المشتريات</TabsTrigger>
-        <TabsTrigger value="workers" className="text-[11px]">العمال</TabsTrigger>
+        <TabsTrigger value="workers" className="text-[11px]">الموظفين</TabsTrigger>
         <TabsTrigger value="expenses" className="text-[11px]">المصاريف</TabsTrigger>
       </TabsList>
 
@@ -42,8 +91,8 @@ export function ReportTabs({ data }: ReportTabsProps) {
             <Row label="متبقي للموردين" value={formatCurrency(data.summary.purchasesRemaining)} color="rose" />
             <div className="h-px bg-slate-100 my-1" />
             <Row label="إجمالي المصاريف" value={formatCurrency(data.summary.expensesTotal)} color="rose" />
-            <Row label="سلف العمال" value={formatCurrency(data.summary.advancesTotal)} color="purple" />
-            <Row label="قبض العمال" value={formatCurrency(data.summary.receiptsTotal)} color="emerald" />
+            <Row label="سلف الموظفين" value={formatCurrency(data.summary.advancesTotal)} color="purple" />
+            <Row label="قبض الموظفين" value={formatCurrency(data.summary.receiptsTotal)} color="emerald" />
             <div className="h-px bg-slate-200 my-1" />
             <div className="flex items-center justify-between p-2 bg-slate-50 rounded-lg">
               <span className="text-sm font-bold text-slate-800">صافي الربح</span>
@@ -149,8 +198,79 @@ export function ReportTabs({ data }: ReportTabsProps) {
         />
       </TabsContent>
 
-      {/* Workers tab */}
+      {/* Workers tab - الموظفين */}
       <TabsContent value="workers" className="mt-3 space-y-3">
+        {/* ملخص الساعات لكل الموظفين */}
+        {workerHours.length > 0 && (
+          <>
+            {/* بطاقات الإجمالي */}
+            <div className="grid grid-cols-3 gap-2">
+              <div className="bg-blue-50 rounded-xl p-3 border border-blue-100 text-center">
+                <Clock className="w-4 h-4 text-blue-600 mx-auto mb-1" />
+                <p className="text-[10px] text-blue-700">إجمالي ساعات العمل</p>
+                <p className="text-sm font-bold text-blue-900">{formatHours(totalHours)}</p>
+              </div>
+              <div className="bg-amber-50 rounded-xl p-3 border border-amber-100 text-center">
+                <TrendingUp className="w-4 h-4 text-amber-600 mx-auto mb-1" />
+                <p className="text-[10px] text-amber-700">إجمالي الإضافي</p>
+                <p className="text-sm font-bold text-amber-900">{formatHours(totalOvertime)}</p>
+              </div>
+              <div className="bg-rose-50 rounded-xl p-3 border border-rose-100 text-center">
+                <AlertCircle className="w-4 h-4 text-rose-600 mx-auto mb-1" />
+                <p className="text-[10px] text-rose-700">إجمالي التأخير</p>
+                <p className="text-sm font-bold text-rose-900">{formatMinutes(totalLate)}</p>
+              </div>
+            </div>
+
+            {/* جدول تفصيلي لكل موظف */}
+            <div className="bg-white rounded-xl p-3 shadow-sm border border-slate-100">
+              <p className="text-xs font-bold text-slate-700 mb-2 flex items-center gap-1">
+                <Clock className="w-3.5 h-3.5" />
+                ساعات العمل لكل موظف
+              </p>
+              <div className="space-y-1">
+                {workerHours.map((w) => (
+                  <div
+                    key={w.workerId}
+                    className="border border-slate-100 rounded-lg p-2 hover:bg-slate-50 transition-colors"
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-full bg-gradient-to-br from-purple-500 to-violet-600 flex items-center justify-center text-white font-bold text-[10px]">
+                          {w.workerName.charAt(0)}
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold text-slate-800">{w.workerName}</p>
+                          <p className="text-[10px] text-slate-500">{w.presentDays} يوم حضور</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1.5 text-[11px]">
+                      <div className="bg-blue-50 rounded p-1.5 text-center">
+                        <p className="text-[9px] text-blue-700">ساعات العمل</p>
+                        <p className="font-bold text-blue-900">{formatHours(w.totalWorkHours)}</p>
+                      </div>
+                      <div className="bg-amber-50 rounded p-1.5 text-center">
+                        <p className="text-[9px] text-amber-700">إضافي</p>
+                        <p className={`font-bold ${w.totalOvertimeHours > 0 ? 'text-amber-900' : 'text-slate-400'}`}>
+                          {w.totalOvertimeHours > 0 ? formatHours(w.totalOvertimeHours) : '-'}
+                        </p>
+                      </div>
+                      <div className="bg-rose-50 rounded p-1.5 text-center">
+                        <p className="text-[9px] text-rose-700">تأخير</p>
+                        <p className={`font-bold ${w.totalLateMinutes > 0 ? 'text-rose-900' : 'text-slate-400'}`}>
+                          {w.totalLateMinutes > 0 ? formatMinutes(w.totalLateMinutes) : '-'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* قوائم السلف والقبض */}
         <div>
           <p className="text-xs font-bold text-rose-700 mb-2">السلف</p>
           <TransactionList
