@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
+import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
 
 export const metadata: Metadata = {
   title: "نظام إدارة مصنع الملابس",
@@ -43,6 +44,7 @@ export default function RootLayout({
       >
         {children}
         <Toaster />
+        <ServiceWorkerRegister />
       </body>
     </html>
   );
