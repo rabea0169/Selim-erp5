@@ -1,25 +1,66 @@
 {
   "name": "نظام إدارة مصنع الملابس",
   "short_name": "مصنع الملابس",
-  "description": "تطبيق إدارة مبيعات ومشتريات ومصاريف مصنع ملابس جاهزة",
+  "description": "تطبيق إدارة مبيعات ومشتريات ومصاريف وسلف وقبض العمال بمصنع الملابس الجاهزة",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "portrait",
   "background_color": "#ffffff",
   "theme_color": "#10b981",
-  "orientation": "portrait",
   "dir": "rtl",
   "lang": "ar",
   "categories": ["business", "productivity", "finance"],
   "icons": [
     {
-      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='40' fill='%2310b981'/%3E%3Ctext x='96' y='130' font-size='100' text-anchor='middle' fill='white'%3E%F0%9F%91%95%3C/text%3E%3C/svg%3E",
-      "sizes": "192x192",
-      "type": "image/svg+xml"
+      "src": "/favicon.png",
+      "sizes": "32x32",
+      "type": "image/png"
     },
     {
-      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='100' fill='%2310b981'/%3E%3Ctext x='256' y='340' font-size='260' text-anchor='middle' fill='white'%3E%F0%9F%91%95%3C/text%3E%3C/svg%3E",
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
       "sizes": "512x512",
-      "type": "image/svg+xml"
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-192-maskable.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "المبيعات",
+      "short_name": "مبيعات",
+      "description": "فتح صفحة المبيعات",
+      "url": "/?tab=sales"
+    },
+    {
+      "name": "العمال",
+      "short_name": "عمال",
+      "description": "فتح صفحة العمال",
+      "url": "/?tab=workers"
+    },
+    {
+      "name": "التقارير",
+      "short_name": "تقارير",
+      "description": "فتح صفحة التقارير",
+      "url": "/?tab=reports"
     }
   ]
 }

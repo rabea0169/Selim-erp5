@@ -22,6 +22,7 @@ import { ReportsView } from '@/components/factory/ReportsView'
 import { BackupRestore } from '@/components/factory/BackupRestore'
 import { AuthScreen } from '@/components/factory/AuthScreen'
 import { PrintSettingsDialog } from '@/components/factory/PrintSettingsDialog'
+import { InstallPrompt } from '@/components/factory/InstallPrompt'
 
 export type TabKey =
   | 'dashboard'
@@ -192,6 +193,7 @@ export default function Home() {
 
       <BackupRestore open={backupOpen} onOpenChange={setBackupOpen} />
       <PrintSettingsDialog open={printOpen} onOpenChange={setPrintOpen} />
+      <InstallPrompt />
     </div>
   )
 }
