@@ -1,5 +1,26 @@
 // أنواع البيانات لقاعدة البيانات المحلية
 
+export interface FactorySettings {
+  id: string // دائماً 'singleton'
+  factoryName: string
+  factoryNameEn?: string
+  slogan?: string
+  phone?: string
+  whatsapp?: string
+  email?: string
+  address?: string
+  taxNumber?: string
+  commercialRegister?: string
+  logo?: string // base64 data URL
+  currency: string
+  // إعدادات الفواتير
+  invoicePrefix?: string
+  invoiceFooter?: string
+  // إعدادات الطباعة
+  defaultPaperSize?: string
+  updatedAt: string
+}
+
 export interface User {
   id: string
   username: string
@@ -145,6 +166,7 @@ export interface Expense {
 
 // كل الجداول في قاعدة البيانات
 export type TableName =
+  | 'factorySettings'
   | 'users'
   | 'workers'
   | 'workerAdvances'
@@ -161,6 +183,7 @@ export type TableName =
   | 'expenses'
 
 export interface DatabaseSchema {
+  factorySettings: FactorySettings
   users: User
   workers: Worker
   workerAdvances: WorkerAdvance

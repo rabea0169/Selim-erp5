@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   FileText,
   TrendingUp,
@@ -9,8 +9,6 @@ import {
   Users,
   Calendar,
   Download,
-  Receipt,
-  Printer,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -24,108 +22,92 @@ import {
 } from '@/components/ui/tabs'
 import { useToast } from '@/hooks/use-toast'
 import { formatCurrency, formatDate, todayStr, startOfMonth } from '@/lib/format'
-import { reportRepository, workerRepository, type ReportData } from '@/lib/db'
+import {
+  reportRepository,
+  workerRepository,
+  useLiveData,
+  type ReportData,
+  type FactorySettings,
+} from '@/lib/db'
+import {
+  getFactorySettings,
+  buildFactoryHeader,
+  buildFactoryFooter,
+} from '@/lib/factory-header'
+import { exportToWord } from '@/lib/word-export'
+import {
+  buildPrintHtml,
+  buildPrintText,
+  buildReportContentHtml,
+} from './reports/ReportPrintHelpers'
+import { SummaryCard } from './reports/SummaryCard'
+import { TransactionList } from './reports/TransactionList'
 
-// بناء HTML للطباعة
-function buildPrintHtml(data: ReportData, from: string, to: string): string {
-  const s = data.summary
-  const catRows = Object.entries(data.expensesByCategory || {})
-    .sort((a, b) => b[1] - a[1])
-    .map(
-      ([name, amount]) =>
-        `<tr><td style="padding: 4px 8px; border: 1px solid #000;">${name}</td><td style="padding: 4px 8px; border: 1px solid #000; text-align: left; font-weight: bold;">${formatCurrency(amount)}</td></tr>`
-    )
-    .join('')
-
-  return `
-    <div style="text-align: center; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 12px;">
-      <h1 style="margin: 0; font-size: 18px;">تقرير مصنع الملابس الشامل</h1>
-      <p style="margin: 4px 0 0; font-size: 11px;">الفترة: ${formatDate(from)} إلى ${formatDate(to)}</p>
-    </div>
-    <table style="width: 100%; border-collapse: collapse; margin-bottom: 12px;">
-      <tr style="background: #f0f0f0;">
-        <th style="padding: 6px; border: 1px solid #000; text-align: right;">البند</th>
-        <th style="padding: 6px; border: 1px solid #000; text-align: left;">القيمة</th>
-      </tr>
-      <tr><td style="padding: 4px 8px; border: 1px solid #000;">إجمالي المبيعات</td><td style="padding: 4px 8px; border: 1px solid #000; text-align: left; color: #059669; font-weight: bold;">${formatCurrency(s.salesTotal)}</td></tr>
-      <tr><td style="padding: 4px 8px; border: 1px solid #000;">إجمالي المشتريات</td><td style="padding: 4px 8px; border: 1px solid #000; text-align: left; color: #d97706; font-weight: bold;">${formatCurrency(s.purchasesTotal)}</td></tr>
-      <tr><td style="padding: 4px 8px; border: 1px solid #000;">إجمالي المصاريف</td><td style="padding: 4px 8px; border: 1px solid #000; text-align: left; color: #dc2626; font-weight: bold;">${formatCurrency(s.expensesTotal)}</td></tr>
-      <tr><td style="padding: 4px 8px; border: 1px solid #000;">سلف العمال</td><td style="padding: 4px 8px; border: 1px solid #000; text-align: left; color: #dc2626; font-weight: bold;">${formatCurrency(s.advancesTotal)}</td></tr>
-      ${s.productionTotal > 0 ? `<tr><td style="padding: 4px 8px; border: 1px solid #000;">إنتاج بالقطعة</td><td style="padding: 4px 8px; border: 1px solid #000; text-align: left; color: #4f46e5; font-weight: bold;">${formatCurrency(s.productionTotal)}</td></tr>` : ''}
-      <tr style="background: ${s.netProfit >= 0 ? '#dcfce7' : '#fee2e2'};">
-        <td style="padding: 8px; border: 2px solid #000; font-weight: bold; font-size: 14px;">صافي الربح</td>
-        <td style="padding: 8px; border: 2px solid #000; text-align: left; font-weight: bold; font-size: 14px; color: ${s.netProfit >= 0 ? '#059669' : '#dc2626'};">${formatCurrency(s.netProfit)}</td>
-      </tr>
-    </table>
-    ${catRows ? `
-    <h3 style="font-size: 13px; margin: 12px 0 6px;">المصاريف حسب البند</h3>
-    <table style="width: 100%; border-collapse: collapse;">
-      <thead><tr style="background: #fee2e2;"><th style="padding: 6px; border: 1px solid #000;">البند</th><th style="padding: 6px; border: 1px solid #000;">المبلغ</th></tr></thead>
-      <tbody>${catRows}</tbody>
-    </table>` : ''}
-    <div style="margin-top: 16px; padding-top: 8px; border-top: 1px dashed #000; text-align: center; font-size: 10px; color: #666;">
-      تم إنشاء التقرير: ${new Date().toLocaleString('ar-EG')}
-    </div>
-  `
-}
-
-function buildPrintText(data: ReportData, from: string, to: string): string {
-  const s = data.summary
-  return `تقرير مصنع الملابس
-الفترة: ${formatDate(from)} إلى ${formatDate(to)}
-----------------------------
-المبيعات:     ${formatCurrency(s.salesTotal)}
-المشتريات:    ${formatCurrency(s.purchasesTotal)}
-المصاريف:     ${formatCurrency(s.expensesTotal)}
-سلف العمال:   ${formatCurrency(s.advancesTotal)}
-${s.productionTotal > 0 ? `الإنتاج:      ${formatCurrency(s.productionTotal)}\n` : ''}----------------------------
-صافي الربح:   ${formatCurrency(s.netProfit)}
-----------------------------
-${new Date().toLocaleString('ar-EG')}`
+// تحميل التقرير الشامل + أسماء العمال
+async function fetchReport(from: string, to: string): Promise<ReportData> {
+  const [res, workers] = await Promise.all([
+    reportRepository.getFullReport(from || undefined, to || undefined),
+    workerRepository.getAll(),
+  ])
+  const workerMap = new Map(workers.map((w) => [w.id, w]))
+  // إرفاق اسم العامل بسجلات السلف والقبض والإنتاج والحضور لعرضها في القوائم
+  const withWorker = <T extends { workerId: string }>(arr: T[]): (T & { worker?: { id: string; name: string } })[] =>
+    arr.map((x) => ({
+      ...x,
+      worker: workerMap.get(x.workerId)
+        ? { id: workerMap.get(x.workerId)!.id, name: workerMap.get(x.workerId)!.name }
+        : undefined,
+    }))
+  const enriched: ReportData = {
+    ...res,
+    advances: withWorker(res.advances) as any,
+    receipts: withWorker(res.receipts) as any,
+    productions: withWorker(res.productions) as any,
+    attendance: withWorker(res.attendance) as any,
+  }
+  return enriched
 }
 
 export function ReportsView() {
   const [from, setFrom] = useState(startOfMonth())
   const [to, setTo] = useState(todayStr())
-  const [data, setData] = useState<ReportData | null>(null)
-  const [loading, setLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [exportingWord, setExportingWord] = useState(false)
+  const [printHtml, setPrintHtml] = useState('')
+  const [factorySettings, setFactorySettings] = useState<FactorySettings | null>(null)
   const { toast } = useToast()
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    try {
-      const [res, workers] = await Promise.all([
-        reportRepository.getFullReport(from || undefined, to || undefined),
-        workerRepository.getAll(),
-      ])
-      const workerMap = new Map(workers.map((w) => [w.id, w]))
-      // إرفاق اسم العامل بسجلات السلف والقبض والإنتاج والحضور لعرضها في القوائم
-      const withWorker = <T extends { workerId: string }>(arr: T[]): (T & { worker?: { id: string; name: string } })[] =>
-        arr.map((x) => ({
-          ...x,
-          worker: workerMap.get(x.workerId)
-            ? { id: workerMap.get(x.workerId)!.id, name: workerMap.get(x.workerId)!.name }
-            : undefined,
-        }))
-      const enriched: ReportData = {
-        ...res,
-        advances: withWorker(res.advances) as any,
-        receipts: withWorker(res.receipts) as any,
-        productions: withWorker(res.productions) as any,
-        attendance: withWorker(res.attendance) as any,
-      }
-      setData(enriched)
-    } catch {
-      toast({ title: 'خطأ', description: 'فشل تحميل التقرير', variant: 'destructive' })
-    } finally {
-      setLoading(false)
-    }
-  }, [from, to, toast])
+  // تحميل التقرير مع التحديث الفوري عند تغير أي بيانات
+  const { data, loading, reload } = useLiveData<ReportData>(
+    () => fetchReport(from, to),
+    ['sales', 'purchases', 'expenses', 'workerAdvances', 'workerReceipts', 'production', 'workers']
+  )
 
+  // إعادة التحميل عند تغير التاريخ
   useEffect(() => {
-    Promise.resolve().then(() => load())
-  }, [load])
+    reload()
+  }, [from, to, reload])
+
+  // تحضير HTML للطباعة + جلب إعدادات المصنع عند تغير البيانات
+  useEffect(() => {
+    let cancelled = false
+    async function prepare() {
+      if (!data) return
+      try {
+        const settings = await getFactorySettings()
+        if (!cancelled) {
+          setFactorySettings(settings)
+          setPrintHtml(buildPrintHtml(data, from, to, settings))
+        }
+      } catch (e) {
+        console.error(e)
+      }
+    }
+    prepare()
+    return () => {
+      cancelled = true
+    }
+  }, [data, from, to])
 
   const setPreset = (preset: 'today' | 'week' | 'month' | 'year') => {
     const now = new Date()
@@ -153,59 +135,12 @@ export function ReportsView() {
       const { exportElementToPDF, shareViaWhatsApp, createReportContainer, cleanupContainer } =
         await import('@/lib/pdf-export')
 
-      const s = data.summary
-      const catRows = Object.entries(data.expensesByCategory || {})
-        .sort((a, b) => b[1] - a[1])
-        .map(
-          ([name, amount]) =>
-            `<tr><td style="padding:5px;border:1px solid #e2e8f0;">${name}</td><td style="padding:5px;border:1px solid #e2e8f0;text-align:left;font-weight:bold;color:#dc2626;">${formatCurrency(amount)}</td></tr>`
-        )
-        .join('')
+      const settings = await getFactorySettings()
+      const header = buildFactoryHeader(settings)
+      const footer = buildFactoryFooter(settings)
 
-      const topItemRows = (data.topItems || [])
-        .map(
-          (it, i) =>
-            `<tr><td style="padding:5px;border:1px solid #e2e8f0;text-align:center;">${i + 1}</td><td style="padding:5px;border:1px solid #e2e8f0;">${it.name}</td><td style="padding:5px;border:1px solid #e2e8f0;text-align:center;">${it.qty}</td><td style="padding:5px;border:1px solid #e2e8f0;text-align:left;font-weight:bold;color:#059669;">${formatCurrency(it.total)}</td></tr>`
-        )
-        .join('')
-
-      const contentHtml = `
-        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:20px;">
-          <div style="padding:16px;background:${s.netProfit >= 0 ? '#f0fdf4' : '#fef2f2'};border-radius:8px;text-align:center;">
-            <p style="margin:0;font-size:12px;color:${s.netProfit >= 0 ? '#047857' : '#991b1b'};">صافي الربح للفترة</p>
-            <p style="margin:6px 0 0;font-size:22px;font-weight:bold;color:${s.netProfit >= 0 ? '#065f46' : '#7f1d1d'};">${formatCurrency(s.netProfit)}</p>
-            <p style="margin:4px 0 0;font-size:10px;color:#64748b;">${from ? formatDate(from) : 'البداية'} إلى ${to ? formatDate(to) : 'اليوم'}</p>
-          </div>
-          <div style="padding:16px;background:#f8fafc;border-radius:8px;">
-            <p style="margin:0 0 8px;font-size:12px;color:#475569;font-weight:bold;">ملخص العمليات</p>
-            <div style="font-size:11px;line-height:1.8;">
-              <div style="display:flex;justify-content:space-between;"><span>المبيعات:</span><span style="color:#059669;font-weight:bold;">${formatCurrency(s.salesTotal)}</span></div>
-              <div style="display:flex;justify-content:space-between;"><span>المشتريات:</span><span style="color:#d97706;font-weight:bold;">${formatCurrency(s.purchasesTotal)}</span></div>
-              <div style="display:flex;justify-content:space-between;"><span>المصاريف:</span><span style="color:#dc2626;font-weight:bold;">${formatCurrency(s.expensesTotal)}</span></div>
-              <div style="display:flex;justify-content:space-between;"><span>سلف العمال:</span><span style="color:#dc2626;font-weight:bold;">${formatCurrency(s.advancesTotal)}</span></div>
-              ${s.productionTotal > 0 ? `<div style="display:flex;justify-content:space-between;"><span>إنتاج بالقطعة:</span><span style="color:#4f46e5;font-weight:bold;">${formatCurrency(s.productionTotal)}</span></div>` : ''}
-            </div>
-          </div>
-        </div>
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:20px;">
-          <div style="padding:10px;background:#ecfdf5;border-radius:6px;text-align:center;"><p style="margin:0;font-size:10px;color:#047857;">مبيعات</p><p style="margin:3px 0 0;font-size:13px;font-weight:bold;color:#065f46;">${formatCurrency(s.salesTotal)}</p></div>
-          <div style="padding:10px;background:#fffbeb;border-radius:6px;text-align:center;"><p style="margin:0;font-size:10px;color:#92400e;">مشتريات</p><p style="margin:3px 0 0;font-size:13px;font-weight:bold;color:#78350f;">${formatCurrency(s.purchasesTotal)}</p></div>
-          <div style="padding:10px;background:#fef2f2;border-radius:6px;text-align:center;"><p style="margin:0;font-size:10px;color:#991b1b;">مصاريف</p><p style="margin:3px 0 0;font-size:13px;font-weight:bold;color:#7f1d1d;">${formatCurrency(s.expensesTotal)}</p></div>
-          <div style="padding:10px;background:#f5f3ff;border-radius:6px;text-align:center;"><p style="margin:0;font-size:10px;color:#5b21b6;">سلف</p><p style="margin:3px 0 0;font-size:13px;font-weight:bold;color:#4c1d95;">${formatCurrency(s.advancesTotal)}</p></div>
-        </div>
-        ${catRows ? `
-        <h3 style="color:#1e293b;margin:16px 0 8px;">المصاريف حسب البند</h3>
-        <table style="width:100%;border-collapse:collapse;font-size:11px;">
-          <thead><tr style="background:#fef2f2;"><th style="padding:6px;border:1px solid #e2e8f0;">البند</th><th style="padding:6px;border:1px solid #e2e8f0;">المبلغ</th></tr></thead>
-          <tbody>${catRows}</tbody>
-        </table>` : ''}
-        ${topItemRows ? `
-        <h3 style="color:#1e293b;margin:16px 0 8px;">أكثر الأصناف مبيعاً</h3>
-        <table style="width:100%;border-collapse:collapse;font-size:11px;">
-          <thead><tr style="background:#f0fdf4;"><th style="padding:6px;border:1px solid #e2e8f0;">#</th><th style="padding:6px;border:1px solid #e2e8f0;">الصنف</th><th style="padding:6px;border:1px solid #e2e8f0;">الكمية</th><th style="padding:6px;border:1px solid #e2e8f0;">الإجمالي</th></tr></thead>
-          <tbody>${topItemRows}</tbody>
-        </table>` : ''}
-      `
+      // محتوى التقرير + ترويسة وتذييل المصنع
+      const contentHtml = `${header}${buildReportContentHtml(data, from, to)}${footer}`
 
       const container = createReportContainer('التقرير الشامل للمصنع', contentHtml)
       await new Promise((r) => setTimeout(r, 100))
@@ -213,11 +148,31 @@ export function ReportsView() {
       cleanupContainer(container)
 
       toast({ title: 'تم', description: 'تم إنشاء PDF - جارٍ المشاركة عبر الواتساب' })
-      await shareViaWhatsApp(file, `تقرير المصنع الشامل\nالفترة: ${formatDate(from)} إلى ${formatDate(to)}\nصافي الربح: ${formatCurrency(s.netProfit)}`)
+      await shareViaWhatsApp(file, `تقرير المصنع الشامل\nالفترة: ${formatDate(from)} إلى ${formatDate(to)}\nصافي الربح: ${formatCurrency(data.summary.netProfit)}`)
     } catch (e: any) {
       toast({ title: 'خطأ', description: e.message, variant: 'destructive' })
     } finally {
       setExporting(false)
+    }
+  }
+
+  const exportWord = async () => {
+    if (!data) return
+    setExportingWord(true)
+    try {
+      const settings = await getFactorySettings()
+      const content = buildReportContentHtml(data, from, to)
+      exportToWord({
+        title: 'التقرير الشامل للمصنع',
+        factorySettings: settings,
+        content,
+        fileName: `تقرير-شامل-${from}-إلى-${to}`,
+      })
+      toast({ title: 'تم', description: 'تم تصدير التقرير بصيغة Word' })
+    } catch (e: any) {
+      toast({ title: 'خطأ', description: e.message, variant: 'destructive' })
+    } finally {
+      setExportingWord(false)
     }
   }
 
@@ -298,7 +253,7 @@ export function ReportsView() {
 
         <div className="flex gap-2">
           <Button
-            onClick={load}
+            onClick={reload}
             disabled={loading}
             className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
             size="sm"
@@ -327,9 +282,18 @@ export function ReportsView() {
           {exporting ? 'جارٍ التصدير...' : 'تصدير PDF ومشاركة واتساب'}
         </Button>
 
-        {data && (
+        <Button
+          onClick={exportWord}
+          disabled={exportingWord || !data}
+          className="w-full bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white"
+          size="sm"
+        >
+          📄 {exportingWord ? 'جارٍ التصدير...' : 'تصدير Word'}
+        </Button>
+
+        {data && printHtml && (
           <PrintButton
-            contentHtml={buildPrintHtml(data, from, to)}
+            contentHtml={printHtml}
             title="التقرير الشامل"
             plainText={buildPrintText(data, from, to)}
             variant="outline"
@@ -582,38 +546,6 @@ export function ReportsView() {
   )
 }
 
-function SummaryCard({
-  label,
-  value,
-  icon: Icon,
-  color,
-  count,
-}: {
-  label: string
-  value: number
-  icon: any
-  color: 'emerald' | 'rose' | 'amber' | 'purple' | 'blue'
-  count: number
-}) {
-  const colors: Record<string, string> = {
-    emerald: 'bg-emerald-50 text-emerald-700 border-emerald-100',
-    rose: 'bg-rose-50 text-rose-700 border-rose-100',
-    amber: 'bg-amber-50 text-amber-700 border-amber-100',
-    purple: 'bg-purple-50 text-purple-700 border-purple-100',
-    blue: 'bg-blue-50 text-blue-700 border-blue-100',
-  }
-  return (
-    <div className={`rounded-xl p-3 border ${colors[color]}`}>
-      <div className="flex items-center justify-between mb-1">
-        <p className="text-[10px] font-medium opacity-80">{label}</p>
-        <Icon className="w-3.5 h-3.5 opacity-70" />
-      </div>
-      <p className="text-sm font-bold">{formatCurrency(value)}</p>
-      <p className="text-[10px] opacity-60 mt-0.5">{count} عملية</p>
-    </div>
-  )
-}
-
 function Row({
   label,
   value,
@@ -634,73 +566,6 @@ function Row({
     <div className="flex items-center justify-between text-xs py-1">
       <span className="text-slate-600">{label}</span>
       <span className={`font-bold ${colors[color]}`}>{value}</span>
-    </div>
-  )
-}
-
-function TransactionList({
-  items,
-  empty,
-  titleKey,
-  amountKey,
-  dateKey,
-  color,
-  extra,
-}: {
-  items: any[]
-  empty: string
-  titleKey: string | ((item: any) => string)
-  amountKey: string
-  dateKey: string
-  color: 'emerald' | 'rose' | 'amber' | 'purple' | 'blue'
-  extra?: (item: any) => React.ReactNode
-}) {
-  const colors: Record<string, string> = {
-    emerald: 'text-emerald-700',
-    rose: 'text-rose-700',
-    amber: 'text-amber-700',
-    purple: 'text-purple-700',
-    blue: 'text-blue-700',
-  }
-
-  if (items.length === 0) {
-    return (
-      <div className="bg-white rounded-xl p-6 text-center border border-slate-100">
-        <Receipt className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-        <p className="text-xs text-slate-500">{empty}</p>
-      </div>
-    )
-  }
-
-  return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
-      <div className="max-h-96 overflow-y-auto">
-        {items.map((item, i) => {
-          const title = typeof titleKey === 'function' ? titleKey(item) : item[titleKey]
-          const amount = item[amountKey]
-          const date = item[dateKey]
-          return (
-            <div
-              key={item.id || i}
-              className="flex items-center justify-between p-3 border-b border-slate-50 last:border-0"
-            >
-              <div className="flex-1">
-                <p className="text-sm font-medium text-slate-800">{title}</p>
-                <div className="flex items-center gap-2 mt-0.5">
-                  <span className="flex items-center gap-1 text-[10px] text-slate-500">
-                    <Calendar className="w-2.5 h-2.5" />
-                    {formatDate(date)}
-                  </span>
-                  {extra && extra(item)}
-                </div>
-              </div>
-              <p className={`text-sm font-bold ${colors[color]}`}>
-                {formatCurrency(amount)}
-              </p>
-            </div>
-          )
-        })}
-      </div>
     </div>
   )
 }

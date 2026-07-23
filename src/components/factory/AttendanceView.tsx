@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Calendar,
   Clock,
@@ -34,7 +34,13 @@ import {
 } from '@/components/ui/select'
 import { useToast } from '@/hooks/use-toast'
 import { todayStr, formatDate } from '@/lib/format'
-import { workerRepository, workerAttendanceRepository, type WorkerAttendance } from '@/lib/db'
+import {
+  workerRepository,
+  workerAttendanceRepository,
+  dataChangeEmitter,
+  useLiveData,
+  type WorkerAttendance,
+} from '@/lib/db'
 
 interface Worker {
   id: string
@@ -76,11 +82,51 @@ function combineDateTime(dateStr: string, timeStr: string): string {
 }
 
 export function AttendanceView({ onBack }: { onBack: () => void }) {
-  const [workers, setWorkers] = useState<Worker[]>([])
-  const [records, setRecords] = useState<Attendance[]>([])
-  const [loading, setLoading] = useState(true)
   const [date, setDate] = useState(todayStr())
   const { toast } = useToast()
+
+  // تحميل العمال + سجلات الحضور مع التحديث الفوري
+  const { data: loadedData, loading, reload } = useLiveData<{
+    workers: Worker[]
+    records: Attendance[]
+  }>(async () => {
+    const [workersData, attendanceData] = await Promise.all([
+      workerRepository.getAll(),
+      workerAttendanceRepository.getByDate(date),
+    ])
+    const workersList: Worker[] = workersData.map((w) => ({
+      id: w.id,
+      name: w.name,
+      job: w.job ?? null,
+      type: w.type,
+    }))
+    const workerMap = new Map(workersList.map((w) => [w.id, w]))
+    const recs: Attendance[] = attendanceData
+      .map((a) => {
+        const w = workerMap.get(a.workerId)
+        if (!w) return null
+        return {
+          id: a.id,
+          workerId: a.workerId,
+          date: a.date,
+          checkIn: a.checkIn ?? null,
+          checkOut: a.checkOut ?? null,
+          status: a.status,
+          notes: a.notes ?? null,
+          worker: w,
+        } as Attendance
+      })
+      .filter((x): x is Attendance => x !== null)
+    return { workers: workersList, records: recs }
+  }, ['workers', 'workerAttendance'])
+
+  // إعادة التحميل عند تغير التاريخ
+  useEffect(() => {
+    reload()
+  }, [date, reload])
+
+  const workers = loadedData?.workers || []
+  const records = loadedData?.records || []
 
   // حالة نافذة اختيار الوقت
   const [timeDialog, setTimeDialog] = useState<{
@@ -114,49 +160,6 @@ export function AttendanceView({ onBack }: { onBack: () => void }) {
     status: 'absent',
     notes: '',
   })
-
-  const load = useCallback(async () => {
-    setLoading(true)
-    try {
-      const [workersData, attendanceData] = await Promise.all([
-        workerRepository.getAll(),
-        workerAttendanceRepository.getByDate(date),
-      ])
-      const workersList: Worker[] = workersData.map((w) => ({
-        id: w.id,
-        name: w.name,
-        job: w.job ?? null,
-        type: w.type,
-      }))
-      const workerMap = new Map(workersList.map((w) => [w.id, w]))
-      const recs: Attendance[] = attendanceData
-        .map((a) => {
-          const w = workerMap.get(a.workerId)
-          if (!w) return null
-          return {
-            id: a.id,
-            workerId: a.workerId,
-            date: a.date,
-            checkIn: a.checkIn ?? null,
-            checkOut: a.checkOut ?? null,
-            status: a.status,
-            notes: a.notes ?? null,
-            worker: w,
-          } as Attendance
-        })
-        .filter((x): x is Attendance => x !== null)
-      setWorkers(workersList)
-      setRecords(recs)
-    } catch {
-      toast({ title: 'خطأ', description: 'فشل تحميل البيانات', variant: 'destructive' })
-    } finally {
-      setLoading(false)
-    }
-  }, [date, toast])
-
-  useEffect(() => {
-    Promise.resolve().then(() => load())
-  }, [load])
 
   // فتح نافذة اختيار وقت الحضور
   const openCheckInDialog = (worker: Worker) => {
@@ -210,12 +213,12 @@ export function AttendanceView({ onBack }: { onBack: () => void }) {
 
     try {
       await workerAttendanceRepository.upsert(payload)
+      dataChangeEmitter.notifyUpdate('workerAttendance')
       toast({
         title: 'تم',
         description: type === 'checkIn' ? 'تم تسجيل الحضور' : 'تم تسجيل الانصراف',
       })
       setTimeDialog({ ...timeDialog, open: false })
-      load()
     } catch (e: any) {
       toast({ title: 'خطأ', description: e.message, variant: 'destructive' })
     }
@@ -231,9 +234,9 @@ export function AttendanceView({ onBack }: { onBack: () => void }) {
         status,
         notes: notes || undefined,
       })
+      dataChangeEmitter.notifyUpdate('workerAttendance')
       toast({ title: 'تم', description: status === 'absent' ? 'تم تسجيل الغياب' : 'تم تسجيل الإجازة' })
       setStatusDialog({ ...statusDialog, open: false })
-      load()
     } catch (e: any) {
       toast({ title: 'خطأ', description: e.message, variant: 'destructive' })
     }
@@ -243,8 +246,8 @@ export function AttendanceView({ onBack }: { onBack: () => void }) {
     if (!confirm('حذف هذا السجل؟')) return
     try {
       await workerAttendanceRepository.delete(id)
+      dataChangeEmitter.notifyDelete('workerAttendance')
       toast({ title: 'تم الحذف' })
-      load()
     } catch {
       toast({ title: 'خطأ', variant: 'destructive' })
     }

@@ -1,4 +1,5 @@
 export * from './base'
+export * from './factory-settings'
 export * from './users'
 export * from './workers'
 export * from './worker-advances'

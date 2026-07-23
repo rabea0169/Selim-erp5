@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Plus,
   Trash2,
@@ -28,7 +28,16 @@ import {
 import { useToast } from '@/hooks/use-toast'
 import { formatCurrency, formatDate, todayStr, startOfMonth } from '@/lib/format'
 import { pickContactFromPhone, isContactsPickerSupported } from '@/lib/contacts'
-import { customerRepository } from '@/lib/db'
+import {
+  customerRepository,
+  dataChangeEmitter,
+  useLiveData,
+} from '@/lib/db'
+import {
+  getFactorySettings,
+  buildFactoryHeader,
+  buildFactoryFooter,
+} from '@/lib/factory-header'
 
 interface Customer {
   id: string
@@ -42,43 +51,44 @@ interface Customer {
   salesCount: number
 }
 
+// جلب العملاء مع الإحصائيات (يدعم البحث)
+async function fetchCustomers(search: string): Promise<Customer[]> {
+  const data = search
+    ? await customerRepository.search(search)
+    : await customerRepository.getAllWithStats()
+  return data as Customer[]
+}
+
 export function CustomersView({ onBack }: { onBack: () => void }) {
-  const [customers, setCustomers] = useState<Customer[]>([])
-  const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [open, setOpen] = useState(false)
   const [editCustomer, setEditCustomer] = useState<Customer | null>(null)
   const [reportCustomer, setReportCustomer] = useState<Customer | null>(null)
   const { toast } = useToast()
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    try {
-      const data = search
-        ? await customerRepository.search(search)
-        : await customerRepository.getAllWithStats()
-      setCustomers(data as Customer[])
-    } catch {
-      toast({ title: 'خطأ', description: 'فشل تحميل العملاء', variant: 'destructive' })
-    } finally {
-      setLoading(false)
-    }
-  }, [search, toast])
+  // تحميل العملاء مع التحديث الفوري
+  const { data: customers, loading, reload } = useLiveData<Customer[]>(
+    () => fetchCustomers(search),
+    ['customers', 'sales']
+  )
 
+  // إعادة التحميل عند تغير البحث
   useEffect(() => {
-    load()
-  }, [load])
+    reload()
+  }, [search, reload])
 
   const handleDelete = async (id: string) => {
     if (!confirm('حذف هذا العميل؟')) return
     try {
       await customerRepository.delete(id)
+      dataChangeEmitter.notifyDelete('customers')
       toast({ title: 'تم الحذف' })
-      load()
     } catch {
       toast({ title: 'خطأ', variant: 'destructive' })
     }
   }
+
+  const customersList = customers || []
 
   return (
     <div className="space-y-4">
@@ -123,14 +133,14 @@ export function CustomersView({ onBack }: { onBack: () => void }) {
             <div key={i} className="h-20 bg-slate-200 rounded-xl animate-pulse" />
           ))}
         </div>
-      ) : customers.length === 0 ? (
+      ) : customersList.length === 0 ? (
         <div className="bg-white rounded-xl p-8 text-center border border-slate-100">
           <Users className="w-10 h-10 text-slate-300 mx-auto mb-2" />
           <p className="text-sm text-slate-500">لا يوجد عملاء مسجلين</p>
         </div>
       ) : (
         <div className="space-y-2">
-          {customers.map((c) => (
+          {customersList.map((c) => (
             <div
               key={c.id}
               className="bg-white rounded-xl shadow-sm border border-slate-100 p-3"
@@ -212,10 +222,7 @@ export function CustomersView({ onBack }: { onBack: () => void }) {
         open={open}
         onOpenChange={setOpen}
         customer={editCustomer}
-        onSaved={() => {
-          setOpen(false)
-          load()
-        }}
+        onSaved={() => setOpen(false)}
       />
       {reportCustomer && (
         <CustomerReport
@@ -287,9 +294,11 @@ function CustomerForm({
       const payload = { name, phone: phone || undefined, address: address || undefined, notes: notes || undefined }
       if (customer) {
         await customerRepository.update(customer.id, payload)
+        dataChangeEmitter.notifyUpdate('customers')
         toast({ title: 'تم', description: 'تم التحديث' })
       } else {
         await customerRepository.create(payload)
+        dataChangeEmitter.notifyCreate('customers')
         toast({ title: 'تم', description: 'تمت الإضافة' })
       }
       onSaved()
@@ -364,51 +373,36 @@ function CustomerReport({
 }) {
   const [from, setFrom] = useState(startOfMonth())
   const [to, setTo] = useState(todayStr())
-  const [data, setData] = useState<any>(null)
-  const [loading, setLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
   const { toast } = useToast()
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    try {
-      const stats = await customerRepository.getWithStats(customer.id)
-      if (!stats) {
-        setData(null)
-        return
-      }
-      const fromTime = from ? new Date(from).getTime() : 0
-      const toTime = to ? new Date(to).getTime() + 24 * 60 * 60 * 1000 - 1 : Date.now()
-      const filteredSales = stats.sales.filter((s) => {
-        const t = new Date(s.date).getTime()
-        return t >= fromTime && t <= toTime
-      })
-      const totalSales = filteredSales.reduce((sum, s) => sum + s.total, 0)
-      const totalPaid = filteredSales.reduce((sum, s) => sum + s.paid, 0)
-      setData({
-        ...stats,
-        sales: filteredSales,
+  // جلب إحصائيات العميل مع التحديث الفوري
+  const { data, loading, reload } = useLiveData<any>(async () => {
+    const stats = await customerRepository.getWithStats(customer.id)
+    if (!stats) return null
+    const fromTime = from ? new Date(from).getTime() : 0
+    const toTime = to ? new Date(to).getTime() + 24 * 60 * 60 * 1000 - 1 : Date.now()
+    const filteredSales = stats.sales.filter((s) => {
+      const t = new Date(s.date).getTime()
+      return t >= fromTime && t <= toTime
+    })
+    const totalSales = filteredSales.reduce((sum, s) => sum + s.total, 0)
+    const totalPaid = filteredSales.reduce((sum, s) => sum + s.paid, 0)
+    return {
+      ...stats,
+      sales: filteredSales,
+      totalSales,
+      totalPaid,
+      totalRemaining: totalSales - totalPaid,
+      salesCount: filteredSales.length,
+      summary: {
+        salesCount: filteredSales.length,
         totalSales,
         totalPaid,
         totalRemaining: totalSales - totalPaid,
-        salesCount: filteredSales.length,
-        summary: {
-          salesCount: filteredSales.length,
-          totalSales,
-          totalPaid,
-          totalRemaining: totalSales - totalPaid,
-        },
-      })
-    } catch {
-      toast({ title: 'خطأ', description: 'فشل تحميل التقرير', variant: 'destructive' })
-    } finally {
-      setLoading(false)
+      },
     }
-  }, [customer.id, from, to, toast])
-
-  useEffect(() => {
-    Promise.resolve().then(() => load())
-  }, [load])
+  }, ['sales'])
 
   const exportPDF = async () => {
     if (!data) return
@@ -416,6 +410,10 @@ function CustomerReport({
     try {
       const { exportElementToPDF, shareViaWhatsApp, createReportContainer, cleanupContainer } =
         await import('@/lib/pdf-export')
+
+      const settings = await getFactorySettings()
+      const header = buildFactoryHeader(settings)
+      const footer = buildFactoryFooter(settings)
 
       const salesRows = (data.sales || [])
         .map(
@@ -432,6 +430,7 @@ function CustomerReport({
         .join('')
 
       const contentHtml = `
+        ${header}
         <div style="margin-bottom: 20px; padding: 16px; background: #f0fdf4; border-radius: 8px;">
           <h2 style="margin: 0 0 8px; color: #1e293b;">بيانات العميل</h2>
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 13px;">
@@ -475,6 +474,7 @@ function CustomerReport({
             ${salesRows || '<tr><td colspan="6" style="padding: 12px; text-align: center; color: #94a3b8;">لا توجد فواتير في هذه الفترة</td></tr>'}
           </tbody>
         </table>
+        ${footer}
       `
 
       const container = createReportContainer(`تقرير العميل: ${customer.name}`, contentHtml)
@@ -511,7 +511,7 @@ function CustomerReport({
               <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="bg-slate-50 text-sm" />
             </div>
           </div>
-          <Button onClick={load} disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700 text-white" size="sm">
+          <Button onClick={reload} disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700 text-white" size="sm">
             {loading ? 'جارٍ التحميل...' : 'عرض التقرير'}
           </Button>
 
@@ -568,4 +568,3 @@ function CustomerReport({
     </Dialog>
   )
 }
-

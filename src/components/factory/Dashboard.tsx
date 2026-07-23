@@ -1,6 +1,5 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import {
   TrendingUp,
   TrendingDown,
@@ -13,43 +12,35 @@ import {
 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { formatCurrency, todayStr, startOfMonth } from '@/lib/format'
-import { reportRepository, type ReportData } from '@/lib/db'
+import { reportRepository, useLiveData, type ReportData } from '@/lib/db'
 import type { TabKey } from '@/app/page'
 
 interface DashboardProps {
   onNavigate: (t: TabKey) => void
 }
 
+interface DashboardReports {
+  todayData: ReportData
+  monthData: ReportData
+}
+
 export function Dashboard({ onNavigate }: DashboardProps) {
-  const [todayData, setTodayData] = useState<ReportData | null>(null)
-  const [monthData, setMonthData] = useState<ReportData | null>(null)
-  const [loading, setLoading] = useState(true)
+  const today = todayStr()
+  const start = startOfMonth()
 
-  useEffect(() => {
-    let mounted = true
-    async function load() {
-      const today = todayStr()
-      const start = startOfMonth()
-      try {
-        const [todayReport, monthReport] = await Promise.all([
-          reportRepository.getFullReport(today, today),
-          reportRepository.getFullReport(start, today),
-        ])
-        if (mounted) {
-          setTodayData(todayReport)
-          setMonthData(monthReport)
-        }
-      } catch (e) {
-        console.error(e)
-      } finally {
-        if (mounted) setLoading(false)
-      }
-    }
-    load()
-    return () => { mounted = false }
-  }, [])
+  // جلب تقرير اليوم + تقرير الشهر مع التحديث الفوري
+  const { data, loading } = useLiveData<DashboardReports>(async () => {
+    const [todayReport, monthReport] = await Promise.all([
+      reportRepository.getFullReport(today, today),
+      reportRepository.getFullReport(start, today),
+    ])
+    return { todayData: todayReport, monthData: monthReport }
+  }, [
+    'sales', 'purchases', 'expenses', 'workerAdvances', 'workerReceipts',
+    'production', 'workers',
+  ])
 
-  if (loading || !todayData || !monthData) {
+  if (loading || !data) {
     return (
       <div className="space-y-3">
         {[1, 2, 3].map((i) => (
@@ -58,6 +49,8 @@ export function Dashboard({ onNavigate }: DashboardProps) {
       </div>
     )
   }
+
+  const { todayData, monthData } = data
 
   const quickCards = [
     {

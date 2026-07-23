@@ -19,7 +19,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { useToast } from '@/hooks/use-toast'
-import { reportRepository } from '@/lib/db'
+import { reportRepository, dataChangeEmitter } from '@/lib/db'
 
 export function BackupRestore({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
   const [exporting, setExporting] = useState(false)
@@ -79,6 +79,14 @@ export function BackupRestore({ open, onOpenChange }: { open: boolean; onOpenCha
       })
       setConfirmRestore(null)
       onOpenChange(false)
+      // بث تحديث لكل الكيانات حتى تتحدث كل المكونات تلقائياً
+      ;[
+        'sales', 'purchases', 'workers', 'workerAdvances', 'workerReceipts',
+        'workerAttendance', 'production', 'customers', 'suppliers',
+        'expenses', 'expenseCategories', 'factorySettings', 'reports',
+      ].forEach((type) => {
+        dataChangeEmitter.notifyUpdate(type as any)
+      })
       // إعادة تحميل الصفحة
       setTimeout(() => window.location.reload(), 1000)
     } catch (e: any) {

@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useState } from 'react'
 import {
   FileText,
   Download,
@@ -20,44 +20,51 @@ import {
   workerRepository,
   workerAttendanceRepository,
   productionRepository,
+  useLiveData,
 } from '@/lib/db'
+import {
+  getFactorySettings,
+  buildFactoryHeader,
+  buildFactoryFooter,
+} from '@/lib/factory-header'
+import type { WorkerBasic } from './workers/types'
 
-interface Worker {
-  id: string
-  name: string
-  phone: string | null
-  job: string | null
-  type: string
-  notes: string | null
+interface WorkerReportModalProps {
+  worker: WorkerBasic
+  onClose: () => void
 }
 
-export function WorkerReportModal({
-  worker,
-  onClose,
-}: {
-  worker: Worker
-  onClose: () => void
-}) {
+interface WorkerReportData {
+  advances: any[]
+  receipts: any[]
+  productions: any[]
+  attendance: any[]
+  summary: {
+    totalAdvances: number
+    totalReceipts: number
+    balance: number
+    presentDays: number
+    totalProduction: number
+    totalPieces: number
+  }
+}
+
+export function WorkerReportModal({ worker, onClose }: WorkerReportModalProps) {
   const [from, setFrom] = useState(startOfMonth())
   const [to, setTo] = useState(todayStr())
-  const [data, setData] = useState<any>(null)
-  const [loading, setLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
   const { toast } = useToast()
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    try {
+  // جلب بيانات تقرير العامل مع التحديث الفوري
+  const { data, loading, reload } = useLiveData<WorkerReportData | null>(
+    async () => {
       const [stats, attendance, productions] = await Promise.all([
         workerRepository.getWithStats(worker.id),
         workerAttendanceRepository.getByDateRange(from || undefined, to || undefined, worker.id),
         productionRepository.getByDateRange(from || undefined, to || undefined, worker.id),
       ])
 
-      if (!stats) {
-        setData(null)
-        return
-      }
+      if (!stats) return null
 
       // فلترة السلف والقبض حسب النطاق الزمني
       const fromTime = from ? new Date(from).getTime() : 0
@@ -75,7 +82,7 @@ export function WorkerReportModal({
       const totalPieces = productions.reduce((s, p) => s + p.quantity, 0)
       const presentDays = attendance.filter((a) => a.status === 'present').length
 
-      setData({
+      return {
         advances,
         receipts,
         productions,
@@ -88,17 +95,10 @@ export function WorkerReportModal({
           totalProduction,
           totalPieces,
         },
-      })
-    } catch {
-      toast({ title: 'خطأ', description: 'فشل تحميل التقرير', variant: 'destructive' })
-    } finally {
-      setLoading(false)
-    }
-  }, [worker.id, from, to, toast])
-
-  useEffect(() => {
-    Promise.resolve().then(() => load())
-  }, [load])
+      }
+    },
+    ['workerAdvances', 'workerReceipts', 'workerAttendance', 'production']
+  )
 
   const exportPDF = async () => {
     if (!data) return
@@ -106,6 +106,10 @@ export function WorkerReportModal({
     try {
       const { exportElementToPDF, shareViaWhatsApp, createReportContainer, cleanupContainer } =
         await import('@/lib/pdf-export')
+
+      const settings = await getFactorySettings()
+      const header = buildFactoryHeader(settings)
+      const footer = buildFactoryFooter(settings)
 
       const advanceRows = (data.advances || [])
         .map(
@@ -129,6 +133,7 @@ export function WorkerReportModal({
         .join('')
 
       const contentHtml = `
+        ${header}
         <div style="margin-bottom: 20px; padding: 16px; background: #faf5ff; border-radius: 8px;">
           <h2 style="margin: 0 0 8px; color: #1e293b;">بيانات العامل</h2>
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 13px;">
@@ -186,6 +191,7 @@ export function WorkerReportModal({
           <thead><tr style="background: #eef2ff;"><th style="padding:5px;border:1px solid #e2e8f0;">التاريخ</th><th style="padding:5px;border:1px solid #e2e8f0;">الموديل</th><th style="padding:5px;border:1px solid #e2e8f0;">الكمية</th><th style="padding:5px;border:1px solid #e2e8f0;">سعر القطعة</th><th style="padding:5px;border:1px solid #e2e8f0;">الإجمالي</th></tr></thead>
           <tbody>${productionRows}</tbody>
         </table>` : ''}
+        ${footer}
       `
 
       const container = createReportContainer(`تقرير العامل: ${worker.name}`, contentHtml)
@@ -222,7 +228,7 @@ export function WorkerReportModal({
               <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="bg-slate-50 text-sm" />
             </div>
           </div>
-          <Button onClick={load} disabled={loading} className="w-full bg-purple-600 hover:bg-purple-700 text-white" size="sm">
+          <Button onClick={reload} disabled={loading} className="w-full bg-purple-600 hover:bg-purple-700 text-white" size="sm">
             {loading ? 'جارٍ التحميل...' : 'عرض التقرير'}
           </Button>
 

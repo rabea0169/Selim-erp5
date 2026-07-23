@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Plus,
   Trash2,
@@ -31,7 +31,12 @@ import {
 } from '@/components/ui/select'
 import { useToast } from '@/hooks/use-toast'
 import { formatCurrency, formatDate, todayStr } from '@/lib/format'
-import { workerRepository, productionRepository } from '@/lib/db'
+import {
+  workerRepository,
+  productionRepository,
+  dataChangeEmitter,
+  useLiveData,
+} from '@/lib/db'
 
 interface Worker {
   id: string
@@ -53,74 +58,71 @@ interface Production {
 }
 
 export function ProductionView({ onBack }: { onBack: () => void }) {
-  const [productions, setProductions] = useState<Production[]>([])
-  const [workers, setWorkers] = useState<Worker[]>([])
-  const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const { toast } = useToast()
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    try {
-      const [prodsData, workersData] = await Promise.all([
-        productionRepository.getByDateRange(from || undefined, to || undefined),
-        workerRepository.getAll(),
-      ])
-      const workersList: Worker[] = workersData.map((w) => ({
-        id: w.id,
-        name: w.name,
-        job: w.job ?? null,
-        type: w.type,
-      }))
-      const workerMap = new Map(workersList.map((w) => [w.id, w]))
-      let prods: Production[] = prodsData
-        .map((p) => {
-          const w = workerMap.get(p.workerId)
-          if (!w) return null
-          return {
-            id: p.id,
-            workerId: p.workerId,
-            date: p.date,
-            modelName: p.modelName,
-            quantity: p.quantity,
-            unitPrice: p.unitPrice,
-            total: p.total,
-            notes: p.notes ?? null,
-            worker: w,
-          } as Production
-        })
-        .filter((x): x is Production => x !== null)
+  // تحميل الإنتاج + العمال مع التحديث الفوري
+  const { data: loadedData, loading, reload } = useLiveData<{
+    productions: Production[]
+    workers: Worker[]
+  }>(async () => {
+    const [prodsData, workersData] = await Promise.all([
+      productionRepository.getByDateRange(from || undefined, to || undefined),
+      workerRepository.getAll(),
+    ])
+    const workersList: Worker[] = workersData.map((w) => ({
+      id: w.id,
+      name: w.name,
+      job: w.job ?? null,
+      type: w.type,
+    }))
+    const workerMap = new Map(workersList.map((w) => [w.id, w]))
+    let prods: Production[] = prodsData
+      .map((p) => {
+        const w = workerMap.get(p.workerId)
+        if (!w) return null
+        return {
+          id: p.id,
+          workerId: p.workerId,
+          date: p.date,
+          modelName: p.modelName,
+          quantity: p.quantity,
+          unitPrice: p.unitPrice,
+          total: p.total,
+          notes: p.notes ?? null,
+          worker: w,
+        } as Production
+      })
+      .filter((x): x is Production => x !== null)
 
-      if (search) {
-        const q = search.toLowerCase()
-        prods = prods.filter(
-          (p) =>
-            p.modelName.toLowerCase().includes(q) ||
-            p.worker?.name.toLowerCase().includes(q)
-        )
-      }
-      setProductions(prods)
-      setWorkers(workersList)
-    } catch {
-      toast({ title: 'خطأ', description: 'فشل تحميل البيانات', variant: 'destructive' })
-    } finally {
-      setLoading(false)
+    if (search) {
+      const q = search.toLowerCase()
+      prods = prods.filter(
+        (p) =>
+          p.modelName.toLowerCase().includes(q) ||
+          p.worker?.name.toLowerCase().includes(q)
+      )
     }
-  }, [from, to, search, toast])
+    return { productions: prods, workers: workersList }
+  }, ['production', 'workers'])
 
+  // إعادة التحميل عند تغير الفلاتر
   useEffect(() => {
-    Promise.resolve().then(() => load())
-  }, [load])
+    reload()
+  }, [from, to, search, reload])
+
+  const productions = loadedData?.productions || []
+  const workers = loadedData?.workers || []
 
   const handleDelete = async (id: string) => {
     if (!confirm('حذف سجل الإنتاج؟')) return
     try {
       await productionRepository.delete(id)
+      dataChangeEmitter.notifyDelete('production')
       toast({ title: 'تم الحذف' })
-      load()
     } catch {
       toast({ title: 'خطأ', variant: 'destructive' })
     }
@@ -250,10 +252,7 @@ export function ProductionView({ onBack }: { onBack: () => void }) {
         open={open}
         onOpenChange={setOpen}
         workers={workers}
-        onSaved={() => {
-          setOpen(false)
-          load()
-        }}
+        onSaved={() => setOpen(false)}
       />
     </div>
   )
@@ -300,6 +299,7 @@ function ProductionForm({
         unitPrice: Number(unitPrice),
         notes: notes || undefined,
       })
+      dataChangeEmitter.notifyCreate('production')
       toast({ title: 'تم', description: 'تم تسجيل الإنتاج' })
       setWorkerId('')
       setModelName('')

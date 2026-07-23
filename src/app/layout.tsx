@@ -4,18 +4,16 @@ import { Toaster } from "@/components/ui/toaster";
 import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
 
 export const metadata: Metadata = {
-  title: "نظام إدارة مصنع الملابس",
-  description: "تطبيق لإدارة مبيعات ومشتريات ومصاريف وسلف وقبض العمال بمصنع الملابس الجاهزة",
+  title: "Selim ERP - نظام إدارة المصنع",
+  description: "نظام إدارة متكامل للمصانع - مبيعات ومشتريات ومصاريف وعمال",
   manifest: "/manifest.json",
-  applicationName: "مصنع الملابس",
+  applicationName: "Selim ERP",
   appleWebApp: {
     capable: true,
-    statusBarStyle: "default",
-    title: "مصنع الملابس",
+    statusBarStyle: "black-translucent",
+    title: "Selim ERP",
   },
-  formatDetection: {
-    telephone: false,
-  },
+  formatDetection: { telephone: false },
   icons: {
     icon: [
       { url: "/favicon.png", sizes: "32x32", type: "image/png" },
@@ -28,7 +26,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#10b981",
+  themeColor: "#0f172a",
   width: "device-width",
   initialScale: 1,
   maximumScale: 5,
@@ -38,9 +36,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({
   children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+}: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="ar" dir="rtl" suppressHydrationWarning>
       <head>
@@ -50,18 +46,16 @@ export default function RootLayout({
           href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap"
           rel="stylesheet"
         />
-        {/* iOS PWA meta tags */}
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-        <meta name="apple-mobile-web-app-title" content="مصنع الملابس" />
-        <meta name="application-name" content="مصنع الملابس" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="Selim ERP" />
+        <meta name="application-name" content="Selim ERP" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
         <link rel="icon" type="image/png" href="/favicon.png" sizes="32x32" />
         <link rel="icon" type="image/png" href="/icon-192.png" sizes="192x192" />
         <link rel="icon" type="image/png" href="/icon-512.png" sizes="512x512" />
-        {/* Windows Tile */}
-        <meta name="msapplication-TileColor" content="#10b981" />
+        <meta name="msapplication-TileColor" content="#0f172a" />
         <meta name="msapplication-tap-highlight" content="no" />
       </head>
       <body

@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Plus,
   Trash2,
@@ -28,7 +28,16 @@ import {
 import { useToast } from '@/hooks/use-toast'
 import { formatCurrency, formatDate, todayStr, startOfMonth } from '@/lib/format'
 import { pickContactFromPhone, isContactsPickerSupported } from '@/lib/contacts'
-import { supplierRepository } from '@/lib/db'
+import {
+  supplierRepository,
+  dataChangeEmitter,
+  useLiveData,
+} from '@/lib/db'
+import {
+  getFactorySettings,
+  buildFactoryHeader,
+  buildFactoryFooter,
+} from '@/lib/factory-header'
 
 interface Supplier {
   id: string
@@ -42,43 +51,44 @@ interface Supplier {
   purchasesCount: number
 }
 
+// جلب الموردين مع الإحصائيات (يدعم البحث)
+async function fetchSuppliers(search: string): Promise<Supplier[]> {
+  const data = search
+    ? await supplierRepository.search(search)
+    : await supplierRepository.getAllWithStats()
+  return data as Supplier[]
+}
+
 export function SuppliersView({ onBack }: { onBack: () => void }) {
-  const [suppliers, setSuppliers] = useState<Supplier[]>([])
-  const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [open, setOpen] = useState(false)
   const [editSupplier, setEditSupplier] = useState<Supplier | null>(null)
   const [reportSupplier, setReportSupplier] = useState<Supplier | null>(null)
   const { toast } = useToast()
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    try {
-      const data = search
-        ? await supplierRepository.search(search)
-        : await supplierRepository.getAllWithStats()
-      setSuppliers(data as Supplier[])
-    } catch {
-      toast({ title: 'خطأ', description: 'فشل تحميل الموردين', variant: 'destructive' })
-    } finally {
-      setLoading(false)
-    }
-  }, [search, toast])
+  // تحميل الموردين مع التحديث الفوري
+  const { data: suppliers, loading, reload } = useLiveData<Supplier[]>(
+    () => fetchSuppliers(search),
+    ['suppliers', 'purchases']
+  )
 
+  // إعادة التحميل عند تغير البحث
   useEffect(() => {
-    load()
-  }, [load])
+    reload()
+  }, [search, reload])
 
   const handleDelete = async (id: string) => {
     if (!confirm('حذف هذا المورد؟')) return
     try {
       await supplierRepository.delete(id)
+      dataChangeEmitter.notifyDelete('suppliers')
       toast({ title: 'تم الحذف' })
-      load()
     } catch {
       toast({ title: 'خطأ', variant: 'destructive' })
     }
   }
+
+  const suppliersList = suppliers || []
 
   return (
     <div className="space-y-4">
@@ -123,14 +133,14 @@ export function SuppliersView({ onBack }: { onBack: () => void }) {
             <div key={i} className="h-20 bg-slate-200 rounded-xl animate-pulse" />
           ))}
         </div>
-      ) : suppliers.length === 0 ? (
+      ) : suppliersList.length === 0 ? (
         <div className="bg-white rounded-xl p-8 text-center border border-slate-100">
           <Truck className="w-10 h-10 text-slate-300 mx-auto mb-2" />
           <p className="text-sm text-slate-500">لا يوجد موردين مسجلين</p>
         </div>
       ) : (
         <div className="space-y-2">
-          {suppliers.map((s) => (
+          {suppliersList.map((s) => (
             <div key={s.id} className="bg-white rounded-xl shadow-sm border border-slate-100 p-3">
               <div className="flex items-start justify-between mb-2">
                 <div className="flex items-center gap-2">
@@ -209,10 +219,7 @@ export function SuppliersView({ onBack }: { onBack: () => void }) {
         open={open}
         onOpenChange={setOpen}
         supplier={editSupplier}
-        onSaved={() => {
-          setOpen(false)
-          load()
-        }}
+        onSaved={() => setOpen(false)}
       />
       {reportSupplier && (
         <SupplierReport supplier={reportSupplier} onClose={() => setReportSupplier(null)} />
@@ -281,9 +288,11 @@ function SupplierForm({
       const payload = { name, phone: phone || undefined, address: address || undefined, notes: notes || undefined }
       if (supplier) {
         await supplierRepository.update(supplier.id, payload)
+        dataChangeEmitter.notifyUpdate('suppliers')
         toast({ title: 'تم', description: 'تم التحديث' })
       } else {
         await supplierRepository.create(payload)
+        dataChangeEmitter.notifyCreate('suppliers')
         toast({ title: 'تم', description: 'تمت الإضافة' })
       }
       onSaved()
@@ -350,51 +359,36 @@ function SupplierForm({
 function SupplierReport({ supplier, onClose }: { supplier: Supplier; onClose: () => void }) {
   const [from, setFrom] = useState(startOfMonth())
   const [to, setTo] = useState(todayStr())
-  const [data, setData] = useState<any>(null)
-  const [loading, setLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
   const { toast } = useToast()
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    try {
-      const stats = await supplierRepository.getWithStats(supplier.id)
-      if (!stats) {
-        setData(null)
-        return
-      }
-      const fromTime = from ? new Date(from).getTime() : 0
-      const toTime = to ? new Date(to).getTime() + 24 * 60 * 60 * 1000 - 1 : Date.now()
-      const filteredPurchases = stats.purchases.filter((p) => {
-        const t = new Date(p.date).getTime()
-        return t >= fromTime && t <= toTime
-      })
-      const totalPurchases = filteredPurchases.reduce((sum, p) => sum + p.total, 0)
-      const totalPaid = filteredPurchases.reduce((sum, p) => sum + p.paid, 0)
-      setData({
-        ...stats,
-        purchases: filteredPurchases,
+  // جلب إحصائيات المورد مع التحديث الفوري
+  const { data, loading, reload } = useLiveData<any>(async () => {
+    const stats = await supplierRepository.getWithStats(supplier.id)
+    if (!stats) return null
+    const fromTime = from ? new Date(from).getTime() : 0
+    const toTime = to ? new Date(to).getTime() + 24 * 60 * 60 * 1000 - 1 : Date.now()
+    const filteredPurchases = stats.purchases.filter((p) => {
+      const t = new Date(p.date).getTime()
+      return t >= fromTime && t <= toTime
+    })
+    const totalPurchases = filteredPurchases.reduce((sum, p) => sum + p.total, 0)
+    const totalPaid = filteredPurchases.reduce((sum, p) => sum + p.paid, 0)
+    return {
+      ...stats,
+      purchases: filteredPurchases,
+      totalPurchases,
+      totalPaid,
+      totalRemaining: totalPurchases - totalPaid,
+      purchasesCount: filteredPurchases.length,
+      summary: {
+        purchasesCount: filteredPurchases.length,
         totalPurchases,
         totalPaid,
         totalRemaining: totalPurchases - totalPaid,
-        purchasesCount: filteredPurchases.length,
-        summary: {
-          purchasesCount: filteredPurchases.length,
-          totalPurchases,
-          totalPaid,
-          totalRemaining: totalPurchases - totalPaid,
-        },
-      })
-    } catch {
-      toast({ title: 'خطأ', description: 'فشل تحميل التقرير', variant: 'destructive' })
-    } finally {
-      setLoading(false)
+      },
     }
-  }, [supplier.id, from, to, toast])
-
-  useEffect(() => {
-    Promise.resolve().then(() => load())
-  }, [load])
+  }, ['purchases'])
 
   const exportPDF = async () => {
     if (!data) return
@@ -402,6 +396,10 @@ function SupplierReport({ supplier, onClose }: { supplier: Supplier; onClose: ()
     try {
       const { exportElementToPDF, shareViaWhatsApp, createReportContainer, cleanupContainer } =
         await import('@/lib/pdf-export')
+
+      const settings = await getFactorySettings()
+      const header = buildFactoryHeader(settings)
+      const footer = buildFactoryFooter(settings)
 
       const purchaseRows = (data.purchases || [])
         .map(
@@ -418,6 +416,7 @@ function SupplierReport({ supplier, onClose }: { supplier: Supplier; onClose: ()
         .join('')
 
       const contentHtml = `
+        ${header}
         <div style="margin-bottom: 20px; padding: 16px; background: #fffbeb; border-radius: 8px;">
           <h2 style="margin: 0 0 8px; color: #1e293b;">بيانات المورد</h2>
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 13px;">
@@ -461,6 +460,7 @@ function SupplierReport({ supplier, onClose }: { supplier: Supplier; onClose: ()
             ${purchaseRows || '<tr><td colspan="6" style="padding: 12px; text-align: center; color: #94a3b8;">لا توجد فواتير في هذه الفترة</td></tr>'}
           </tbody>
         </table>
+        ${footer}
       `
 
       const container = createReportContainer(`تقرير المورد: ${supplier.name}`, contentHtml)
@@ -497,7 +497,7 @@ function SupplierReport({ supplier, onClose }: { supplier: Supplier; onClose: ()
               <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="bg-slate-50 text-sm" />
             </div>
           </div>
-          <Button onClick={load} disabled={loading} className="w-full bg-amber-600 hover:bg-amber-700 text-white" size="sm">
+          <Button onClick={reload} disabled={loading} className="w-full bg-amber-600 hover:bg-amber-700 text-white" size="sm">
             {loading ? 'جارٍ التحميل...' : 'عرض التقرير'}
           </Button>
 

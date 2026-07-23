@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Plus,
   Trash2,
@@ -14,15 +14,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog'
 import {
   Select,
   SelectContent,
@@ -32,28 +24,47 @@ import {
 } from '@/components/ui/select'
 import { useToast } from '@/hooks/use-toast'
 import { formatCurrency, formatDate, todayStr } from '@/lib/format'
-import { expenseRepository, expenseCategoryRepository } from '@/lib/db'
+import {
+  expenseRepository,
+  expenseCategoryRepository,
+  dataChangeEmitter,
+  useLiveData,
+} from '@/lib/db'
+import { ExpenseForm } from './expenses/ExpenseForm'
+import { CategoryManager } from './expenses/CategoryManager'
+import type { Expense, ExpenseCategory } from './expenses/types'
 
-interface ExpenseCategory {
-  id: string
-  name: string
-  notes: string | null
-  expenseCount?: number
-}
+// جلب المصاريف + البنود + إحصائيات عدد المصاريف لكل بند
+async function fetchExpensesAndCategories(
+  search: string,
+  from: string,
+  to: string,
+  filterCat: string
+): Promise<{ expenses: Expense[]; categories: ExpenseCategory[] }> {
+  const [expData, catData, allExpenses] = await Promise.all([
+    expenseRepository.search(search, from || undefined, to || undefined, filterCat || undefined),
+    expenseCategoryRepository.getAll(),
+    expenseRepository.getAll(),
+  ])
 
-interface Expense {
-  id: string
-  categoryId: string
-  categoryName: string
-  amount: number
-  date: string
-  notes: string | null
+  // حساب عدد المصاريف لكل بند
+  const countByCat: Record<string, number> = {}
+  for (const e of allExpenses) {
+    countByCat[e.categoryId] = (countByCat[e.categoryId] || 0) + 1
+  }
+  const catsWithCount: ExpenseCategory[] = catData.map((c) => ({
+    ...c,
+    notes: c.notes ?? null,
+    expenseCount: countByCat[c.id] || 0,
+  }))
+
+  return {
+    expenses: expData as Expense[],
+    categories: catsWithCount,
+  }
 }
 
 export function ExpensesView() {
-  const [expenses, setExpenses] = useState<Expense[]>([])
-  const [categories, setCategories] = useState<ExpenseCategory[]>([])
-  const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(false)
   const [catOpen, setCatOpen] = useState(false)
   const [search, setSearch] = useState('')
@@ -62,55 +73,36 @@ export function ExpensesView() {
   const [to, setTo] = useState('')
   const { toast } = useToast()
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    try {
-      const [expData, catData] = await Promise.all([
-        expenseRepository.search(search, from || undefined, to || undefined, filterCat || undefined),
-        expenseCategoryRepository.getAll(),
-      ])
+  // تحميل المصاريف + البنود مع التحديث الفوري
+  const { data, loading, reload } = useLiveData(
+    () => fetchExpensesAndCategories(search, from, to, filterCat),
+    ['expenses', 'expenseCategories']
+  )
 
-      // حساب عدد المصاريف لكل بند
-      const countByCat: Record<string, number> = {}
-      const allExpenses = await expenseRepository.getAll()
-      for (const e of allExpenses) {
-        countByCat[e.categoryId] = (countByCat[e.categoryId] || 0) + 1
-      }
-      const catsWithCount = catData.map((c) => ({
-        ...c,
-        notes: c.notes ?? null,
-        expenseCount: countByCat[c.id] || 0,
-      }))
-
-      setExpenses(expData as Expense[])
-      setCategories(catsWithCount)
-    } catch {
-      toast({ title: 'خطأ', description: 'فشل تحميل المصاريف', variant: 'destructive' })
-    } finally {
-      setLoading(false)
-    }
-  }, [search, filterCat, from, to, toast])
-
+  // إعادة التحميل عند تغير الفلاتر
   useEffect(() => {
-    load()
-  }, [load])
+    reload()
+  }, [search, filterCat, from, to, reload])
 
   const handleDelete = async (id: string) => {
     if (!confirm('حذف هذا المصروف؟')) return
     try {
       await expenseRepository.delete(id)
+      dataChangeEmitter.notifyDelete('expenses')
       toast({ title: 'تم الحذف' })
-      load()
     } catch {
       toast({ title: 'خطأ', variant: 'destructive' })
     }
   }
 
-  const total = expenses.reduce((s, e) => s + e.amount, 0)
+  const expensesList: Expense[] = data?.expenses || []
+  const categoriesList: ExpenseCategory[] = data?.categories || []
+
+  const total = expensesList.reduce((s, e) => s + e.amount, 0)
 
   // Group by category for the bar visualization
   const byCategory: Record<string, number> = {}
-  expenses.forEach((e) => {
+  expensesList.forEach((e) => {
     byCategory[e.categoryName] = (byCategory[e.categoryName] || 0) + e.amount
   })
   const sortedCats = Object.entries(byCategory).sort((a, b) => b[1] - a[1])
@@ -222,7 +214,7 @@ export function ExpensesView() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">كل البنود</SelectItem>
-              {categories.map((c) => (
+              {categoriesList.map((c) => (
                 <SelectItem key={c.id} value={c.id}>
                   {c.name}
                 </SelectItem>
@@ -254,14 +246,14 @@ export function ExpensesView() {
             <div key={i} className="h-16 bg-slate-200 rounded-xl animate-pulse" />
           ))}
         </div>
-      ) : expenses.length === 0 ? (
+      ) : expensesList.length === 0 ? (
         <div className="bg-white rounded-xl p-8 text-center border border-slate-100">
           <Wallet className="w-10 h-10 text-slate-300 mx-auto mb-2" />
           <p className="text-sm text-slate-500">لا توجد مصاريف مسجلة</p>
         </div>
       ) : (
         <div className="space-y-2">
-          {expenses.map((e) => (
+          {expensesList.map((e) => (
             <div
               key={e.id}
               className="bg-white rounded-xl shadow-sm border border-slate-100 p-3 flex items-center justify-between"
@@ -297,234 +289,15 @@ export function ExpensesView() {
       <ExpenseForm
         open={open}
         onOpenChange={setOpen}
-        categories={categories}
-        onSaved={() => {
-          setOpen(false)
-          load()
-        }}
+        categories={categoriesList}
+        onSaved={() => setOpen(false)}
       />
       <CategoryManager
         open={catOpen}
         onOpenChange={setCatOpen}
-        categories={categories}
-        onSaved={load}
+        categories={categoriesList}
+        onSaved={reload}
       />
     </div>
-  )
-}
-
-function ExpenseForm({
-  open,
-  onOpenChange,
-  categories,
-  onSaved,
-}: {
-  open: boolean
-  onOpenChange: (v: boolean) => void
-  categories: ExpenseCategory[]
-  onSaved: () => void
-}) {
-  const [categoryId, setCategoryId] = useState('')
-  const [amount, setAmount] = useState('')
-  const [date, setDate] = useState(todayStr())
-  const [notes, setNotes] = useState('')
-  const [saving, setSaving] = useState(false)
-  const { toast } = useToast()
-
-  const save = async () => {
-    if (!categoryId) {
-      toast({ title: 'تنبيه', description: 'اختر بند المصروف', variant: 'destructive' })
-      return
-    }
-    if (!amount || Number(amount) <= 0) {
-      toast({ title: 'تنبيه', description: 'أدخل مبلغاً صحيحاً', variant: 'destructive' })
-      return
-    }
-    setSaving(true)
-    try {
-      await expenseRepository.createWithCategory({
-        categoryId,
-        amount: Number(amount),
-        date,
-        notes: notes || undefined,
-      })
-      toast({ title: 'تم', description: 'تم تسجيل المصروف' })
-      setCategoryId('')
-      setAmount('')
-      setNotes('')
-      setDate(todayStr())
-      onSaved()
-    } catch (e: any) {
-      toast({ title: 'خطأ', description: e.message, variant: 'destructive' })
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md" dir="rtl">
-        <DialogHeader>
-          <DialogTitle className="text-right">مصروف جديد</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-3">
-          <div>
-            <Label className="text-xs">بند المصروف *</Label>
-            <Select value={categoryId} onValueChange={setCategoryId}>
-              <SelectTrigger className="bg-slate-50">
-                <SelectValue placeholder="اختر البند" />
-              </SelectTrigger>
-              <SelectContent>
-                {categories.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label className="text-xs">المبلغ *</Label>
-            <Input
-              type="number"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="0.00"
-              className="bg-slate-50 border-rose-200"
-              autoFocus
-            />
-          </div>
-          <div>
-            <Label className="text-xs">التاريخ</Label>
-            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="bg-slate-50" />
-          </div>
-          <div>
-            <Label className="text-xs">ملاحظات</Label>
-            <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} className="bg-slate-50" rows={2} />
-          </div>
-        </div>
-        <DialogFooter className="gap-2">
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
-            إلغاء
-          </Button>
-          <Button
-            onClick={save}
-            disabled={saving}
-            className="bg-rose-600 hover:bg-rose-700 text-white"
-          >
-            {saving ? 'جارٍ الحفظ...' : 'حفظ'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-function CategoryManager({
-  open,
-  onOpenChange,
-  categories,
-  onSaved,
-}: {
-  open: boolean
-  onOpenChange: (v: boolean) => void
-  categories: ExpenseCategory[]
-  onSaved: () => void
-}) {
-  const [name, setName] = useState('')
-  const [notes, setNotes] = useState('')
-  const [saving, setSaving] = useState(false)
-  const { toast } = useToast()
-
-  const addCategory = async () => {
-    if (!name.trim()) {
-      toast({ title: 'تنبيه', description: 'أدخل اسم البند', variant: 'destructive' })
-      return
-    }
-    setSaving(true)
-    try {
-      await expenseCategoryRepository.create({ name, notes: notes || undefined })
-      toast({ title: 'تم', description: 'تمت إضافة البند' })
-      setName('')
-      setNotes('')
-      onSaved()
-    } catch (e: any) {
-      toast({ title: 'خطأ', description: e.message, variant: 'destructive' })
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const deleteCategory = async (id: string, count: number = 0) => {
-    const msg = count > 0
-      ? `هذا البند مرتبط بـ ${count} مصروف. سيتم حذفهم جميعاً. هل أنت متأكد؟`
-      : 'حذف هذا البند؟'
-    if (!confirm(msg)) return
-    try {
-      await expenseCategoryRepository.delete(id)
-      toast({ title: 'تم الحذف' })
-      onSaved()
-    } catch {
-      toast({ title: 'خطأ', variant: 'destructive' })
-    }
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto" dir="rtl">
-        <DialogHeader>
-          <DialogTitle className="text-right">إدارة بنود المصاريف</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-3">
-          <div className="bg-slate-50 rounded-lg p-3 space-y-2">
-            <div>
-              <Label className="text-xs">اسم البند الجديد</Label>
-              <Input value={name} onChange={(e) => setName(e.target.value)} className="bg-white" />
-            </div>
-            <div>
-              <Label className="text-xs">ملاحظات</Label>
-              <Input value={notes} onChange={(e) => setNotes(e.target.value)} className="bg-white" />
-            </div>
-            <Button
-              onClick={addCategory}
-              disabled={saving}
-              className="w-full bg-rose-600 hover:bg-rose-700 text-white"
-              size="sm"
-            >
-              <Plus className="w-4 h-4 ml-1" />
-              إضافة بند
-            </Button>
-          </div>
-
-          <div className="space-y-1 max-h-60 overflow-y-auto">
-            {categories.length === 0 ? (
-              <p className="text-center text-xs text-slate-500 py-4">لا توجد بنود</p>
-            ) : (
-              categories.map((c) => (
-                <div
-                  key={c.id}
-                  className="flex items-center justify-between bg-white border border-slate-100 rounded-lg p-2 text-sm"
-                >
-                  <div>
-                    <p className="font-medium text-slate-800">{c.name}</p>
-                    {c.expenseCount !== undefined && c.expenseCount > 0 && (
-                      <p className="text-[10px] text-slate-500">{c.expenseCount} مصروف</p>
-                    )}
-                  </div>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-7 w-7 text-rose-500"
-                    onClick={() => deleteCategory(c.id, c.expenseCount || 0)}
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </Button>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
   )
 }

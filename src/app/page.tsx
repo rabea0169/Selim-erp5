@@ -11,6 +11,8 @@ import {
   Database,
   LogOut,
   Printer,
+  Factory,
+  Settings,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Dashboard } from '@/components/factory/Dashboard'
@@ -22,9 +24,9 @@ import { ReportsView } from '@/components/factory/ReportsView'
 import { BackupRestore } from '@/components/factory/BackupRestore'
 import { AuthScreen } from '@/components/factory/AuthScreen'
 import { PrintSettingsDialog } from '@/components/factory/PrintSettingsDialog'
+import { FactorySettingsView } from '@/components/factory/FactorySettingsView'
 import { InstallPrompt } from '@/components/factory/InstallPrompt'
-import { getCurrentUser, logout, type SessionUser } from '@/lib/db'
-import { expenseCategoryRepository } from '@/lib/db'
+import { getCurrentUser, logout, factorySettingsRepository, expenseCategoryRepository, type SessionUser, type FactorySettings } from '@/lib/db'
 
 export type TabKey =
   | 'dashboard'
@@ -47,16 +49,24 @@ export default function Home() {
   const [tab, setTab] = useState<TabKey>('dashboard')
   const [backupOpen, setBackupOpen] = useState(false)
   const [printOpen, setPrintOpen] = useState(false)
+  const [factoryOpen, setFactoryOpen] = useState(false)
   const [user, setUser] = useState<SessionUser | null>(null)
   const [authChecked, setAuthChecked] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
+  const [factorySettings, setFactorySettings] = useState<FactorySettings | null>(null)
 
-  // التحقق من تسجيل الدخول
+  // التحقق من تسجيل الدخول + تحميل بيانات المصنع
   useEffect(() => {
-    Promise.resolve().then(() => {
+    Promise.resolve().then(async () => {
       const currentUser = getCurrentUser()
       setUser(currentUser)
       setAuthChecked(true)
+      if (currentUser) {
+        try {
+          const settings = await factorySettingsRepository.get()
+          setFactorySettings(settings)
+        } catch {}
+      }
     })
 
     // تهيئة فئات المصاريف الافتراضية
@@ -90,12 +100,12 @@ export default function Home() {
       <header className="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-slate-200 shadow-sm">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-sm">
-              <span className="text-white text-lg">👕</span>
+            <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-slate-800 to-slate-900 flex items-center justify-center shadow-sm">
+              <span className="text-amber-500 text-lg font-bold" style={{ fontFamily: 'Georgia, serif' }}>S</span>
             </div>
             <div>
               <h1 className="text-base font-bold text-slate-800 leading-tight">
-                مصنع الملابس
+                {factorySettings?.factoryName || 'Selim ERP'}
               </h1>
               <p className="text-[10px] text-slate-500 leading-tight">
                 مرحباً، {user.name}
@@ -103,6 +113,13 @@ export default function Home() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => setFactoryOpen(true)}
+              className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 transition-colors"
+              title="بيانات المصنع"
+            >
+              <Factory className="w-4 h-4" />
+            </button>
             <button
               onClick={() => setPrintOpen(true)}
               className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 transition-colors"
@@ -180,6 +197,7 @@ export default function Home() {
 
       <BackupRestore open={backupOpen} onOpenChange={setBackupOpen} />
       <PrintSettingsDialog open={printOpen} onOpenChange={setPrintOpen} />
+      <FactorySettingsView open={factoryOpen} onOpenChange={setFactoryOpen} />
       <InstallPrompt />
     </div>
   )

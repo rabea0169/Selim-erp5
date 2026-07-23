@@ -1,14 +1,15 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
 import type {
-  User, Worker, WorkerAdvance, WorkerReceipt, WorkerAttendance,
+  FactorySettings, User, Worker, WorkerAdvance, WorkerReceipt, WorkerAttendance,
   Production, Customer, Supplier, Sale, SaleItem,
   Purchase, PurchaseItem, ExpenseCategory, Expense,
 } from './types'
 
-const DB_NAME = 'factory-app-db'
-const DB_VERSION = 1
+const DB_NAME = 'selim-erp-db'
+const DB_VERSION = 2
 
 interface FactoryDBSchema extends DBSchema {
+  factorySettings: { key: string; value: FactorySettings }
   users: { key: string; value: User; indexes: { 'by-username': string } }
   workers: { key: string; value: Worker; indexes: { 'by-name': string } }
   workerAdvances: { key: string; value: WorkerAdvance; indexes: { 'by-worker': string, 'by-date': string } }
@@ -31,8 +32,13 @@ export async function getDB(): Promise<IDBPDatabase<FactoryDBSchema>> {
   if (dbInstance) return dbInstance
 
   dbInstance = await openDB<FactoryDBSchema>(DB_NAME, DB_VERSION, {
-    upgrade(db) {
+    upgrade(db, oldVersion) {
       // إنشاء كل الجداول مع الفهارس
+
+      // Factory Settings (singleton)
+      if (!db.objectStoreNames.contains('factorySettings')) {
+        db.createObjectStore('factorySettings', { keyPath: 'id' })
+      }
 
       // Users
       if (!db.objectStoreNames.contains('users')) {

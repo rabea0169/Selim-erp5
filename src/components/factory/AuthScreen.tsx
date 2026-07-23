@@ -74,15 +74,16 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void })
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 p-4">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-100 via-slate-200 to-slate-300 p-4">
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-6">
-          <div className="w-20 h-20 mx-auto mb-3 rounded-3xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-xl">
-            <Factory className="w-10 h-10 text-white" />
+          <div className="w-20 h-20 mx-auto mb-3 rounded-3xl bg-gradient-to-br from-slate-800 to-slate-900 flex items-center justify-center shadow-xl relative">
+            <span className="text-amber-500 text-4xl font-bold" style={{ fontFamily: 'Georgia, serif' }}>S</span>
+            <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-emerald-500"></div>
           </div>
-          <h1 className="text-2xl font-bold text-slate-800">مصنع الملابس</h1>
-          <p className="text-sm text-slate-500 mt-1">نظام الإدارة المالية</p>
+          <h1 className="text-2xl font-bold text-slate-800">Selim ERP</h1>
+          <p className="text-sm text-slate-500 mt-1">نظام إدارة المصنع</p>
           <p className="text-[10px] text-emerald-600 mt-1">💾 يعمل offline - بياناتك محفوظة على جهازك</p>
         </div>
 
