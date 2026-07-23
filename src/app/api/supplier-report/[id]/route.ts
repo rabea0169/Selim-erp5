@@ -1,0 +1,48 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { db } from '@/lib/db'
+
+// GET /api/supplier-report/[id]?from=&to=
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const { id } = await params
+    const { searchParams } = new URL(req.url)
+    const from = searchParams.get('from')
+    const to = searchParams.get('to')
+
+    const supplier = await db.supplier.findUnique({ where: { id } })
+    if (!supplier) return NextResponse.json({ error: 'المورد غير موجود' }, { status: 404 })
+
+    const dateRange: any = {}
+    if (from) dateRange.gte = new Date(from)
+    if (to) {
+      const t = new Date(to)
+      t.setHours(23, 59, 59, 999)
+      dateRange.lte = t
+    }
+    const filter = from || to ? { date: dateRange } : {}
+
+    const purchases = await db.purchase.findMany({
+      where: { supplierId_ref: id, ...filter },
+      include: { items: true },
+      orderBy: { date: 'desc' },
+    })
+
+    const totalPurchases = purchases.reduce((s, x) => s + x.total, 0)
+    const totalPaid = purchases.reduce((s, x) => s + x.paid, 0)
+    const totalRemaining = totalPurchases - totalPaid
+
+    return NextResponse.json({
+      supplier,
+      range: { from, to },
+      summary: {
+        purchasesCount: purchases.length,
+        totalPurchases,
+        totalPaid,
+        totalRemaining,
+      },
+      purchases,
+    })
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message }, { status: 500 })
+  }
+}

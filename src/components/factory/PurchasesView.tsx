@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Plus, Trash2, X, Search, Package, Calendar } from 'lucide-react'
+import { Plus, Trash2, X, Search, Package, Calendar, Truck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -13,8 +13,16 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { useToast } from '@/hooks/use-toast'
 import { formatCurrency, formatDate, todayStr } from '@/lib/format'
+import { SuppliersView } from './SuppliersView'
 
 interface PurchaseItem {
   id?: string
@@ -42,7 +50,20 @@ export function PurchasesView() {
   const [search, setSearch] = useState('')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
+  const [showSuppliers, setShowSuppliers] = useState(false)
+  const [suppliers, setSuppliers] = useState<any[]>([])
   const { toast } = useToast()
+
+  const loadSuppliers = async () => {
+    try {
+      const res = await fetch('/api/suppliers').then((r) => r.json())
+      setSuppliers(res.suppliers || [])
+    } catch {}
+  }
+
+  useEffect(() => {
+    loadSuppliers()
+  }, [])
 
   const load = async () => {
     setLoading(true)
@@ -87,13 +108,24 @@ export function PurchasesView() {
           <h2 className="text-xl font-bold text-slate-800">المشتريات</h2>
           <p className="text-xs text-slate-500">إدارة فواتير المشتريات من الموردين</p>
         </div>
-        <Button
-          onClick={() => setOpen(true)}
-          className="bg-amber-600 hover:bg-amber-700 text-white shadow-sm"
-        >
-          <Plus className="w-4 h-4 ml-1" />
-          فاتورة جديدة
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() => setShowSuppliers(true)}
+            className="border-slate-200"
+            title="إدارة الموردين"
+          >
+            <Truck className="w-4 h-4 ml-1" />
+            الموردين
+          </Button>
+          <Button
+            onClick={() => setOpen(true)}
+            className="bg-amber-600 hover:bg-amber-700 text-white shadow-sm"
+          >
+            <Plus className="w-4 h-4 ml-1" />
+            فاتورة جديدة
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-3 gap-2">
@@ -184,7 +216,10 @@ export function PurchasesView() {
           setOpen(false)
           load()
         }}
+        suppliers={suppliers}
       />
+
+      {showSuppliers && <SuppliersView onBack={() => setShowSuppliers(false)} />}
     </div>
   )
 }
@@ -287,12 +322,15 @@ function PurchaseForm({
   open,
   onOpenChange,
   onSaved,
+  suppliers,
 }: {
   open: boolean
   onOpenChange: (v: boolean) => void
   onSaved: () => void
+  suppliers: any[]
 }) {
   const [supplierName, setSupplierName] = useState('')
+  const [supplierId, setSupplierId] = useState('')
   const [invoiceNo, setInvoiceNo] = useState('')
   const [date, setDate] = useState(todayStr())
   const [paid, setPaid] = useState('')
@@ -319,11 +357,20 @@ function PurchaseForm({
 
   const reset = () => {
     setSupplierName('')
+    setSupplierId('')
     setInvoiceNo('')
     setDate(todayStr())
     setPaid('')
     setNotes('')
     setItems([{ itemName: '', quantity: 1, unitPrice: 0, total: 0 }])
+  }
+
+  const selectSupplier = (id: string) => {
+    setSupplierId(id)
+    if (id) {
+      const s = suppliers.find((x) => x.id === id)
+      if (s) setSupplierName(s.name)
+    }
   }
 
   const save = async () => {
@@ -343,6 +390,7 @@ function PurchaseForm({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           supplierName,
+          supplierId_ref: supplierId || null,
           invoiceNo,
           date,
           paid: Number(paid) || 0,
@@ -375,12 +423,35 @@ function PurchaseForm({
         </DialogHeader>
 
         <div className="space-y-3">
+          <div>
+            <Label className="text-xs">اختر مورد مسجل (اختياري)</Label>
+            <Select value={supplierId} onValueChange={selectSupplier}>
+              <SelectTrigger className="bg-slate-50">
+                <SelectValue placeholder="أو اكتب اسم المورد يدوياً" />
+              </SelectTrigger>
+              <SelectContent>
+                {suppliers.length === 0 ? (
+                  <SelectItem value="" disabled>لا يوجد موردين مسجلين</SelectItem>
+                ) : (
+                  suppliers.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.name}
+                    </SelectItem>
+                  ))
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+
           <div className="grid grid-cols-2 gap-2">
             <div>
               <Label className="text-xs">اسم المورد *</Label>
               <Input
                 value={supplierName}
-                onChange={(e) => setSupplierName(e.target.value)}
+                onChange={(e) => {
+                  setSupplierName(e.target.value)
+                  setSupplierId('')
+                }}
                 placeholder="اسم المورد"
                 className="bg-slate-50"
               />

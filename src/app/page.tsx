@@ -8,6 +8,7 @@ import {
   Users,
   Wallet,
   FileText,
+  Database,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Dashboard } from '@/components/factory/Dashboard'
@@ -16,6 +17,7 @@ import { PurchasesView } from '@/components/factory/PurchasesView'
 import { WorkersView } from '@/components/factory/WorkersView'
 import { ExpensesView } from '@/components/factory/ExpensesView'
 import { ReportsView } from '@/components/factory/ReportsView'
+import { BackupRestore } from '@/components/factory/BackupRestore'
 
 export type TabKey =
   | 'dashboard'
@@ -36,6 +38,7 @@ const TABS: { key: TabKey; label: string; icon: any }[] = [
 
 export default function Home() {
   const [tab, setTab] = useState<TabKey>('dashboard')
+  const [backupOpen, setBackupOpen] = useState(false)
 
   // التهيئة الأولية - إنشاء فئات المصاريف الافتراضية
   useEffect(() => {
@@ -60,15 +63,24 @@ export default function Home() {
               </p>
             </div>
           </div>
-          <div className="text-left">
-            <p className="text-[10px] text-slate-500">اليوم</p>
-            <p className="text-xs font-semibold text-slate-700">
-              {new Date().toLocaleDateString('ar-EG', {
-                weekday: 'short',
-                day: 'numeric',
-                month: 'short',
-              })}
-            </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setBackupOpen(true)}
+              className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 transition-colors"
+              title="نسخ احتياطي"
+            >
+              <Database className="w-4 h-4" />
+            </button>
+            <div className="text-left">
+              <p className="text-[10px] text-slate-500">اليوم</p>
+              <p className="text-xs font-semibold text-slate-700">
+                {new Date().toLocaleDateString('ar-EG', {
+                  weekday: 'short',
+                  day: 'numeric',
+                  month: 'short',
+                })}
+              </p>
+            </div>
           </div>
         </div>
       </header>
@@ -94,7 +106,7 @@ export default function Home() {
                 key={t.key}
                 onClick={() => setTab(t.key)}
                 className={cn(
-                  'flex flex-col items-center justify-center py-2 gap-0.5 transition-colors',
+                  'flex flex-col items-center justify-center py-2 gap-0.5 transition-colors relative',
                   active
                     ? 'text-emerald-600'
                     : 'text-slate-500 hover:text-slate-700'
@@ -122,6 +134,8 @@ export default function Home() {
           })}
         </div>
       </nav>
+
+      <BackupRestore open={backupOpen} onOpenChange={setBackupOpen} />
     </div>
   )
 }

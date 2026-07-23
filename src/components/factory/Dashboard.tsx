@@ -21,6 +21,8 @@ interface ReportSummary {
   expensesTotal: number
   advancesTotal: number
   receiptsTotal: number
+  productionTotal: number
+  productionPieces: number
   netProfit: number
 }
 

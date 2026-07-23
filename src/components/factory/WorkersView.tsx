@@ -11,6 +11,10 @@ import {
   ArrowDownCircle,
   ArrowUpCircle,
   X,
+  FileText,
+  Calendar,
+  Scissors,
+  Clock,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -24,8 +28,20 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { useToast } from '@/hooks/use-toast'
 import { formatCurrency, formatDate, todayStr } from '@/lib/format'
+import { WorkerReportModal } from './WorkerReportModal'
+import { AttendanceView } from './AttendanceView'
+import { ProductionView } from './ProductionView'
+
+type SubView = 'list' | 'attendance' | 'production'
 
 interface WorkerAdvance {
   id: string
@@ -61,6 +77,7 @@ export function WorkersView() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [open, setOpen] = useState(false)
+  const [subView, setSubView] = useState<SubView>('list')
   const { toast } = useToast()
 
   const load = async () => {
@@ -78,9 +95,16 @@ export function WorkersView() {
   }
 
   useEffect(() => {
-    load()
+    if (subView === 'list') load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search])
+  }, [search, subView])
+
+  if (subView === 'attendance') {
+    return <AttendanceView onBack={() => setSubView('list')} />
+  }
+  if (subView === 'production') {
+    return <ProductionView onBack={() => setSubView('list')} />
+  }
 
   const totalAdvances = workers.reduce((s, w) => s + w.totalAdvances, 0)
   const totalReceipts = workers.reduce((s, w) => s + w.totalReceipts, 0)
@@ -99,6 +123,43 @@ export function WorkersView() {
           <Plus className="w-4 h-4 ml-1" />
           عامل جديد
         </Button>
+      </div>
+
+      {/* Sub navigation */}
+      <div className="grid grid-cols-3 gap-2">
+        <button
+          onClick={() => setSubView('list')}
+          className={`p-2.5 rounded-xl border text-xs font-bold transition-colors ${
+            subView === 'list'
+              ? 'bg-purple-600 text-white border-purple-600'
+              : 'bg-white text-slate-600 border-slate-200'
+          }`}
+        >
+          <Users className="w-4 h-4 mx-auto mb-1" />
+          بيانات العمال
+        </button>
+        <button
+          onClick={() => setSubView('attendance')}
+          className={`p-2.5 rounded-xl border text-xs font-bold transition-colors ${
+            subView === 'attendance'
+              ? 'bg-purple-600 text-white border-purple-600'
+              : 'bg-white text-slate-600 border-slate-200'
+          }`}
+        >
+          <Clock className="w-4 h-4 mx-auto mb-1" />
+          حضور وانصراف
+        </button>
+        <button
+          onClick={() => setSubView('production')}
+          className={`p-2.5 rounded-xl border text-xs font-bold transition-colors ${
+            subView === 'production'
+              ? 'bg-purple-600 text-white border-purple-600'
+              : 'bg-white text-slate-600 border-slate-200'
+          }`}
+        >
+          <Scissors className="w-4 h-4 mx-auto mb-1" />
+          إنتاج بالقطعة
+        </button>
       </div>
 
       <div className="grid grid-cols-3 gap-2">
@@ -169,6 +230,7 @@ function WorkerCard({
   const [expanded, setExpanded] = useState(false)
   const [advanceOpen, setAdvanceOpen] = useState(false)
   const [receiptOpen, setReceiptOpen] = useState(false)
+  const [reportOpen, setReportOpen] = useState(false)
   const { toast } = useToast()
 
   const handleDeleteAdvance = async (id: string) => {
@@ -280,6 +342,15 @@ function WorkerCard({
             </Button>
           </div>
 
+          <Button
+            size="sm"
+            onClick={() => setReportOpen(true)}
+            className="w-full bg-gradient-to-r from-purple-500 to-violet-600 hover:from-purple-600 hover:to-violet-700 text-white h-8 text-xs"
+          >
+            <FileText className="w-3.5 h-3.5 ml-1" />
+            تقرير العامل الكامل (PDF + واتساب)
+          </Button>
+
           {/* Advances history */}
           {worker.advances.length > 0 && (
             <div>
@@ -381,6 +452,9 @@ function WorkerCard({
           onChanged()
         }}
       />
+      {reportOpen && (
+        <WorkerReportModal worker={worker} onClose={() => setReportOpen(false)} />
+      )}
     </div>
   )
 }
@@ -397,6 +471,7 @@ function WorkerForm({
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
   const [job, setJob] = useState('')
+  const [type, setType] = useState('monthly')
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const { toast } = useToast()
@@ -411,13 +486,14 @@ function WorkerForm({
       const res = await fetch('/api/workers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, phone, job, notes }),
+        body: JSON.stringify({ name, phone, job, type, notes }),
       }).then((r) => r.json())
       if (res.error) throw new Error(res.error)
       toast({ title: 'تم', description: 'تمت إضافة العامل' })
       setName('')
       setPhone('')
       setJob('')
+      setType('monthly')
       setNotes('')
       onSaved()
     } catch (e: any) {
@@ -447,6 +523,18 @@ function WorkerForm({
               <Label className="text-xs">الوظيفة</Label>
               <Input value={job} onChange={(e) => setJob(e.target.value)} className="bg-slate-50" placeholder="خياط / تفصيل..." />
             </div>
+          </div>
+          <div>
+            <Label className="text-xs">نوع العامل</Label>
+            <Select value={type} onValueChange={setType}>
+              <SelectTrigger className="bg-slate-50">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="monthly">مرتب شهري</SelectItem>
+                <SelectItem value="production">إنتاج بالقطعة</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div>
             <Label className="text-xs">ملاحظات</Label>

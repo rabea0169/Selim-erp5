@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Plus, Trash2, X, Search, ShoppingCart, Calendar } from 'lucide-react'
+import { Plus, Trash2, X, Search, ShoppingCart, Calendar, Users } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -13,8 +13,16 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { useToast } from '@/hooks/use-toast'
 import { formatCurrency, formatDate, todayStr } from '@/lib/format'
+import { CustomersView } from './CustomersView'
 
 interface SaleItem {
   id?: string
@@ -42,7 +50,20 @@ export function SalesView() {
   const [search, setSearch] = useState('')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
+  const [showCustomers, setShowCustomers] = useState(false)
+  const [customers, setCustomers] = useState<any[]>([])
   const { toast } = useToast()
+
+  const loadCustomers = async () => {
+    try {
+      const res = await fetch('/api/customers').then((r) => r.json())
+      setCustomers(res.customers || [])
+    } catch {}
+  }
+
+  useEffect(() => {
+    loadCustomers()
+  }, [])
 
   const load = async () => {
     setLoading(true)
@@ -88,13 +109,24 @@ export function SalesView() {
           <h2 className="text-xl font-bold text-slate-800">المبيعات</h2>
           <p className="text-xs text-slate-500">إدارة فواتير المبيعات</p>
         </div>
-        <Button
-          onClick={() => setOpen(true)}
-          className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
-        >
-          <Plus className="w-4 h-4 ml-1" />
-          فاتورة جديدة
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() => setShowCustomers(true)}
+            className="border-slate-200"
+            title="إدارة العملاء"
+          >
+            <Users className="w-4 h-4 ml-1" />
+            العملاء
+          </Button>
+          <Button
+            onClick={() => setOpen(true)}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
+          >
+            <Plus className="w-4 h-4 ml-1" />
+            فاتورة جديدة
+          </Button>
+        </div>
       </div>
 
       {/* Summary */}
@@ -188,7 +220,10 @@ export function SalesView() {
           setOpen(false)
           load()
         }}
+        customers={customers}
       />
+
+      {showCustomers && <CustomersView onBack={() => setShowCustomers(false)} />}
     </div>
   )
 }
@@ -293,12 +328,15 @@ function SaleForm({
   open,
   onOpenChange,
   onSaved,
+  customers,
 }: {
   open: boolean
   onOpenChange: (v: boolean) => void
   onSaved: () => void
+  customers: any[]
 }) {
   const [customerName, setCustomerName] = useState('')
+  const [customerId, setCustomerId] = useState('')
   const [invoiceNo, setInvoiceNo] = useState('')
   const [date, setDate] = useState(todayStr())
   const [paid, setPaid] = useState('')
@@ -325,11 +363,20 @@ function SaleForm({
 
   const reset = () => {
     setCustomerName('')
+    setCustomerId('')
     setInvoiceNo('')
     setDate(todayStr())
     setPaid('')
     setNotes('')
     setItems([{ itemName: '', quantity: 1, unitPrice: 0, total: 0 }])
+  }
+
+  const selectCustomer = (id: string) => {
+    setCustomerId(id)
+    if (id) {
+      const c = customers.find((x) => x.id === id)
+      if (c) setCustomerName(c.name)
+    }
   }
 
   const save = async () => {
@@ -349,6 +396,7 @@ function SaleForm({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           customerName,
+          customerId_ref: customerId || null,
           invoiceNo,
           date,
           paid: Number(paid) || 0,
@@ -381,12 +429,35 @@ function SaleForm({
         </DialogHeader>
 
         <div className="space-y-3">
+          <div>
+            <Label className="text-xs">اختر عميل مسجل (اختياري)</Label>
+            <Select value={customerId} onValueChange={selectCustomer}>
+              <SelectTrigger className="bg-slate-50">
+                <SelectValue placeholder="أو اكتب اسم العميل يدوياً" />
+              </SelectTrigger>
+              <SelectContent>
+                {customers.length === 0 ? (
+                  <SelectItem value="" disabled>لا يوجد عملاء مسجلين</SelectItem>
+                ) : (
+                  customers.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.name}
+                    </SelectItem>
+                  ))
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+
           <div className="grid grid-cols-2 gap-2">
             <div>
               <Label className="text-xs">اسم العميل *</Label>
               <Input
                 value={customerName}
-                onChange={(e) => setCustomerName(e.target.value)}
+                onChange={(e) => {
+                  setCustomerName(e.target.value)
+                  setCustomerId('')
+                }}
                 placeholder="اسم العميل"
                 className="bg-slate-50"
               />

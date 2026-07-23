@@ -34,6 +34,8 @@ interface ReportData {
     purchasesRemaining: number
     advancesTotal: number
     receiptsTotal: number
+    productionTotal: number
+    productionPieces: number
     expensesTotal: number
     netProfit: number
   }
@@ -41,9 +43,12 @@ interface ReportData {
   purchases: any[]
   advances: any[]
   receipts: any[]
+  productions: any[]
+  attendance: any[]
   expenses: any[]
   expensesByCategory: Record<string, number>
   topItems: { name: string; qty: number; total: number }[]
+  topModels: { name: string; qty: number; total: number }[]
 }
 
 export function ReportsView() {
@@ -51,6 +56,7 @@ export function ReportsView() {
   const [to, setTo] = useState(todayStr())
   const [data, setData] = useState<ReportData | null>(null)
   const [loading, setLoading] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const { toast } = useToast()
 
   const load = async () => {
@@ -87,6 +93,81 @@ export function ReportsView() {
 
   const handlePrint = () => {
     window.print()
+  }
+
+  const exportPDF = async () => {
+    if (!data) return
+    setExporting(true)
+    try {
+      const { exportElementToPDF, shareViaWhatsApp, createReportContainer, cleanupContainer } =
+        await import('@/lib/pdf-export')
+
+      const s = data.summary
+      const catRows = Object.entries(data.expensesByCategory || {})
+        .sort((a, b) => b[1] - a[1])
+        .map(
+          ([name, amount]) =>
+            `<tr><td style="padding:5px;border:1px solid #e2e8f0;">${name}</td><td style="padding:5px;border:1px solid #e2e8f0;text-align:left;font-weight:bold;color:#dc2626;">${formatCurrency(amount)}</td></tr>`
+        )
+        .join('')
+
+      const topItemRows = (data.topItems || [])
+        .map(
+          (it, i) =>
+            `<tr><td style="padding:5px;border:1px solid #e2e8f0;text-align:center;">${i + 1}</td><td style="padding:5px;border:1px solid #e2e8f0;">${it.name}</td><td style="padding:5px;border:1px solid #e2e8f0;text-align:center;">${it.qty}</td><td style="padding:5px;border:1px solid #e2e8f0;text-align:left;font-weight:bold;color:#059669;">${formatCurrency(it.total)}</td></tr>`
+        )
+        .join('')
+
+      const contentHtml = `
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:20px;">
+          <div style="padding:16px;background:${s.netProfit >= 0 ? '#f0fdf4' : '#fef2f2'};border-radius:8px;text-align:center;">
+            <p style="margin:0;font-size:12px;color:${s.netProfit >= 0 ? '#047857' : '#991b1b'};">صافي الربح للفترة</p>
+            <p style="margin:6px 0 0;font-size:22px;font-weight:bold;color:${s.netProfit >= 0 ? '#065f46' : '#7f1d1d'};">${formatCurrency(s.netProfit)}</p>
+            <p style="margin:4px 0 0;font-size:10px;color:#64748b;">${from ? formatDate(from) : 'البداية'} إلى ${to ? formatDate(to) : 'اليوم'}</p>
+          </div>
+          <div style="padding:16px;background:#f8fafc;border-radius:8px;">
+            <p style="margin:0 0 8px;font-size:12px;color:#475569;font-weight:bold;">ملخص العمليات</p>
+            <div style="font-size:11px;line-height:1.8;">
+              <div style="display:flex;justify-content:space-between;"><span>المبيعات:</span><span style="color:#059669;font-weight:bold;">${formatCurrency(s.salesTotal)}</span></div>
+              <div style="display:flex;justify-content:space-between;"><span>المشتريات:</span><span style="color:#d97706;font-weight:bold;">${formatCurrency(s.purchasesTotal)}</span></div>
+              <div style="display:flex;justify-content:space-between;"><span>المصاريف:</span><span style="color:#dc2626;font-weight:bold;">${formatCurrency(s.expensesTotal)}</span></div>
+              <div style="display:flex;justify-content:space-between;"><span>سلف العمال:</span><span style="color:#dc2626;font-weight:bold;">${formatCurrency(s.advancesTotal)}</span></div>
+              ${s.productionTotal > 0 ? `<div style="display:flex;justify-content:space-between;"><span>إنتاج بالقطعة:</span><span style="color:#4f46e5;font-weight:bold;">${formatCurrency(s.productionTotal)}</span></div>` : ''}
+            </div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:20px;">
+          <div style="padding:10px;background:#ecfdf5;border-radius:6px;text-align:center;"><p style="margin:0;font-size:10px;color:#047857;">مبيعات</p><p style="margin:3px 0 0;font-size:13px;font-weight:bold;color:#065f46;">${formatCurrency(s.salesTotal)}</p></div>
+          <div style="padding:10px;background:#fffbeb;border-radius:6px;text-align:center;"><p style="margin:0;font-size:10px;color:#92400e;">مشتريات</p><p style="margin:3px 0 0;font-size:13px;font-weight:bold;color:#78350f;">${formatCurrency(s.purchasesTotal)}</p></div>
+          <div style="padding:10px;background:#fef2f2;border-radius:6px;text-align:center;"><p style="margin:0;font-size:10px;color:#991b1b;">مصاريف</p><p style="margin:3px 0 0;font-size:13px;font-weight:bold;color:#7f1d1d;">${formatCurrency(s.expensesTotal)}</p></div>
+          <div style="padding:10px;background:#f5f3ff;border-radius:6px;text-align:center;"><p style="margin:0;font-size:10px;color:#5b21b6;">سلف</p><p style="margin:3px 0 0;font-size:13px;font-weight:bold;color:#4c1d95;">${formatCurrency(s.advancesTotal)}</p></div>
+        </div>
+        ${catRows ? `
+        <h3 style="color:#1e293b;margin:16px 0 8px;">المصاريف حسب البند</h3>
+        <table style="width:100%;border-collapse:collapse;font-size:11px;">
+          <thead><tr style="background:#fef2f2;"><th style="padding:6px;border:1px solid #e2e8f0;">البند</th><th style="padding:6px;border:1px solid #e2e8f0;">المبلغ</th></tr></thead>
+          <tbody>${catRows}</tbody>
+        </table>` : ''}
+        ${topItemRows ? `
+        <h3 style="color:#1e293b;margin:16px 0 8px;">أكثر الأصناف مبيعاً</h3>
+        <table style="width:100%;border-collapse:collapse;font-size:11px;">
+          <thead><tr style="background:#f0fdf4;"><th style="padding:6px;border:1px solid #e2e8f0;">#</th><th style="padding:6px;border:1px solid #e2e8f0;">الصنف</th><th style="padding:6px;border:1px solid #e2e8f0;">الكمية</th><th style="padding:6px;border:1px solid #e2e8f0;">الإجمالي</th></tr></thead>
+          <tbody>${topItemRows}</tbody>
+        </table>` : ''}
+      `
+
+      const container = createReportContainer('التقرير الشامل للمصنع', contentHtml)
+      await new Promise((r) => setTimeout(r, 100))
+      const file = await exportElementToPDF(container, `تقرير-شامل-${from}-إلى-${to}.pdf`)
+      cleanupContainer(container)
+
+      toast({ title: 'تم', description: 'تم إنشاء PDF - جارٍ المشاركة عبر الواتساب' })
+      await shareViaWhatsApp(file, `تقرير المصنع الشامل\nالفترة: ${formatDate(from)} إلى ${formatDate(to)}\nصافي الربح: ${formatCurrency(s.netProfit)}`)
+    } catch (e: any) {
+      toast({ title: 'خطأ', description: e.message, variant: 'destructive' })
+    } finally {
+      setExporting(false)
+    }
   }
 
   if (loading && !data) {
@@ -184,6 +265,16 @@ export function ReportsView() {
             طباعة
           </Button>
         </div>
+
+        <Button
+          onClick={exportPDF}
+          disabled={exporting || !data}
+          className="w-full bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white"
+          size="sm"
+        >
+          <Download className="w-4 h-4 ml-1" />
+          {exporting ? 'جارٍ التصدير...' : 'تصدير PDF ومشاركة واتساب'}
+        </Button>
       </div>
 
       {data && (

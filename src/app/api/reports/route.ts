@@ -55,6 +55,22 @@ export async function GET(req: NextRequest) {
     })
     const receiptsTotal = receipts.reduce((s, x) => s + x.amount, 0)
 
+    // Worker production (piece-rate)
+    const productions = await db.production.findMany({
+      where: dateFilter,
+      include: { worker: true },
+      orderBy: { date: 'desc' },
+    })
+    const productionTotal = productions.reduce((s, x) => s + x.total, 0)
+    const productionPieces = productions.reduce((s, x) => s + x.quantity, 0)
+
+    // Worker attendance
+    const attendance = await db.workerAttendance.findMany({
+      where: dateFilter,
+      include: { worker: true },
+      orderBy: { date: 'desc' },
+    })
+
     // Expenses
     const expenses = await db.expense.findMany({
       where: dateFilter,
@@ -84,9 +100,22 @@ export async function GET(req: NextRequest) {
       .sort((a, b) => b.total - a.total)
       .slice(0, 10)
 
+    // Production by model
+    const prodByModel: Record<string, { qty: number; total: number }> = {}
+    for (const p of productions) {
+      if (!prodByModel[p.modelName]) prodByModel[p.modelName] = { qty: 0, total: 0 }
+      prodByModel[p.modelName].qty += p.quantity
+      prodByModel[p.modelName].total += p.total
+    }
+    const topModels = Object.entries(prodByModel)
+      .map(([name, v]) => ({ name, ...v }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 10)
+
     // Net calculation
+    // الإنتاج بالقطعة يُعتبر مصروف لأنه يستحق للعامل
     const netProfit =
-      salesTotal - purchasesTotal - expensesTotal - advancesTotal + receiptsTotal
+      salesTotal - purchasesTotal - expensesTotal - advancesTotal + receiptsTotal - productionTotal
 
     return NextResponse.json({
       range: { from, to },
@@ -99,6 +128,8 @@ export async function GET(req: NextRequest) {
         purchasesRemaining,
         advancesTotal,
         receiptsTotal,
+        productionTotal,
+        productionPieces,
         expensesTotal,
         netProfit,
       },
@@ -106,9 +137,12 @@ export async function GET(req: NextRequest) {
       purchases,
       advances,
       receipts,
+      productions,
+      attendance,
       expenses,
       expensesByCategory,
       topItems,
+      topModels,
     })
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })
