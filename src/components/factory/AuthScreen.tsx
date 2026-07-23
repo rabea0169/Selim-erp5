@@ -31,7 +31,7 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void })
   useEffect(() => {
     hasAnyUser()
       .then(setHasUsers)
-      .catch(() => {})
+      .catch((e) => console.error('Failed to check users:', e))
       .finally(() => setChecking(false))
   }, [])
 

@@ -167,6 +167,7 @@ export interface Expense {
 // كل الجداول في قاعدة البيانات
 export type TableName =
   | 'factorySettings'
+  | 'auditLogs'
   | 'users'
   | 'workers'
   | 'workerAdvances'
@@ -184,6 +185,7 @@ export type TableName =
 
 export interface DatabaseSchema {
   factorySettings: FactorySettings
+  auditLogs: AuditLogEntry
   users: User
   workers: Worker
   workerAdvances: WorkerAdvance
@@ -198,4 +200,17 @@ export interface DatabaseSchema {
   purchaseItems: PurchaseItem
   expenseCategories: ExpenseCategory
   expenses: Expense
+}
+
+// إضافة AuditLogEntry type
+export interface AuditLogEntry {
+  id: string
+  userId: string
+  userName: string
+  action: 'create' | 'update' | 'delete' | 'login' | 'logout' | 'backup' | 'restore'
+  entityType: string
+  entityId?: string
+  description: string
+  metadata?: Record<string, any>
+  timestamp: string
 }

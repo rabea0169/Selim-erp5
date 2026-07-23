@@ -9,10 +9,12 @@ import {
   Package,
   FileText,
   ArrowLeft,
+  BarChart3,
 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { formatCurrency, todayStr, startOfMonth } from '@/lib/format'
 import { reportRepository, useLiveData, type ReportData } from '@/lib/db'
+import { DashboardCharts } from './DashboardCharts'
 import type { TabKey } from '@/app/page'
 
 interface DashboardProps {
@@ -210,6 +212,16 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         </div>
         <ArrowLeft className="w-5 h-5" />
       </button>
+
+      {/* الرسوم البيانية */}
+      <div>
+        <h2 className="text-lg font-bold text-slate-800 mb-2 flex items-center gap-2">
+          <BarChart3 className="w-5 h-5 text-emerald-600" />
+          <span className="w-1.5 h-5 bg-emerald-500 rounded-full"></span>
+          الإحصائيات البيانية
+        </h2>
+        <DashboardCharts data={monthData} />
+      </div>
     </div>
   )
 }

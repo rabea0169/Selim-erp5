@@ -407,7 +407,9 @@ export function getSavedPrintSettings(): PrintSettings {
     if (saved) {
       return JSON.parse(saved)
     }
-  } catch {}
+  } catch (e) {
+    console.error('Failed to load print settings:', e)
+  }
   return { paperSize: 'A4', method: 'browser', copies: 1 }
 }
 

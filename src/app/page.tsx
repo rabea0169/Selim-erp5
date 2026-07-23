@@ -26,7 +26,11 @@ import { AuthScreen } from '@/components/factory/AuthScreen'
 import { PrintSettingsDialog } from '@/components/factory/PrintSettingsDialog'
 import { FactorySettingsView } from '@/components/factory/FactorySettingsView'
 import { InstallPrompt } from '@/components/factory/InstallPrompt'
-import { getCurrentUser, logout, factorySettingsRepository, expenseCategoryRepository, type SessionUser, type FactorySettings } from '@/lib/db'
+import { ConnectionStatus } from '@/components/factory/ConnectionStatus'
+import { ThemeToggle } from '@/components/factory/ThemeToggle'
+import { GlobalSearch } from '@/components/factory/GlobalSearch'
+import { AlertsPanel } from '@/components/factory/AlertsPanel'
+import { getCurrentUser, logout, factorySettingsRepository, expenseCategoryRepository, autoBackupService, auditLogRepository, type SessionUser, type FactorySettings } from '@/lib/db'
 
 export type TabKey =
   | 'dashboard'
@@ -65,12 +69,31 @@ export default function Home() {
         try {
           const settings = await factorySettingsRepository.get()
           setFactorySettings(settings)
-        } catch {}
+          // بدء النسخ الاحتياطي التلقائي
+          autoBackupService.start()
+          // تسجيل دخول في audit log
+          auditLogRepository.log({
+            userId: currentUser.id,
+            userName: currentUser.name,
+            action: 'login',
+            entityType: 'auth',
+            description: `تسجيل دخول: ${currentUser.username}`,
+          })
+        } catch (e) {
+          console.error('Failed to load factory settings:', e)
+        }
       }
     })
 
     // تهيئة فئات المصاريف الافتراضية
-    expenseCategoryRepository.seedDefaults().catch(() => {})
+    expenseCategoryRepository.seedDefaults().catch((e) => {
+      console.error('Failed to seed expense categories:', e)
+    })
+
+    // إيقاف النسخ الاحتياطي عند الخروج
+    return () => {
+      autoBackupService.stop()
+    }
   }, [reloadKey])
 
   const handleLogout = () => {
@@ -113,6 +136,13 @@ export default function Home() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <ConnectionStatus />
+            <GlobalSearch onNavigate={(t) => setTab(t as TabKey)} />
+            <AlertsPanel onNavigate={(target) => {
+              if (target === 'backup') setBackupOpen(true)
+              else setTab(target as TabKey)
+            }} />
+            <ThemeToggle />
             <button
               onClick={() => setFactoryOpen(true)}
               className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 transition-colors"

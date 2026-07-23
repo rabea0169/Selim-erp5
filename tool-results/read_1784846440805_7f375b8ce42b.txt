@@ -1,0 +1,730 @@
+     1→     1→'use client'
+     2→     2→
+     3→     3→import { useState, useEffect } from 'react'
+     4→     4→import {
+     5→     5→  Calendar,
+     6→     6→  Clock,
+     7→     7→  LogIn,
+     8→     8→  LogOut,
+     9→     9→  Trash2,
+    10→    10→  Users,
+    11→    11→  X,
+    12→    12→  CheckCircle,
+    13→    13→  XCircle,
+    14→    14→  CalendarOff,
+    15→    15→  Pencil,
+    16→    16→} from 'lucide-react'
+    17→    17→import { Button } from '@/components/ui/button'
+    18→    18→import { Input } from '@/components/ui/input'
+    19→    19→import { Label } from '@/components/ui/label'
+    20→    20→import { Badge } from '@/components/ui/badge'
+    21→    21→import {
+    22→    22→  Dialog,
+    23→    23→  DialogContent,
+    24→    24→  DialogHeader,
+    25→    25→  DialogTitle,
+    26→    26→  DialogFooter,
+    27→    27→} from '@/components/ui/dialog'
+    28→    28→import {
+    29→    29→  Select,
+    30→    30→  SelectContent,
+    31→    31→  SelectItem,
+    32→    32→  SelectTrigger,
+    33→    33→  SelectValue,
+    34→    34→} from '@/components/ui/select'
+    35→    35→import { useToast } from '@/hooks/use-toast'
+    36→    36→import { todayStr, formatDate } from '@/lib/format'
+    37→    37→import {
+    38→    38→  workerRepository,
+    39→    39→  workerAttendanceRepository,
+    40→    40→  dataChangeEmitter,
+    41→    41→  useLiveData,
+    42→    42→  type WorkerAttendance,
+    43→    43→} from '@/lib/db'
+    44→    44→
+    45→    45→interface Worker {
+    46→    46→  id: string
+    47→    47→  name: string
+    48→    48→  job: string | null
+    49→    49→  type: string
+    50→    50→}
+    51→    51→
+    52→    52→interface Attendance {
+    53→    53→  id: string
+    54→    54→  workerId: string
+    55→    55→  date: string
+    56→    56→  checkIn: string | null
+    57→    57→  checkOut: string | null
+    58→    58→  status: string
+    59→    59→  notes: string | null
+    60→    60→  worker: Worker
+    61→    61→}
+    62→    62→
+    63→    63→// الحصول على الوقت الحالي بصيغة HH:MM
+    64→    64→function currentTimeStr(): string {
+    65→    65→  const d = new Date()
+    66→    66→  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+    67→    67→}
+    68→    68→
+    69→    69→// استخراج الوقت بصيغة HH:MM من تاريخ ISO
+    70→    70→function timeFromISO(iso: string | null): string {
+    71→    71→  if (!iso) return ''
+    72→    72→  const d = new Date(iso)
+    73→    73→  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+    74→    74→}
+    75→    75→
+    76→    76→// دمج التاريخ والوقت في ISO
+    77→    77→function combineDateTime(dateStr: string, timeStr: string): string {
+    78→    78→  const d = new Date(dateStr)
+    79→    79→  const [h, m] = timeStr.split(':').map(Number)
+    80→    80→  d.setHours(h, m, 0, 0)
+    81→    81→  return d.toISOString()
+    82→    82→}
+    83→    83→
+    84→    84→export function AttendanceView({ onBack }: { onBack: () => void }) {
+    85→    85→  const [date, setDate] = useState(todayStr())
+    86→    86→  const { toast } = useToast()
+    87→    87→
+    88→    88→  // تحميل العمال + سجلات الحضور مع التحديث الفوري
+    89→    89→  const { data: loadedData, loading, reload } = useLiveData<{
+    90→    90→    workers: Worker[]
+    91→    91→    records: Attendance[]
+    92→    92→  }>(async () => {
+    93→    93→    const [workersData, attendanceData] = await Promise.all([
+    94→    94→      workerRepository.getAll(),
+    95→    95→      workerAttendanceRepository.getByDate(date),
+    96→    96→    ])
+    97→    97→    const workersList: Worker[] = workersData.map((w) => ({
+    98→    98→      id: w.id,
+    99→    99→      name: w.name,
+   100→   100→      job: w.job ?? null,
+   101→   101→      type: w.type,
+   102→   102→    }))
+   103→   103→    const workerMap = new Map(workersList.map((w) => [w.id, w]))
+   104→   104→    const recs: Attendance[] = attendanceData
+   105→   105→      .map((a) => {
+   106→   106→        const w = workerMap.get(a.workerId)
+   107→   107→        if (!w) return null
+   108→   108→        return {
+   109→   109→          id: a.id,
+   110→   110→          workerId: a.workerId,
+   111→   111→          date: a.date,
+   112→   112→          checkIn: a.checkIn ?? null,
+   113→   113→          checkOut: a.checkOut ?? null,
+   114→   114→          status: a.status,
+   115→   115→          notes: a.notes ?? null,
+   116→   116→          worker: w,
+   117→   117→        } as Attendance
+   118→   118→      })
+   119→   119→      .filter((x): x is Attendance => x !== null)
+   120→   120→    return { workers: workersList, records: recs }
+   121→   121→  }, ['workers', 'workerAttendance'])
+   122→   122→
+   123→   123→  // إعادة التحميل عند تغير التاريخ
+   124→   124→  useEffect(() => {
+   125→   125→    reload()
+   126→   126→  }, [date, reload])
+   127→   127→
+   128→   128→  const workers = loadedData?.workers || []
+   129→   129→  const records = loadedData?.records || []
+   130→   130→
+   131→   131→  // حالة نافذة اختيار الوقت
+   132→   132→  const [timeDialog, setTimeDialog] = useState<{
+   133→   133→    open: boolean
+   134→   134→    workerId: string
+   135→   135→    workerName: string
+   136→   136→    type: 'checkIn' | 'checkOut'
+   137→   137→    time: string
+   138→   138→    notes: string
+   139→   139→    existingId?: string
+   140→   140→  }>({
+   141→   141→    open: false,
+   142→   142→    workerId: '',
+   143→   143→    workerName: '',
+   144→   144→    type: 'checkIn',
+   145→   145→    time: currentTimeStr(),
+   146→   146→    notes: '',
+   147→   147→  })
+   148→   148→
+   149→   149→  // حالة نافذة الغياب/الإجازة
+   150→   150→  const [statusDialog, setStatusDialog] = useState<{
+   151→   151→    open: boolean
+   152→   152→    workerId: string
+   153→   153→    workerName: string
+   154→   154→    status: 'absent' | 'leave'
+   155→   155→    notes: string
+   156→   156→  }>({
+   157→   157→    open: false,
+   158→   158→    workerId: '',
+   159→   159→    workerName: '',
+   160→   160→    status: 'absent',
+   161→   161→    notes: '',
+   162→   162→  })
+   163→   163→
+   164→   164→  // فتح نافذة اختيار وقت الحضور
+   165→   165→  const openCheckInDialog = (worker: Worker) => {
+   166→   166→    const rec = getRecord(worker.id)
+   167→   167→    setTimeDialog({
+   168→   168→      open: true,
+   169→   169→      workerId: worker.id,
+   170→   170→      workerName: worker.name,
+   171→   171→      type: 'checkIn',
+   172→   172→      time: rec?.checkIn ? timeFromISO(rec.checkIn) : currentTimeStr(),
+   173→   173→      notes: rec?.notes || '',
+   174→   174→      existingId: rec?.id,
+   175→   175→    })
+   176→   176→  }
+   177→   177→
+   178→   178→  // فتح نافذة اختيار وقت الانصراف
+   179→   179→  const openCheckOutDialog = (worker: Worker) => {
+   180→   180→    const rec = getRecord(worker.id)
+   181→   181→    setTimeDialog({
+   182→   182→      open: true,
+   183→   183→      workerId: worker.id,
+   184→   184→      workerName: worker.name,
+   185→   185→      type: 'checkOut',
+   186→   186→      time: rec?.checkOut ? timeFromISO(rec.checkOut) : currentTimeStr(),
+   187→   187→      notes: rec?.notes || '',
+   188→   188→      existingId: rec?.id,
+   189→   189→    })
+   190→   190→  }
+   191→   191→
+   192→   192→  // حفظ الوقت المختار
+   193→   193→  const saveTime = async () => {
+   194→   194→    const { workerId, type, time, notes } = timeDialog
+   195→   195→    if (!time) {
+   196→   196→      toast({ title: 'تنبيه', description: 'اختر الوقت', variant: 'destructive' })
+   197→   197→      return
+   198→   198→    }
+   199→   199→
+   200→   200→    const dateTimeISO = combineDateTime(date, time)
+   201→   201→    const payload: Partial<WorkerAttendance> & { workerId: string; date: string } = {
+   202→   202→      workerId,
+   203→   203→      date: combineDateTime(date, '00:00'),
+   204→   204→      notes: notes || undefined,
+   205→   205→    }
+   206→   206→    if (type === 'checkIn') {
+   207→   207→      payload.checkIn = dateTimeISO
+   208→   208→      payload.status = 'present'
+   209→   209→    } else {
+   210→   210→      payload.checkOut = dateTimeISO
+   211→   211→      payload.status = 'present'
+   212→   212→    }
+   213→   213→
+   214→   214→    try {
+   215→   215→      await workerAttendanceRepository.upsert(payload)
+   216→   216→      dataChangeEmitter.notifyUpdate('workerAttendance')
+   217→   217→      toast({
+   218→   218→        title: 'تم',
+   219→   219→        description: type === 'checkIn' ? 'تم تسجيل الحضور' : 'تم تسجيل الانصراف',
+   220→   220→      })
+   221→   221→      setTimeDialog({ ...timeDialog, open: false })
+   222→   222→    } catch (e: any) {
+   223→   223→      toast({ title: 'خطأ', description: e.message, variant: 'destructive' })
+   224→   224→    }
+   225→   225→  }
+   226→   226→
+   227→   227→  // حفظ حالة الغياب/الإجازة
+   228→   228→  const saveStatus = async () => {
+   229→   229→    const { workerId, status, notes } = statusDialog
+   230→   230→    try {
+   231→   231→      await workerAttendanceRepository.upsert({
+   232→   232→        workerId,
+   233→   233→        date: combineDateTime(date, '00:00'),
+   234→   234→        status,
+   235→   235→        notes: notes || undefined,
+   236→   236→      })
+   237→   237→      dataChangeEmitter.notifyUpdate('workerAttendance')
+   238→   238→      toast({ title: 'تم', description: status === 'absent' ? 'تم تسجيل الغياب' : 'تم تسجيل الإجازة' })
+   239→   239→      setStatusDialog({ ...statusDialog, open: false })
+   240→   240→    } catch (e: any) {
+   241→   241→      toast({ title: 'خطأ', description: e.message, variant: 'destructive' })
+   242→   242→    }
+   243→   243→  }
+   244→   244→
+   245→   245→  const handleDelete = async (id: string) => {
+   246→   246→    if (!confirm('حذف هذا السجل؟')) return
+   247→   247→    try {
+   248→   248→      await workerAttendanceRepository.delete(id)
+   249→   249→      dataChangeEmitter.notifyDelete('workerAttendance')
+   250→   250→      toast({ title: 'تم الحذف' })
+   251→   251→    } catch {
+   252→   252→      toast({ title: 'خطأ', variant: 'destructive' })
+   253→   253→    }
+   254→   254→  }
+   255→   255→
+   256→   256→  const getRecord = (workerId: string) =>
+   257→   257→    records.find((r) => r.workerId === workerId)
+   258→   258→
+   259→   259→  const presentCount = records.filter((r) => r.status === 'present').length
+   260→   260→  const absentCount = records.filter((r) => r.status === 'absent').length
+   261→   261→  const leaveCount = records.filter((r) => r.status === 'leave').length
+   262→   262→
+   263→   263→  return (
+   264→   264→    <div className="space-y-4">
+   265→   265→      <div className="flex items-center justify-between">
+   266→   266→        <div className="flex items-center gap-2">
+   267→   267→          <Button variant="ghost" size="sm" onClick={onBack} className="text-slate-600">
+   268→   268→            <X className="w-4 h-4 ml-1" />
+   269→   269→            رجوع
+   270→   270→          </Button>
+   271→   271→          <div>
+   272→   272→            <h2 className="text-xl font-bold text-slate-800">الحضور والانصراف</h2>
+   273→   273→            <p className="text-xs text-slate-500">تسجيل حضور وانصراف العمال يومياً</p>
+   274→   274→          </div>
+   275→   275→        </div>
+   276→   276→      </div>
+   277→   277→
+   278→   278→      {/* Date selector */}
+   279→   279→      <div className="bg-white rounded-xl p-3 shadow-sm border border-slate-100">
+   280→   280→        <div className="flex items-center gap-2">
+   281→   281→          <Calendar className="w-4 h-4 text-slate-400" />
+   282→   282→          <Input
+   283→   283→            type="date"
+   284→   284→            value={date}
+   285→   285→            onChange={(e) => setDate(e.target.value)}
+   286→   286→            className="bg-slate-50 border-slate-200 text-sm max-w-[200px]"
+   287→   287→          />
+   288→   288→        </div>
+   289→   289→      </div>
+   290→   290→
+   291→   291→      {/* Summary */}
+   292→   292→      <div className="grid grid-cols-3 gap-2">
+   293→   293→        <div className="bg-emerald-50 rounded-xl p-3 border border-emerald-100 text-center">
+   294→   294→          <CheckCircle className="w-5 h-5 text-emerald-600 mx-auto mb-1" />
+   295→   295→          <p className="text-[10px] text-emerald-700">حاضر</p>
+   296→   296→          <p className="text-lg font-bold text-emerald-900">{presentCount}</p>
+   297→   297→        </div>
+   298→   298→        <div className="bg-rose-50 rounded-xl p-3 border border-rose-100 text-center">
+   299→   299→          <XCircle className="w-5 h-5 text-rose-600 mx-auto mb-1" />
+   300→   300→          <p className="text-[10px] text-rose-700">غائب</p>
+   301→   301→          <p className="text-lg font-bold text-rose-900">{absentCount}</p>
+   302→   302→        </div>
+   303→   303→        <div className="bg-amber-50 rounded-xl p-3 border border-amber-100 text-center">
+   304→   304→          <CalendarOff className="w-5 h-5 text-amber-600 mx-auto mb-1" />
+   305→   305→          <p className="text-[10px] text-amber-700">إجازة</p>
+   306→   306→          <p className="text-lg font-bold text-amber-900">{leaveCount}</p>
+   307→   307→        </div>
+   308→   308→      </div>
+   309→   309→
+   310→   310→      {/* Workers list for check-in/out */}
+   311→   311→      {loading ? (
+   312→   312→        <div className="space-y-2">
+   313→   313→          {[1, 2, 3].map((i) => (
+   314→   314→            <div key={i} className="h-20 bg-slate-200 rounded-xl animate-pulse" />
+   315→   315→          ))}
+   316→   316→        </div>
+   317→   317→      ) : workers.length === 0 ? (
+   318→   318→        <div className="bg-white rounded-xl p-8 text-center border border-slate-100">
+   319→   319→          <Users className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+   320→   320→          <p className="text-sm text-slate-500">لا يوجد عمال مسجلين</p>
+   321→   321→          <p className="text-xs text-slate-400">أضف عمالاً من قسم العمال أولاً</p>
+   322→   322→        </div>
+   323→   323→      ) : (
+   324→   324→        <div className="space-y-2">
+   325→   325→          {workers.map((w) => {
+   326→   326→            const rec = getRecord(w.id)
+   327→   327→            const isCheckedIn = !!rec?.checkIn
+   328→   328→            const isCheckedOut = !!rec?.checkOut
+   329→   329→            return (
+   330→   330→              <div
+   331→   331→                key={w.id}
+   332→   332→                className="bg-white rounded-xl shadow-sm border border-slate-100 p-3"
+   333→   333→              >
+   334→   334→                <div className="flex items-center justify-between mb-2">
+   335→   335→                  <div className="flex items-center gap-2">
+   336→   336→                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-purple-500 to-violet-600 flex items-center justify-center text-white font-bold text-sm">
+   337→   337→                      {w.name.charAt(0)}
+   338→   338→                    </div>
+   339→   339→                    <div>
+   340→   340→                      <p className="font-bold text-slate-800 text-sm">{w.name}</p>
+   341→   341→                      <p className="text-[10px] text-slate-500">{w.job || 'عامل'}</p>
+   342→   342→                    </div>
+   343→   343→                  </div>
+   344→   344→                  {rec && (
+   345→   345→                    <Badge
+   346→   346→                      variant="outline"
+   347→   347→                      className={
+   348→   348→                        rec.status === 'present'
+   349→   349→                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+   350→   350→                          : rec.status === 'absent'
+   351→   351→                          ? 'bg-rose-50 text-rose-700 border-rose-200'
+   352→   352→                          : 'bg-amber-50 text-amber-700 border-amber-200'
+   353→   353→                      }
+   354→   354→                    >
+   355→   355→                      {rec.status === 'present'
+   356→   356→                        ? 'حاضر'
+   357→   357→                        : rec.status === 'absent'
+   358→   358→                        ? 'غائب'
+   359→   359→                        : 'إجازة'}
+   360→   360→                    </Badge>
+   361→   361→                  )}
+   362→   362→                </div>
+   363→   363→
+   364→   364→                {rec && (rec.checkIn || rec.checkOut) && (
+   365→   365→                  <div className="grid grid-cols-2 gap-2 mb-2 text-[11px]">
+   366→   366→                    <button
+   367→   367→                      onClick={() => openCheckInDialog(w)}
+   368→   368→                      className="bg-emerald-50 rounded-lg p-2 flex items-center gap-2 text-right hover:bg-emerald-100 transition-colors"
+   369→   369→                    >
+   370→   370→                      <LogIn className="w-3 h-3 text-emerald-600" />
+   371→   371→                      <div className="flex-1">
+   372→   372→                        <p className="text-emerald-700">حضور</p>
+   373→   373→                        <p className="font-bold text-emerald-900">
+   374→   374→                          {rec.checkIn ? timeFromISO(rec.checkIn) : '--:--'}
+   375→   375→                        </p>
+   376→   376→                      </div>
+   377→   377→                      <Pencil className="w-3 h-3 text-emerald-500" />
+   378→   378→                    </button>
+   379→   379→                    <button
+   380→   380→                      onClick={() => openCheckOutDialog(w)}
+   381→   381→                      className="bg-blue-50 rounded-lg p-2 flex items-center gap-2 text-right hover:bg-blue-100 transition-colors"
+   382→   382→                    >
+   383→   383→                      <LogOut className="w-3 h-3 text-blue-600" />
+   384→   384→                      <div className="flex-1">
+   385→   385→                        <p className="text-blue-700">انصراف</p>
+   386→   386→                        <p className="font-bold text-blue-900">
+   387→   387→                          {rec.checkOut ? timeFromISO(rec.checkOut) : '--:--'}
+   388→   388→                        </p>
+   389→   389→                      </div>
+   390→   390→                      <Pencil className="w-3 h-3 text-blue-500" />
+   391→   391→                    </button>
+   392→   392→                  </div>
+   393→   393→                )}
+   394→   394→
+   395→   395→                {rec?.notes && (
+   396→   396→                  <p className="text-[11px] text-slate-600 bg-yellow-50 rounded p-1.5 mb-2">
+   397→   397→                    {rec.notes}
+   398→   398→                  </p>
+   399→   399→                )}
+   400→   400→
+   401→   401→                <div className="flex gap-1">
+   402→   402→                  {!isCheckedIn && (
+   403→   403→                    <Button
+   404→   404→                      size="sm"
+   405→   405→                      onClick={() => openCheckInDialog(w)}
+   406→   406→                      className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white h-8 text-xs"
+   407→   407→                    >
+   408→   408→                      <LogIn className="w-3.5 h-3.5 ml-1" />
+   409→   409→                      تسجيل حضور
+   410→   410→                    </Button>
+   411→   411→                  )}
+   412→   412→                  {isCheckedIn && !isCheckedOut && (
+   413→   413→                    <Button
+   414→   414→                      size="sm"
+   415→   415→                      onClick={() => openCheckOutDialog(w)}
+   416→   416→                      className="flex-1 bg-blue-600 hover:bg-blue-700 text-white h-8 text-xs"
+   417→   417→                    >
+   418→   418→                      <LogOut className="w-3.5 h-3.5 ml-1" />
+   419→   419→                      تسجيل انصراف
+   420→   420→                    </Button>
+   421→   421→                  )}
+   422→   422→                  {isCheckedOut && (
+   423→   423→                    <div className="flex-1 text-center text-xs text-slate-500 py-1.5">
+   424→   424→                      اكتمل التسجيل اليوم
+   425→   425→                    </div>
+   426→   426→                  )}
+   427→   427→                  {!isCheckedIn && !isCheckedOut && (
+   428→   428→                    <>
+   429→   429→                      <Button
+   430→   430→                        size="sm"
+   431→   431→                        variant="outline"
+   432→   432→                        onClick={() =>
+   433→   433→                          setStatusDialog({
+   434→   434→                            open: true,
+   435→   435→                            workerId: w.id,
+   436→   436→                            workerName: w.name,
+   437→   437→                            status: 'absent',
+   438→   438→                            notes: '',
+   439→   439→                          })
+   440→   440→                        }
+   441→   441→                        className="border-rose-200 text-rose-700 hover:bg-rose-50 h-8 text-xs"
+   442→   442→                      >
+   443→   443→                        غائب
+   444→   444→                      </Button>
+   445→   445→                      <Button
+   446→   446→                        size="sm"
+   447→   447→                        variant="outline"
+   448→   448→                        onClick={() =>
+   449→   449→                          setStatusDialog({
+   450→   450→                            open: true,
+   451→   451→                            workerId: w.id,
+   452→   452→                            workerName: w.name,
+   453→   453→                            status: 'leave',
+   454→   454→                            notes: '',
+   455→   455→                          })
+   456→   456→                        }
+   457→   457→                        className="border-amber-200 text-amber-700 hover:bg-amber-50 h-8 text-xs"
+   458→   458→                      >
+   459→   459→                        إجازة
+   460→   460→                      </Button>
+   461→   461→                    </>
+   462→   462→                  )}
+   463→   463→                  {rec && (
+   464→   464→                    <Button
+   465→   465→                      size="icon"
+   466→   466→                      variant="ghost"
+   467→   467→                      className="h-8 w-8 text-rose-500"
+   468→   468→                      onClick={() => handleDelete(rec.id)}
+   469→   469→                    >
+   470→   470→                      <Trash2 className="w-3.5 h-3.5" />
+   471→   471→                    </Button>
+   472→   472→                  )}
+   473→   473→                </div>
+   474→   474→              </div>
+   475→   475→            )
+   476→   476→          })}
+   477→   477→        </div>
+   478→   478→      )}
+   479→   479→
+   480→   480→      {/* نافذة اختيار الوقت يدوياً */}
+   481→   481→      <Dialog
+   482→   482→        open={timeDialog.open}
+   483→   483→        onOpenChange={(v) => setTimeDialog({ ...timeDialog, open: v })}
+   484→   484→      >
+   485→   485→        <DialogContent className="max-w-sm" dir="rtl">
+   486→   486→          <DialogHeader>
+   487→   487→            <DialogTitle className="text-right flex items-center gap-2">
+   488→   488→              {timeDialog.type === 'checkIn' ? (
+   489→   489→                <>
+   490→   490→                  <LogIn className="w-5 h-5 text-emerald-600" />
+   491→   491→                  تسجيل حضور - {timeDialog.workerName}
+   492→   492→                </>
+   493→   493→              ) : (
+   494→   494→                <>
+   495→   495→                  <LogOut className="w-5 h-5 text-blue-600" />
+   496→   496→                  تسجيل انصراف - {timeDialog.workerName}
+   497→   497→                </>
+   498→   498→              )}
+   499→   499→            </DialogTitle>
+   500→   500→          </DialogHeader>
+   501→   501→
+   502→   502→          <div className="space-y-4">
+   503→   503→            {/* الوقت اليدوي */}
+   504→   504→            <div className="bg-slate-50 rounded-xl p-4">
+   505→   505→              <Label className="text-xs font-bold text-slate-700 mb-2 flex items-center gap-1">
+   506→   506→                <Clock className="w-3.5 h-3.5" />
+   507→   507→                اختر الوقت (ساعة ودقيقة)
+   508→   508→              </Label>
+   509→   509→
+   510→   510→              {/* وقت سريع */}
+   511→   511→              <div className="flex flex-wrap gap-1.5 mb-3">
+   512→   512→                {[
+   513→   513→                  { label: 'الوقت الحالي', value: currentTimeStr() },
+   514→   514→                  { label: '8:00 ص', value: '08:00' },
+   515→   515→                  { label: '9:00 ص', value: '09:00' },
+   516→   516→                  { label: '2:00 م', value: '14:00' },
+   517→   517→                  { label: '4:00 م', value: '16:00' },
+   518→   518→                  { label: '5:00 م', value: '17:00' },
+   519→   519→                  { label: '6:00 م', value: '18:00' },
+   520→   520→                ].map((q) => (
+   521→   521→                  <button
+   522→   522→                    key={q.label}
+   523→   523→                    onClick={() => setTimeDialog({ ...timeDialog, time: q.value })}
+   524→   524→                    className={`px-2 py-1 rounded-md text-[11px] font-medium transition-colors ${
+   525→   525→                      timeDialog.time === q.value
+   526→   526→                        ? timeDialog.type === 'checkIn'
+   527→   527→                          ? 'bg-emerald-600 text-white'
+   528→   528→                          : 'bg-blue-600 text-white'
+   529→   529→                        : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+   530→   530→                    }`}
+   531→   531→                  >
+   532→   532→                    {q.label}
+   533→   533→                  </button>
+   534→   534→                ))}
+   535→   535→              </div>
+   536→   536→
+   537→   537→              {/* اختيار يدوي للساعة والدقيقة */}
+   538→   538→              <div className="grid grid-cols-2 gap-2">
+   539→   539→                <div>
+   540→   540→                  <Label className="text-[10px] text-slate-500">الساعة</Label>
+   541→   541→                  <Select
+   542→   542→                    value={timeDialog.time.split(':')[0]}
+   543→   543→                    onValueChange={(h) =>
+   544→   544→                      setTimeDialog({
+   545→   545→                        ...timeDialog,
+   546→   546→                        time: `${h}:${timeDialog.time.split(':')[1] || '00'}`,
+   547→   547→                      })
+   548→   548→                    }
+   549→   549→                  >
+   550→   550→                    <SelectTrigger className="bg-white">
+   551→   551→                      <SelectValue placeholder="ساعة" />
+   552→   552→                    </SelectTrigger>
+   553→   553→                    <SelectContent className="max-h-60">
+   554→   554→                      {Array.from({ length: 24 }, (_, i) => {
+   555→   555→                        const h = String(i).padStart(2, '0')
+   556→   556→                        const period = i < 12 ? 'ص' : 'م'
+   557→   557→                        const display12 = i === 0 ? 12 : i > 12 ? i - 12 : i
+   558→   558→                        return (
+   559→   559→                          <SelectItem key={i} value={h}>
+   560→   560→                            {h} ({display12} {period})
+   561→   561→                          </SelectItem>
+   562→   562→                        )
+   563→   563→                      })}
+   564→   564→                    </SelectContent>
+   565→   565→                  </Select>
+   566→   566→                </div>
+   567→   567→                <div>
+   568→   568→                  <Label className="text-[10px] text-slate-500">الدقيقة</Label>
+   569→   569→                  <Select
+   570→   570→                    value={timeDialog.time.split(':')[1] || '00'}
+   571→   571→                    onValueChange={(m) =>
+   572→   572→                      setTimeDialog({
+   573→   573→                        ...timeDialog,
+   574→   574→                        time: `${timeDialog.time.split(':')[0] || '08'}:${m}`,
+   575→   575→                      })
+   576→   576→                    }
+   577→   577→                  >
+   578→   578→                    <SelectTrigger className="bg-white">
+   579→   579→                      <SelectValue placeholder="دقيقة" />
+   580→   580→                    </SelectTrigger>
+   581→   581→                    <SelectContent className="max-h-60">
+   582→   582→                      {['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'].map(
+   583→   583→                        (m) => (
+   584→   584→                          <SelectItem key={m} value={m}>
+   585→   585→                            {m}
+   586→   586→                          </SelectItem>
+   587→   587→                        )
+   588→   588→                      )}
+   589→   589→                    </SelectContent>
+   590→   590→                  </Select>
+   591→   591→                </div>
+   592→   592→              </div>
+   593→   593→
+   594→   594→              {/* عرض الوقت المختار */}
+   595→   595→              <div
+   596→   596→                className={`mt-3 p-3 rounded-lg text-center ${
+   597→   597→                  timeDialog.type === 'checkIn'
+   598→   598→                    ? 'bg-emerald-100'
+   599→   599→                    : 'bg-blue-100'
+   600→   600→                }`}
+   601→   601→              >
+   602→   602→                <p className="text-[10px] text-slate-600 mb-0.5">الوقت المختار</p>
+   603→   603→                <p
+   604→   604→                  className={`text-2xl font-bold ${
+   605→   605→                    timeDialog.type === 'checkIn' ? 'text-emerald-700' : 'text-blue-700'
+   606→   606→                  }`}
+   607→   607→                >
+   608→   608→                  {timeDialog.time}
+   609→   609→                </p>
+   610→   610→                <p className="text-[10px] text-slate-500 mt-0.5">
+   611→   611→                  يوم {formatDate(date)}
+   612→   612→                </p>
+   613→   613→              </div>
+   614→   614→            </div>
+   615→   615→
+   616→   616→            {/* ملاحظات */}
+   617→   617→            <div>
+   618→   618→              <Label className="text-xs">ملاحظات (اختياري)</Label>
+   619→   619→              <Input
+   620→   620→                value={timeDialog.notes}
+   621→   621→                onChange={(e) =>
+   622→   622→                  setTimeDialog({ ...timeDialog, notes: e.target.value })
+   623→   623→                }
+   624→   624→                placeholder="مثال: تأخير، استئذان..."
+   625→   625→                className="bg-slate-50"
+   626→   626→              />
+   627→   627→            </div>
+   628→   628→          </div>
+   629→   629→
+   630→   630→          <DialogFooter className="gap-2">
+   631→   631→            <Button
+   632→   632→              variant="outline"
+   633→   633→              onClick={() => setTimeDialog({ ...timeDialog, open: false })}
+   634→   634→            >
+   635→   635→              إلغاء
+   636→   636→            </Button>
+   637→   637→            <Button
+   638→   638→              onClick={saveTime}
+   639→   639→              className={
+   640→   640→                timeDialog.type === 'checkIn'
+   641→   641→                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+   642→   642→                  : 'bg-blue-600 hover:bg-blue-700 text-white'
+   643→   643→              }
+   644→   644→            >
+   645→   645→              {timeDialog.type === 'checkIn' ? 'حفظ الحضور' : 'حفظ الانصراف'}
+   646→   646→            </Button>
+   647→   647→          </DialogFooter>
+   648→   648→        </DialogContent>
+   649→   649→      </Dialog>
+   650→   650→
+   651→   651→      {/* نافذة تسجيل الغياب/الإجازة */}
+   652→   652→      <Dialog
+   653→   653→        open={statusDialog.open}
+   654→   654→        onOpenChange={(v) => setStatusDialog({ ...statusDialog, open: v })}
+   655→   655→      >
+   656→   656→        <DialogContent className="max-w-sm" dir="rtl">
+   657→   657→          <DialogHeader>
+   658→   658→            <DialogTitle className="text-right flex items-center gap-2">
+   659→   659→              {statusDialog.status === 'absent' ? (
+   660→   660→                <>
+   661→   661→                  <XCircle className="w-5 h-5 text-rose-600" />
+   662→   662→                  تسجيل غياب - {statusDialog.workerName}
+   663→   663→                </>
+   664→   664→              ) : (
+   665→   665→                <>
+   666→   666→                  <CalendarOff className="w-5 h-5 text-amber-600" />
+   667→   667→                  تسجيل إجازة - {statusDialog.workerName}
+   668→   668→                </>
+   669→   669→              )}
+   670→   670→            </DialogTitle>
+   671→   671→          </DialogHeader>
+   672→   672→
+   673→   673→          <div className="space-y-3">
+   674→   674→            <div
+   675→   675→              className={`p-3 rounded-lg ${
+   676→   676→                statusDialog.status === 'absent'
+   677→   677→                  ? 'bg-rose-50'
+   678→   678→                  : 'bg-amber-50'
+   679→   679→              }`}
+   680→   680→            >
+   681→   681→              <p className="text-xs text-slate-700">
+   682→   682→                سيتم تسجيل{' '}
+   683→   683→                <span className="font-bold">
+   684→   684→                  {statusDialog.status === 'absent' ? 'غياب' : 'إجازة'}
+   685→   685→                </span>{' '}
+   686→   686→                للعامل <span className="font-bold">{statusDialog.workerName}</span> في يوم{' '}
+   687→   687→                <span className="font-bold">{formatDate(date)}</span>
+   688→   688→              </p>
+   689→   689→            </div>
+   690→   690→            <div>
+   691→   691→              <Label className="text-xs">السبب / ملاحظات</Label>
+   692→   692→              <Input
+   693→   693→                value={statusDialog.notes}
+   694→   694→                onChange={(e) =>
+   695→   695→                  setStatusDialog({ ...statusDialog, notes: e.target.value })
+   696→   696→                }
+   697→   697→                placeholder={
+   698→   698→                  statusDialog.status === 'absent'
+   699→   699→                    ? 'سبب الغياب...'
+   700→   700→                    : 'نوع الإجازة (مرضية / سنوية...)'
+   701→   701→                }
+   702→   702→                className="bg-slate-50"
+   703→   703→              />
+   704→   704→            </div>
+   705→   705→          </div>
+   706→   706→
+   707→   707→          <DialogFooter className="gap-2">
+   708→   708→            <Button
+   709→   709→              variant="outline"
+   710→   710→              onClick={() => setStatusDialog({ ...statusDialog, open: false })}
+   711→   711→            >
+   712→   712→              إلغاء
+   713→   713→            </Button>
+   714→   714→            <Button
+   715→   715→              onClick={saveStatus}
+   716→   716→              className={
+   717→   717→                statusDialog.status === 'absent'
+   718→   718→                  ? 'bg-rose-600 hover:bg-rose-700 text-white'
+   719→   719→                  : 'bg-amber-600 hover:bg-amber-700 text-white'
+   720→   720→              }
+   721→   721→            >
+   722→   722→              تأكيد
+   723→   723→            </Button>
+   724→   724→          </DialogFooter>
+   725→   725→        </DialogContent>
+   726→   726→      </Dialog>
+   727→   727→    </div>
+   728→   728→  )
+   729→   729→}
+   730→   730→

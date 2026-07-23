@@ -120,13 +120,14 @@
   }
   body {
     @apply bg-background text-foreground;
+    transition: background-color 0.3s ease, color 0.3s ease;
   }
 }
 
 /* ====== تحسينات الخطوط للعربية ====== */
 @layer base {
   body {
-    font-family: 'Tahoma', 'Segoe UI', 'Cairo', 'Noto Sans Arabic', sans-serif;
+    font-family: 'Cairo', 'Tahoma', 'Segoe UI', 'Noto Sans Arabic', sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
@@ -201,4 +202,71 @@ html {
 /* تحسين اللمس على الموبايل */
 button, a, [role="button"] {
   touch-action: manipulation;
+}
+
+/* ====== أنيميشن سلس للتحولات ====== */
+* {
+  transition-property: background-color, border-color, color, fill, stroke;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
+
+/* ====== أنيميشن للعناصر الظاهرة ====== */
+@keyframes slide-in-from-bottom {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-in {
+  animation: slide-in-from-bottom 0.3s ease-out;
+}
+
+/* ====== تحسينات الوضع الليلي ====== */
+.dark {
+  color-scheme: dark;
+}
+
+.dark body {
+  background: #0f172a;
+  color: #f8fafc;
+}
+
+/* تحسين التباين في الوضع الليلي */
+.dark .bg-white {
+  background: #1e293b;
+}
+
+.dark .text-slate-800,
+.dark .text-slate-900 {
+  color: #f1f5f9;
+}
+
+.dark .text-slate-600,
+.dark .text-slate-700 {
+  color: #cbd5e1;
+}
+
+.dark .text-slate-500,
+.dark .text-slate-400 {
+  color: #94a3b8;
+}
+
+.dark .border-slate-100,
+.dark .border-slate-200 {
+  border-color: #334155;
+}
+
+.dark .bg-slate-50,
+.dark .bg-slate-100 {
+  background: #334155;
+}
+
+.dark .bg-slate-200 {
+  background: #475569;
 }
