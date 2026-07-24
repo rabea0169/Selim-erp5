@@ -163,21 +163,8 @@ export function Header({
       {/* Search Dialog */}
       <Dialog open={searchOpen} onOpenChange={setSearchOpen}>
         <DialogContent 
-          className="max-w-md p-0 border-0 rounded-t-3xl rounded-b-none overflow-y-auto"
-          style={{
-            top: 'auto',
-            bottom: '0',
-            left: '0',
-            right: '0',
-            transform: 'none',
-            width: '100%',
-            maxWidth: '28rem',
-            marginLeft: 'auto',
-            marginRight: 'auto',
-            maxHeight: '90vh',
-            borderRadius: '1.5rem 1.5rem 0 0',
-            borderTop: '1px solid #e2e8f0',
-          }}
+          variant="bottom-sheet"
+          className="p-0"
           dir="rtl"
         >
           <div className="flex justify-center pt-3 pb-2 sm:hidden">
