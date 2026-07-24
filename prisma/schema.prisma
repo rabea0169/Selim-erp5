@@ -1,44 +1,89 @@
-// Prisma schema for Clothing Factory Management System
-// نظام إدارة مصنع ملابس جاهزة - شامل
-
+// Prisma schema for Selim ERP - Neon PostgreSQL
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
-// المستخدمون (تسجيل الدخول)
+// ====== المستخدمون ======
 model User {
   id           String   @id @default(cuid())
   username     String   @unique
   passwordHash String
   name         String
-  role         String   @default("admin") // admin / user
+  role         String   @default("admin")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+
+  auditLogs AuditLog[]
 }
 
-// العمال
+// ====== سجل العمليات ======
+model AuditLog {
+  id          String   @id @default(cuid())
+  userId      String?
+  userName    String
+  action      String
+  entityType  String
+  entityId    String?
+  description String
+  metadata    Json?
+  timestamp   DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([entityType])
+  @@index([timestamp])
+}
+
+// ====== إعدادات المصنع ======
+model FactorySettings {
+  id                  String   @id @default("singleton")
+  factoryName         String
+  factoryNameEn       String?
+  slogan              String?
+  phone               String?
+  whatsapp            String?
+  email               String?
+  address             String?
+  taxNumber           String?
+  commercialRegister  String?
+  logo                String?
+  currency            String   @default("ج.م")
+  invoicePrefix       String?  @default("INV-")
+  invoiceFooter       String?
+  defaultPaperSize    String?  @default("A4")
+  taxRate             Float?   @default(0)
+  updatedAt           DateTime @updatedAt
+}
+
+// ====== الموظفون ======
 model Worker {
-  id        String   @id @default(cuid())
-  name      String
-  phone     String?
-  job       String?  // الوظيفة: خياط، تفصيل، تشطيب...إلخ
-  type      String   @default("monthly") // monthly = مرتب شهري / production = إنتاج بالقطعة
-  notes     String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id              String   @id @default(cuid())
+  name            String
+  phone           String?
+  job             String?
+  type            String   @default("monthly")
+  hourlyRate      Float?
+  overtimeRate    Float?
+  workStartTime   String?
+  workHoursPerDay Float?
+  monthlySalary   Float?
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   advances     WorkerAdvance[]
   receipts     WorkerReceipt[]
   attendance   WorkerAttendance[]
   productions  Production[]
+
+  @@index([name])
 }
 
-// سلف العمال
 model WorkerAdvance {
   id        String   @id @default(cuid())
   workerId  String
@@ -47,13 +92,12 @@ model WorkerAdvance {
   notes     String?
   createdAt DateTime @default(now())
 
-  worker    Worker   @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  worker Worker @relation(fields: [workerId], references: [id], onDelete: Cascade)
 
   @@index([workerId])
   @@index([date])
 }
 
-// قبض العمال
 model WorkerReceipt {
   id        String   @id @default(cuid())
   workerId  String
@@ -62,166 +106,370 @@ model WorkerReceipt {
   notes     String?
   createdAt DateTime @default(now())
 
-  worker    Worker   @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  worker Worker @relation(fields: [workerId], references: [id], onDelete: Cascade)
 
   @@index([workerId])
   @@index([date])
 }
 
-// حضور وانصراف العمال
 model WorkerAttendance {
-  id        String   @id @default(cuid())
-  workerId  String
-  date      DateTime // يوم العمل
-  checkIn   DateTime?
-  checkOut  DateTime?
-  status    String   @default("present") // present / absent / leave
-  notes     String?
-  createdAt DateTime @default(now())
+  id            String   @id @default(cuid())
+  workerId      String
+  date          DateTime
+  checkIn       DateTime?
+  checkOut      DateTime?
+  status        String   @default("present")
+  notes         String?
+  workHours     Float?
+  overtimeHours Float?
+  lateMinutes   Int?
+  createdAt     DateTime @default(now())
 
-  worker    Worker   @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  worker Worker @relation(fields: [workerId], references: [id], onDelete: Cascade)
 
   @@index([workerId])
   @@index([date])
 }
 
-// إنتاج العمال بالقطعة
 model Production {
   id         String   @id @default(cuid())
   workerId   String
   date       DateTime
-  modelName  String   // اسم الموديل / الصنف
-  quantity   Float    // عدد القطع
-  unitPrice  Float    // سعر القطعة
-  total      Float    // الإجمالي
+  modelName  String
+  quantity   Float
+  unitPrice  Float
+  total      Float
   notes      String?
   createdAt  DateTime @default(now())
 
-  worker     Worker   @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  worker Worker @relation(fields: [workerId], references: [id], onDelete: Cascade)
 
   @@index([workerId])
   @@index([date])
 }
 
-// العملاء
+// ====== العملاء والموردون ======
 model Customer {
-  id        String   @id @default(cuid())
-  name      String
-  phone     String?
-  address   String?
-  notes     String?
-  createdAt DateTime @default(now())
+  id             String   @id @default(cuid())
+  name           String
+  phone          String?
+  address        String?
+  notes          String?
+  creditLimit    Float?
+  loyaltyPoints  Int      @default(0)
+  openingBalance Float?   @default(0)
+  createdAt      DateTime @default(now())
 
-  sales     Sale[]
+  sales    Sale[]
+  payments Payment[] @relation("PaymentCustomer")
 
   @@index([name])
 }
 
-// الموردين
 model Supplier {
-  id        String   @id @default(cuid())
-  name      String
-  phone     String?
-  address   String?
-  notes     String?
-  createdAt DateTime @default(now())
+  id             String   @id @default(cuid())
+  name           String
+  phone          String?
+  address        String?
+  notes          String?
+  creditLimit    Float?
+  openingBalance Float?   @default(0)
+  createdAt      DateTime @default(now())
 
-  purchases Purchase[]
+  purchases      Purchase[]
+  payments       Payment[] @relation("PaymentSupplier")
 
   @@index([name])
 }
 
-// المبيعات
+// ====== المبيعات ======
 model Sale {
-  id         String   @id @default(cuid())
-  invoiceNo  String?
-  customerName String
+  id             String   @id @default(cuid())
+  invoiceNo      String?
+  customerName   String
   customerId_ref String?
-  customer       Customer? @relation(fields: [customerId_ref], references: [id], onDelete: SetNull)
-  date       DateTime
-  total      Float
-  paid       Float
-  notes      String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  date           DateTime
+  subtotal       Float    @default(0)
+  discountType   String?
+  discountValue  Float?   @default(0)
+  discountAmount Float?   @default(0)
+  taxRate        Float?   @default(0)
+  taxAmount      Float?   @default(0)
+  extraFees      Float?   @default(0)
+  total          Float
+  paid           Float
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  items SaleItem[]
+  customer Customer? @relation(fields: [customerId_ref], references: [id], onDelete: SetNull)
+  items    SaleItem[]
+  returns  SaleReturn[]
 
   @@index([date])
   @@index([customerId_ref])
 }
 
-// أصناف البيع
 model SaleItem {
-  id        String @id @default(cuid())
-  saleId    String
-  itemName  String
-  quantity  Float
-  unitPrice Float
-  total     Float
+  id         String  @id @default(cuid())
+  saleId     String
+  itemName   String
+  productId  String?
+  priceType  String?
+  quantity   Float
+  unitPrice  Float
+  total      Float
 
-  sale      Sale   @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  sale Sale @relation(fields: [saleId], references: [id], onDelete: Cascade)
 
   @@index([saleId])
 }
 
-// المشتريات
+// ====== المشتريات ======
 model Purchase {
-  id           String   @id @default(cuid())
-  invoiceNo    String?
-  supplierName String
+  id             String   @id @default(cuid())
+  invoiceNo      String?
+  supplierName   String
   supplierId_ref String?
-  supplier     Supplier? @relation(fields: [supplierId_ref], references: [id], onDelete: SetNull)
-  date         DateTime
-  total        Float
-  paid         Float
-  notes        String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  date           DateTime
+  subtotal       Float    @default(0)
+  discountType   String?
+  discountValue  Float?   @default(0)
+  discountAmount Float?   @default(0)
+  taxRate        Float?   @default(0)
+  taxAmount      Float?   @default(0)
+  extraFees      Float?   @default(0)
+  total          Float
+  paid           Float
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  items PurchaseItem[]
+  supplier Supplier? @relation(fields: [supplierId_ref], references: [id], onDelete: SetNull)
+  items    PurchaseItem[]
+  returns  PurchaseReturn[]
 
   @@index([date])
   @@index([supplierId_ref])
 }
 
-// أصناف المشتريات
 model PurchaseItem {
-  id        String @id @default(cuid())
-  purchaseId String
-  itemName  String
-  quantity  Float
-  unitPrice Float
-  total     Float
+  id          String  @id @default(cuid())
+  purchaseId  String
+  itemName    String
+  materialId  String?
+  quantity    Float
+  unitPrice   Float
+  total       Float
 
-  purchase  Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  purchase Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
 
   @@index([purchaseId])
 }
 
-// بنود المصاريف (فئات)
+// ====== المصاريف ======
 model ExpenseCategory {
-  id      String @id @default(cuid())
-  name    String
-  notes   String?
+  id        String   @id @default(cuid())
+  name      String
+  notes     String?
+  createdAt DateTime @default(now())
 
   expenses Expense[]
-
-  createdAt DateTime @default(now())
 }
 
-// المصاريف
 model Expense {
-  id         String   @id @default(cuid())
-  categoryId String
+  id           String   @id @default(cuid())
+  categoryId   String
   categoryName String
-  amount     Float
-  date       DateTime
-  notes      String?
-  createdAt  DateTime @default(now())
+  amount       Float
+  date         DateTime
+  notes        String?
+  createdAt    DateTime @default(now())
 
-  category   ExpenseCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  category ExpenseCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
 
   @@index([date])
   @@index([categoryId])
+}
+
+// ====== الخزينة ======
+model TreasuryTransaction {
+  id            String   @id @default(cuid())
+  type          String
+  amount        Float
+  date          DateTime
+  description   String
+  category      String?
+  referenceType String?
+  referenceId   String?
+  notes         String?
+  createdAt     DateTime @default(now())
+
+  @@index([date])
+  @@index([type])
+}
+
+// ====== المخازن ======
+model Warehouse {
+  id        String   @id @default(cuid())
+  name      String
+  type      String
+  location  String?
+  notes     String?
+  createdAt DateTime @default(now())
+
+  materials Material[]
+  products  Product[]
+}
+
+model Material {
+  id            String   @id @default(cuid())
+  name          String
+  unit          String
+  warehouseId   String
+  quantity      Float    @default(0)
+  unitCost      Float    @default(0)
+  reorderLevel  Float?
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  warehouse           Warehouse             @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  materialTransactions MaterialTransaction[]
+
+  @@index([warehouseId])
+  @@index([name])
+}
+
+model MaterialTransaction {
+  id            String   @id @default(cuid())
+  materialId    String
+  warehouseId   String
+  type          String
+  quantity      Float
+  unitCost      Float?
+  date          DateTime
+  reason        String
+  referenceType String?
+  referenceId   String?
+  notes         String?
+  createdAt     DateTime @default(now())
+
+  material Material @relation(fields: [materialId], references: [id], onDelete: Cascade)
+
+  @@index([materialId])
+  @@index([date])
+  @@index([warehouseId])
+}
+
+// ====== المنتجات ======
+model Product {
+  id                  String   @id @default(cuid())
+  name                String
+  category            String?
+  unit                String
+  wholesalePrice      Float    @default(0)
+  halfWholesalePrice  Float    @default(0)
+  retailPrice         Float    @default(0)
+  cost                Float    @default(0)
+  warehouseId         String?
+  quantity            Float    @default(0)
+  reorderLevel        Float?
+  notes               String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  warehouse Warehouse? @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+
+  @@index([name])
+  @@index([warehouseId])
+}
+
+// ====== أوامر التشغيل ======
+model ProductionOrder {
+  id                String   @id @default(cuid())
+  orderNumber       String
+  productId         String
+  productName       String
+  quantity          Float
+  completedQuantity Float    @default(0)
+  unit              String
+  status            String   @default("draft")
+  materials         Json
+  stages            Json
+  date              DateTime
+  expectedEndDate   DateTime?
+  completedDate     DateTime?
+  notes             String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([date])
+  @@index([status])
+  @@index([productId])
+}
+
+// ====== السدادات ======
+model Payment {
+  id         String   @id @default(cuid())
+  type       String
+  partyId    String
+  partyName  String
+  invoiceId  String?
+  invoiceNo  String?
+  amount     Float
+  date       DateTime
+  method     String?
+  notes      String?
+  createdAt  DateTime @default(now())
+
+  customer Customer? @relation("PaymentCustomer", fields: [partyId], references: [id], onDelete: SetNull, map: "payment_customer_fk")
+  supplier Supplier? @relation("PaymentSupplier", fields: [partyId], references: [id], onDelete: SetNull, map: "payment_supplier_fk")
+
+  @@index([date])
+  @@index([partyId])
+  @@index([type])
+}
+
+// ====== مرتجع المبيعات ======
+model SaleReturn {
+  id            String   @id @default(cuid())
+  returnNumber  String
+  saleId        String
+  invoiceNo     String?
+  customerName  String
+  customerId_ref String?
+  date          DateTime
+  total         Float
+  reason        String?
+  restockItems  Boolean  @default(true)
+  items         Json
+  notes         String?
+  createdAt     DateTime @default(now())
+
+  sale Sale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  @@index([date])
+  @@index([saleId])
+}
+
+// ====== مرتجع المشتريات ======
+model PurchaseReturn {
+  id             String   @id @default(cuid())
+  returnNumber   String
+  purchaseId     String
+  invoiceNo      String?
+  supplierName   String
+  supplierId_ref String?
+  date           DateTime
+  total          Float
+  reason         String?
+  items          Json
+  notes          String?
+  createdAt      DateTime @default(now())
+
+  purchase Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+
+  @@index([date])
+  @@index([purchaseId])
 }
