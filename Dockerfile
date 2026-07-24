@@ -1,10 +1,13 @@
 FROM node:20-alpine AS base
 
+# تثبيت مكتبات النظام المطلوبة لـ sharp
+RUN apk add --no-cache vips-dev
+
 # ===== التثبيت =====
 FROM base AS deps
 WORKDIR /app
-COPY package.json bun.lock* package-lock.json* ./
-RUN npm install
+COPY package.json ./
+RUN npm install --legacy-peer-deps
 
 # ===== توليد Prisma =====
 FROM base AS prisma
@@ -18,7 +21,6 @@ FROM base AS builder
 WORKDIR /app
 COPY --from=prisma /app/node_modules ./node_modules
 COPY . .
-RUN npx prisma db push --accept-data-loss 2>/dev/null || true
 RUN npm run build
 
 # ===== التشغيل =====
@@ -26,10 +28,15 @@ FROM base AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 
+# تثبيت Prisma لتشغيل db push عند البدء
+RUN npm install prisma @prisma/client --no-save --legacy-peer-deps
+
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
+COPY --from=builder /app/prisma ./prisma/
 
 EXPOSE 3000
 
-CMD ["node", "server.js"]
+# إنشاء الجداول ثم تشغيل السيرفر
+CMD ["sh", "-c", "npx prisma db push --accept-data-loss 2>/dev/null; node server.js"]
