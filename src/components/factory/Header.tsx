@@ -162,7 +162,24 @@ export function Header({
 
       {/* Search Dialog */}
       <Dialog open={searchOpen} onOpenChange={setSearchOpen}>
-        <DialogContent className="max-w-md p-0 border-0 rounded-t-3xl rounded-b-none fixed bottom-0 left-0 right-0 translate-y-0 sm:rounded-3xl sm:bottom-1/2 sm:translate-y-1/2" dir="rtl">
+        <DialogContent 
+          className="max-w-md p-0 border-0 rounded-t-3xl rounded-b-none overflow-y-auto"
+          style={{
+            top: 'auto',
+            bottom: '0',
+            left: '0',
+            right: '0',
+            transform: 'none',
+            width: '100%',
+            maxWidth: '28rem',
+            marginLeft: 'auto',
+            marginRight: 'auto',
+            maxHeight: '90vh',
+            borderRadius: '1.5rem 1.5rem 0 0',
+            borderTop: '1px solid #e2e8f0',
+          }}
+          dir="rtl"
+        >
           <div className="flex justify-center pt-3 pb-2 sm:hidden">
             <div className="w-12 h-1 bg-slate-300 rounded-full" />
           </div>
