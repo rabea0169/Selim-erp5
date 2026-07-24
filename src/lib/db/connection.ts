@@ -5,10 +5,11 @@ import type {
   Purchase, PurchaseItem, ExpenseCategory, Expense,
   TreasuryTransaction, Warehouse, Material, MaterialTransaction,
   Product, ProductionOrder,
+  Payment, SaleReturn, SaleReturnItem, PurchaseReturn, PurchaseReturnItem,
 } from './types'
 
 const DB_NAME = 'selim-erp-db'
-const DB_VERSION = 4
+const DB_VERSION = 5
 
 interface FactoryDBSchema extends DBSchema {
   factorySettings: { key: string; value: FactorySettings }
@@ -36,6 +37,12 @@ interface FactoryDBSchema extends DBSchema {
   // المنتجات وأوامر التشغيل
   products: { key: string; value: Product; indexes: { 'by-name': string, 'by-warehouse': string } }
   productionOrders: { key: string; value: ProductionOrder; indexes: { 'by-date': string, 'by-status': string, 'by-product': string } }
+  // السدادات والمرتجعات
+  payments: { key: string; value: Payment; indexes: { 'by-date': string, 'by-party': string, 'by-type': string } }
+  saleReturns: { key: string; value: SaleReturn; indexes: { 'by-date': string, 'by-sale': string, 'by-customer': string } }
+  saleReturnItems: { key: string; value: SaleReturnItem; indexes: { 'by-return': string } }
+  purchaseReturns: { key: string; value: PurchaseReturn; indexes: { 'by-date': string, 'by-purchase': string, 'by-supplier': string } }
+  purchaseReturnItems: { key: string; value: PurchaseReturnItem; indexes: { 'by-return': string } }
 }
 
 let dbInstance: IDBPDatabase<FactoryDBSchema> | null = null
@@ -190,6 +197,44 @@ export async function getDB(): Promise<IDBPDatabase<FactoryDBSchema>> {
         store.createIndex('by-date', 'date')
         store.createIndex('by-status', 'status')
         store.createIndex('by-product', 'productId')
+      }
+
+      // ====== السدادات والمرتجعات ======
+
+      // Payments (السدادات)
+      if (!db.objectStoreNames.contains('payments')) {
+        const store = db.createObjectStore('payments', { keyPath: 'id' })
+        store.createIndex('by-date', 'date')
+        store.createIndex('by-party', 'partyId')
+        store.createIndex('by-type', 'type')
+      }
+
+      // Sale Returns (مرتجع المبيعات)
+      if (!db.objectStoreNames.contains('saleReturns')) {
+        const store = db.createObjectStore('saleReturns', { keyPath: 'id' })
+        store.createIndex('by-date', 'date')
+        store.createIndex('by-sale', 'saleId')
+        store.createIndex('by-customer', 'customerId_ref')
+      }
+
+      // Sale Return Items
+      if (!db.objectStoreNames.contains('saleReturnItems')) {
+        const store = db.createObjectStore('saleReturnItems', { keyPath: 'id' })
+        store.createIndex('by-return', 'returnId')
+      }
+
+      // Purchase Returns (مرتجع المشتريات)
+      if (!db.objectStoreNames.contains('purchaseReturns')) {
+        const store = db.createObjectStore('purchaseReturns', { keyPath: 'id' })
+        store.createIndex('by-date', 'date')
+        store.createIndex('by-purchase', 'purchaseId')
+        store.createIndex('by-supplier', 'supplierId_ref')
+      }
+
+      // Purchase Return Items
+      if (!db.objectStoreNames.contains('purchaseReturnItems')) {
+        const store = db.createObjectStore('purchaseReturnItems', { keyPath: 'id' })
+        store.createIndex('by-return', 'returnId')
       }
     },
   })

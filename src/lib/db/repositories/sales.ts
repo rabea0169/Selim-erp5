@@ -68,6 +68,10 @@ class SaleRepository extends BaseRepository<Sale> {
     date: string
     paid: number
     notes?: string
+    discountType?: 'percentage' | 'fixed'
+    discountValue?: number
+    taxRate?: number
+    extraFees?: number
     items: Array<{
       itemName: string
       productId?: string
@@ -79,7 +83,30 @@ class SaleRepository extends BaseRepository<Sale> {
     const db = await this.getDB()
     const tx = db.transaction(['sales', 'saleItems', 'treasuryTransactions', 'products'], 'readwrite')
 
-    const total = data.items.reduce((s, it) => s + it.quantity * it.unitPrice, 0)
+    // حساب الإجمالي الفرعي (مجموع الأصناف)
+    const subtotal = data.items.reduce((s, it) => s + it.quantity * it.unitPrice, 0)
+
+    // حساب مبلغ الخصم
+    let discountAmount = 0
+    if (data.discountType && data.discountValue && data.discountValue > 0) {
+      if (data.discountType === 'percentage') {
+        discountAmount = (subtotal * data.discountValue) / 100
+      } else {
+        discountAmount = Math.min(data.discountValue, subtotal)
+      }
+    }
+
+    // حساب الضريبة على المبلغ بعد الخصم
+    const taxRate = data.taxRate || 0
+    const taxableBase = subtotal - discountAmount
+    const taxAmount = taxRate > 0 ? (taxableBase * taxRate) / 100 : 0
+
+    // مصاريف إضافية
+    const extraFees = data.extraFees || 0
+
+    // الإجمالي النهائي
+    const total = subtotal - discountAmount + taxAmount + extraFees
+
     const now = nowISO()
     const saleId = generateId()
 
@@ -89,6 +116,13 @@ class SaleRepository extends BaseRepository<Sale> {
       customerId_ref: data.customerId_ref,
       invoiceNo: data.invoiceNo,
       date: data.date,
+      subtotal,
+      discountType: data.discountType,
+      discountValue: data.discountValue,
+      discountAmount,
+      taxRate,
+      taxAmount,
+      extraFees,
       total,
       paid: data.paid,
       notes: data.notes,

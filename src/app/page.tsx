@@ -11,6 +11,8 @@ import { TreasuryView } from '@/components/factory/TreasuryView'
 import { WarehousesView } from '@/components/factory/WarehousesView'
 import { ProductsView } from '@/components/factory/ProductsView'
 import { ProductionOrdersView } from '@/components/factory/ProductionOrdersView'
+import { ReceivablesView } from '@/components/factory/ReceivablesView'
+import { ReturnsView } from '@/components/factory/ReturnsView'
 import { BackupRestore } from '@/components/factory/BackupRestore'
 import { AuthScreen } from '@/components/factory/AuthScreen'
 import { PrintSettingsDialog } from '@/components/factory/PrintSettingsDialog'
@@ -109,6 +111,8 @@ export default function Home() {
         {tab === 'warehouses' && <WarehousesView />}
         {tab === 'products' && <ProductsView />}
         {tab === 'productionOrders' && <ProductionOrdersView />}
+        {tab === 'receivables' && <ReceivablesView />}
+        {tab === 'returns' && <ReturnsView />}
       </main>
 
       <BottomNav activeTab={tab} onTabChange={setTab} />

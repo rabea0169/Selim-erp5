@@ -100,6 +100,9 @@ export interface Customer {
   phone?: string
   address?: string
   notes?: string
+  creditLimit?: number        // حد الائتمان (أقصى مديونية)
+  loyaltyPoints?: number      // نقاط الولاء
+  openingBalance?: number     // رصيد افتتاحي (ذمة سابقة)
   createdAt: string
 }
 
@@ -109,6 +112,8 @@ export interface Supplier {
   phone?: string
   address?: string
   notes?: string
+  creditLimit?: number        // حد الائتمان
+  openingBalance?: number     // رصيد افتتاحي
   createdAt: string
 }
 
@@ -129,8 +134,15 @@ export interface Sale {
   customerName: string
   customerId_ref?: string
   date: string
-  total: number
-  paid: number
+  subtotal: number             // الإجمالي الفرعي (قبل الخصم والضريبة)
+  discountType?: 'percentage' | 'fixed'  // نوع الخصم
+  discountValue?: number       // قيمة الخصم (نسبة أو مبلغ)
+  discountAmount?: number      // مبلغ الخصم المحسوب
+  taxRate?: number             // نسبة الضريبة (مثلاً 14)
+  taxAmount?: number           // مبلغ الضريبة المحسوب
+  extraFees?: number           // مصاريف إضافية (شحن، تغليف)
+  total: number                // الإجمالي النهائي
+  paid: number                 // المدفوع
   notes?: string
   items: SaleItem[]
   createdAt: string
@@ -153,6 +165,13 @@ export interface Purchase {
   supplierName: string
   supplierId_ref?: string
   date: string
+  subtotal: number             // الإجمالي الفرعي
+  discountType?: 'percentage' | 'fixed'
+  discountValue?: number
+  discountAmount?: number
+  taxRate?: number
+  taxAmount?: number
+  extraFees?: number
   total: number
   paid: number
   notes?: string
@@ -288,6 +307,76 @@ export interface ProductionOrder {
   updatedAt: string
 }
 
+// ====== السدادات (Payments) ======
+export interface Payment {
+  id: string
+  type: 'customer_payment' | 'supplier_payment'  // سداد عميل أو مورد
+  partyId: string           // معرف العميل أو المورد
+  partyName: string         // اسم العميل أو المورد
+  invoiceId?: string        // الفاتورة المرتبطة (اختياري)
+  invoiceNo?: string        // رقم الفاتورة
+  amount: number            // المبلغ المسدد
+  date: string
+  method?: 'cash' | 'transfer' | 'card'  // طريقة السداد
+  notes?: string
+  createdAt: string
+}
+
+// ====== مرتجع المبيعات ======
+export interface SaleReturnItem {
+  id: string
+  returnId: string
+  saleItemId: string
+  itemName: string
+  productId?: string
+  quantity: number       // الكمية المرتجعة
+  unitPrice: number
+  total: number
+}
+
+export interface SaleReturn {
+  id: string
+  returnNumber: string
+  saleId: string          // الفاتورة الأصلية
+  invoiceNo?: string
+  customerName: string
+  customerId_ref?: string
+  date: string
+  total: number           // إجمالي المرتجع
+  reason?: string         // سبب المرتجع
+  restockItems: boolean   // هل ترجع الأصناف للمخزون؟
+  items: SaleReturnItem[]
+  notes?: string
+  createdAt: string
+}
+
+// ====== مرتجع المشتريات ======
+export interface PurchaseReturnItem {
+  id: string
+  returnId: string
+  purchaseItemId: string
+  itemName: string
+  materialId?: string
+  quantity: number
+  unitPrice: number
+  total: number
+}
+
+export interface PurchaseReturn {
+  id: string
+  returnNumber: string
+  purchaseId: string
+  invoiceNo?: string
+  supplierName: string
+  supplierId_ref?: string
+  date: string
+  total: number
+  reason?: string
+  items: PurchaseReturnItem[]
+  notes?: string
+  createdAt: string
+}
+
 // كل الجداول في قاعدة البيانات
 export type TableName =
   | 'factorySettings'
@@ -312,6 +401,11 @@ export type TableName =
   | 'materialTransactions'
   | 'products'
   | 'productionOrders'
+  | 'payments'
+  | 'saleReturns'
+  | 'saleReturnItems'
+  | 'purchaseReturns'
+  | 'purchaseReturnItems'
 
 export interface DatabaseSchema {
   factorySettings: FactorySettings
@@ -336,6 +430,11 @@ export interface DatabaseSchema {
   materialTransactions: MaterialTransaction
   products: Product
   productionOrders: ProductionOrder
+  payments: Payment
+  saleReturns: SaleReturn
+  saleReturnItems: SaleReturnItem
+  purchaseReturns: PurchaseReturn
+  purchaseReturnItems: PurchaseReturnItem
 }
 
 // إضافة AuditLogEntry type

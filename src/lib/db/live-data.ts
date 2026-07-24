@@ -9,6 +9,8 @@ type EntityType =
   | 'expenses' | 'expenseCategories' | 'factorySettings' | 'reports'
   | 'treasuryTransactions' | 'warehouses' | 'materials'
   | 'materialTransactions' | 'products' | 'productionOrders'
+  | 'payments' | 'saleReturns' | 'saleReturnItems'
+  | 'purchaseReturns' | 'purchaseReturnItems'
 
 interface DataChangeEvent {
   type: EntityType

@@ -17,6 +17,9 @@ export interface CustomerWithStats {
   address?: string
   notes?: string
   createdAt?: string
+  creditLimit?: number
+  loyaltyPoints?: number
+  openingBalance?: number
   totalSales: number
   totalPaid: number
   totalRemaining: number

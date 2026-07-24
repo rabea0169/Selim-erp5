@@ -13,6 +13,8 @@ import {
   Hammer,
   MoreHorizontal,
   X,
+  HandCoins,
+  RotateCcw,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
@@ -33,6 +35,8 @@ export type TabKey =
   | 'warehouses'
   | 'products'
   | 'productionOrders'
+  | 'receivables'
+  | 'returns'
 
 interface NavItem {
   key: TabKey
@@ -54,6 +58,8 @@ const PRIMARY_NAV: NavItem[] = [
 // الأقسام الإضافية - تظهر في قائمة "المزيد"
 const SECONDARY_NAV: NavItem[] = [
   { key: 'treasury', label: 'الخزينة', shortLabel: 'خزينة', icon: Wallet, color: 'text-emerald-600' },
+  { key: 'receivables', label: 'الذمم', shortLabel: 'ذمم', icon: HandCoins, color: 'text-rose-600' },
+  { key: 'returns', label: 'المرتجعات', shortLabel: 'مرتجعات', icon: RotateCcw, color: 'text-amber-600' },
   { key: 'warehouses', label: 'المخازن', shortLabel: 'مخازن', icon: Boxes, color: 'text-indigo-600' },
   { key: 'products', label: 'المنتجات', shortLabel: 'منتجات', icon: Tags, color: 'text-purple-600' },
   { key: 'productionOrders', label: 'أوامر التشغيل', shortLabel: 'تشغيل', icon: Hammer, color: 'text-rose-600' },
