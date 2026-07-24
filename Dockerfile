@@ -39,4 +39,4 @@ COPY --from=builder /app/prisma ./prisma/
 EXPOSE 3000
 
 # إنشاء الجداول ثم تشغيل السيرفر
-CMD ["sh", "-c", "npx prisma generate && npx prisma db push --accept-data-loss && node server.js"]
+CMD ["sh", "-c", "npx prisma generate && npx prisma db push --force-reset && node server.js"]
