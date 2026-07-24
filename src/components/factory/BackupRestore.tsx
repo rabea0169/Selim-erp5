@@ -7,19 +7,19 @@ import {
   Upload,
   AlertTriangle,
   HardDrive,
-  Wifi,
-  WifiOff,
   Clock,
   CheckCircle,
   RefreshCw,
-  Settings2,
   FileDown,
   Shield,
+  Cloud,
+  CloudUpload,
+  CloudDownload,
+  Server,
+  Wifi,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
-import { Badge } from '@/components/ui/badge'
 import {
   Dialog,
   DialogContent,
@@ -29,7 +29,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { useToast } from '@/hooks/use-toast'
-import { reportRepository, dataChangeEmitter, autoBackupService, type BackupInfo } from '@/lib/db'
+import { reportRepository, dataChangeEmitter, autoBackupService, syncService, type BackupInfo } from '@/lib/db'
 
 export function BackupRestore({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
   const [exporting, setExporting] = useState(false)
@@ -39,6 +39,10 @@ export function BackupRestore({ open, onOpenChange }: { open: boolean; onOpenCha
   const [backupInfo, setBackupInfo] = useState<BackupInfo | null>(autoBackupService.getLastBackupInfo())
   const [cacheCount, setCacheCount] = useState(0)
   const [restoringCache, setRestoringCache] = useState(false)
+  const [syncEnabled, setSyncEnabled] = useState(syncService.isEnabled())
+  const [syncing, setSyncing] = useState(false)
+  const [serverStatus, setServerStatus] = useState<{ connected: boolean; counts?: Record<string, number> } | null>(null)
+  const [lastSync, setLastSync] = useState<Date | null>(syncService.getLastSyncDate())
   const fileRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
 
@@ -48,9 +52,82 @@ export function BackupRestore({ open, onOpenChange }: { open: boolean; onOpenCha
         setBackupInfo(autoBackupService.getLastBackupInfo())
         const count = await autoBackupService.getCacheBackupsCount()
         setCacheCount(count)
+        setLastSync(syncService.getLastSyncDate())
+        // فحص حالة السيرفر
+        const status = await syncService.checkStatus()
+        setServerStatus(status)
       })
     }
   }, [open])
+
+  // المزامنة الكاملة
+  const handleSync = async () => {
+    setSyncing(true)
+    try {
+      const result = await syncService.sync()
+      if (result.success) {
+        setLastSync(new Date())
+        toast({
+          title: 'تمت المزامنة',
+          description: `رفع ${result.pushed} سجل • تحميل ${result.pulled} سجل`,
+        })
+        // تحديث حالة السيرفر
+        const status = await syncService.checkStatus()
+        setServerStatus(status)
+      } else {
+        toast({ title: 'فشل المزامنة', description: result.error, variant: 'destructive' })
+      }
+    } catch (e: any) {
+      toast({ title: 'خطأ', description: e.message, variant: 'destructive' })
+    } finally {
+      setSyncing(false)
+    }
+  }
+
+  // رفع فقط
+  const handlePush = async () => {
+    setSyncing(true)
+    try {
+      const result = await syncService.pushOnly()
+      if (result.success) {
+        toast({ title: 'تم الرفع', description: `${result.count} سجل للسيرفر` })
+      } else {
+        toast({ title: 'فشل', description: result.error, variant: 'destructive' })
+      }
+    } finally {
+      setSyncing(false)
+    }
+  }
+
+  // تحميل فقط
+  const handlePull = async () => {
+    setSyncing(true)
+    try {
+      const result = await syncService.pullOnly()
+      if (result.success) {
+        toast({ title: 'تم التحميل', description: `${result.count} سجل من السيرفر` })
+      } else {
+        toast({ title: 'فشل', description: result.error, variant: 'destructive' })
+      }
+    } finally {
+      setSyncing(false)
+    }
+  }
+
+  // تفعيل/تعطيل المزامنة التلقائية
+  const handleSyncToggle = (enabled: boolean) => {
+    setSyncEnabled(enabled)
+    syncService.setEnabled(enabled)
+    if (enabled) {
+      syncService.start()
+    } else {
+      syncService.stop()
+    }
+    toast({
+      title: enabled ? 'تم التفعيل' : 'تم التعطيل',
+      description: enabled ? 'المزامنة التلقائية كل 5 دقائق' : 'المزامنة معطلة',
+    })
+  }
 
   const handleBackup = async () => {
     setExporting(true)
@@ -271,6 +348,90 @@ export function BackupRestore({ open, onOpenChange }: { open: boolean; onOpenCha
               onChange={handleFileSelect}
               className="hidden"
             />
+
+            {/* ====== قسم المزامنة مع السيرفر ====== */}
+            <div className="bg-gradient-to-l from-blue-50 to-indigo-50 rounded-2xl p-4 border border-blue-100">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${serverStatus?.connected ? 'bg-blue-600' : 'bg-slate-400'}`}>
+                    <Cloud className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-slate-800">المزامنة السحابية</p>
+                    <p className="text-[10px] text-slate-500">
+                      {serverStatus?.connected ? 'متصل بالسيرفر' : 'غير متصل'}
+                    </p>
+                  </div>
+                </div>
+                <Switch checked={syncEnabled} onCheckedChange={handleSyncToggle} />
+              </div>
+
+              {/* حالة السيرفر */}
+              {serverStatus?.connected && serverStatus.counts && (
+                <div className="bg-white/80 rounded-xl p-3 mb-3">
+                  <div className="flex items-center gap-2 text-[11px] text-slate-600 mb-2">
+                    <Server className="w-3 h-3" />
+                    <span className="font-bold">البيانات على السيرفر:</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1 text-[10px]">
+                    {Object.entries(serverStatus.counts).filter(([,v]) => v > 0).length > 0 ? (
+                      Object.entries(serverStatus.counts).filter(([,v]) => v > 0).map(([k, v]) => (
+                        <div key={k} className="flex items-center justify-between bg-blue-50 rounded px-2 py-1">
+                          <span className="text-slate-600">{k}</span>
+                          <span className="font-bold text-blue-700">{v}</span>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-slate-400 col-span-3 text-center py-1">السيرفر فارغ - ارفع بياناتك</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* آخر مزامنة */}
+              {lastSync && (
+                <div className="flex items-center gap-2 text-[11px] text-slate-500 mb-3">
+                  <Clock className="w-3 h-3" />
+                  آخر مزامنة: {lastSync.toLocaleString('ar-EG')}
+                </div>
+              )}
+
+              {/* أزرار المزامنة */}
+              <div className="grid grid-cols-3 gap-2">
+                <Button
+                  onClick={handleSync}
+                  disabled={syncing}
+                  className="bg-blue-600 hover:bg-blue-700 text-white h-10 text-xs"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ml-1 ${syncing ? 'animate-spin' : ''}`} />
+                  مزامنة
+                </Button>
+                <Button
+                  onClick={handlePush}
+                  disabled={syncing}
+                  variant="outline"
+                  className="border-blue-300 text-blue-700 hover:bg-blue-50 h-10 text-xs"
+                >
+                  <CloudUpload className="w-3.5 h-3.5 ml-1" />
+                  رفع
+                </Button>
+                <Button
+                  onClick={handlePull}
+                  disabled={syncing}
+                  variant="outline"
+                  className="border-indigo-300 text-indigo-700 hover:bg-indigo-50 h-10 text-xs"
+                >
+                  <CloudDownload className="w-3.5 h-3.5 ml-1" />
+                  تحميل
+                </Button>
+              </div>
+
+              {/* معلومة */}
+              <div className="mt-3 flex items-start gap-2 text-[10px] text-blue-800">
+                <Wifi className="w-3 h-3 mt-0.5 shrink-0" />
+                <p>البيانات محفوظة على السيرفر السحابي. يمكن الوصول إليها من أي جهاز بنفس الحساب.</p>
+              </div>
+            </div>
 
             {/* معلومة مهمة */}
             <div className="bg-blue-50 border border-blue-100 rounded-xl p-3">

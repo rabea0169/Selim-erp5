@@ -20,7 +20,7 @@ import { FactorySettingsView } from '@/components/factory/FactorySettingsView'
 import { InstallPrompt } from '@/components/factory/InstallPrompt'
 import { Header } from '@/components/factory/Header'
 import { BottomNav, type TabKey } from '@/components/factory/BottomNav'
-import { getCurrentUser, logout, factorySettingsRepository, expenseCategoryRepository, warehouseRepository, autoBackupService, auditLogRepository, type SessionUser, type FactorySettings } from '@/lib/db'
+import { getCurrentUser, logout, factorySettingsRepository, expenseCategoryRepository, warehouseRepository, autoBackupService, syncService, auditLogRepository, type SessionUser, type FactorySettings } from '@/lib/db'
 
 export type { TabKey }
 
@@ -45,6 +45,7 @@ export default function Home() {
           const settings = await factorySettingsRepository.get()
           setFactorySettings(settings)
           autoBackupService.start()
+          syncService.start() // بدء المزامنة السحابية التلقائية
           warehouseRepository.seedDefaults().catch(() => {})
           auditLogRepository.log({
             userId: currentUser.id,
@@ -65,6 +66,7 @@ export default function Home() {
 
     return () => {
       autoBackupService.stop()
+      syncService.stop()
     }
   }, [reloadKey])
 

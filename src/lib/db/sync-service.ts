@@ -1,6 +1,7 @@
 'use client'
 
-import { reportRepository, dataChangeEmitter } from './repositories'
+import { reportRepository } from './repositories'
+import { dataChangeEmitter } from './live-data'
 
 const SYNC_STATUS_KEY = 'lastServerSync'
 const SYNC_ENABLED_KEY = 'serverSyncEnabled'
