@@ -18,23 +18,28 @@ import { AuthScreen } from '@/components/factory/AuthScreen'
 import { PrintSettingsDialog } from '@/components/factory/PrintSettingsDialog'
 import { FactorySettingsView } from '@/components/factory/FactorySettingsView'
 import { InstallPrompt } from '@/components/factory/InstallPrompt'
+import { UsersManagement } from '@/components/factory/UsersManagement'
 import { Header } from '@/components/factory/Header'
 import { BottomNav, type TabKey } from '@/components/factory/BottomNav'
 import { getCurrentUser, logout, factorySettingsRepository, expenseCategoryRepository, warehouseRepository, autoBackupService, syncService, auditLogRepository, type SessionUser, type FactorySettings } from '@/lib/db'
 
 export type { TabKey }
 
+const MANAGE_USERS_ROLES = ['owner', 'admin']
+
 export default function Home() {
   const [tab, setTab] = useState<TabKey>('dashboard')
   const [backupOpen, setBackupOpen] = useState(false)
   const [printOpen, setPrintOpen] = useState(false)
   const [factoryOpen, setFactoryOpen] = useState(false)
+  const [usersOpen, setUsersOpen] = useState(false)
   const [user, setUser] = useState<SessionUser | null>(null)
   const [authChecked, setAuthChecked] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
   const [factorySettings, setFactorySettings] = useState<FactorySettings | null>(null)
 
-  // التحقق من تسجيل الدخول + تحميل بيانات المصنع
+  const canManageUsers = user ? MANAGE_USERS_ROLES.includes(user.role) : false
+
   useEffect(() => {
     Promise.resolve().then(async () => {
       const currentUser = getCurrentUser()
@@ -45,7 +50,7 @@ export default function Home() {
           const settings = await factorySettingsRepository.get()
           setFactorySettings(settings)
           autoBackupService.start()
-          syncService.start() // بدء المزامنة السحابية التلقائية
+          syncService.start()
           warehouseRepository.seedDefaults().catch(() => {})
           auditLogRepository.log({
             userId: currentUser.id,
@@ -71,7 +76,6 @@ export default function Home() {
   }, [reloadKey])
 
   const handleLogout = () => {
-    if (!confirm('هل تريد تسجيل الخروج؟')) return
     logout()
     setUser(null)
     setTab('dashboard')
@@ -94,14 +98,16 @@ export default function Home() {
       <Header
         factoryName={factorySettings?.factoryName || 'Selim ERP'}
         userName={user.name}
+        userRole={user.role}
         onOpenFactory={() => setFactoryOpen(true)}
         onOpenPrint={() => setPrintOpen(true)}
         onOpenBackup={() => setBackupOpen(true)}
+        onOpenUsers={() => setUsersOpen(true)}
         onLogout={handleLogout}
         onNavigate={setTab}
+        canManageUsers={canManageUsers}
       />
 
-      {/* Main content */}
       <main className="flex-1 max-w-2xl mx-auto w-full px-3 sm:px-4 pb-24 pt-4">
         {tab === 'dashboard' && <Dashboard onNavigate={setTab} />}
         {tab === 'sales' && <SalesView />}
@@ -122,6 +128,7 @@ export default function Home() {
       <BackupRestore open={backupOpen} onOpenChange={setBackupOpen} />
       <PrintSettingsDialog open={printOpen} onOpenChange={setPrintOpen} />
       <FactorySettingsView open={factoryOpen} onOpenChange={setFactoryOpen} />
+      <UsersManagement open={usersOpen} onOpenChange={setUsersOpen} />
       <InstallPrompt />
     </div>
   )

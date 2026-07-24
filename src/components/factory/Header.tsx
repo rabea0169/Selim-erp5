@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Factory, Database, LogOut, Printer, Search, Bell, Sun, Moon, Wifi, WifiOff, X } from 'lucide-react'
+import { Factory, Database, LogOut, Printer, Search, Sun, Moon, Wifi, WifiOff, X, Users, Shield, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -19,24 +19,46 @@ import { useConnectionStatus } from '@/lib/use-connection-status'
 import { formatCurrency, formatDate } from '@/lib/format'
 import type { TabKey } from './BottomNav'
 
+const ROLE_LABELS: Record<string, string> = {
+  owner: 'مالك',
+  admin: 'مدير',
+  manager: 'مشرف',
+  employee: 'موظف',
+  viewer: 'مشاهد',
+}
+
+const ROLE_COLORS: Record<string, string> = {
+  owner: 'bg-amber-100 text-amber-700',
+  admin: 'bg-blue-100 text-blue-700',
+  manager: 'bg-purple-100 text-purple-700',
+  employee: 'bg-emerald-100 text-emerald-700',
+  viewer: 'bg-slate-100 text-slate-600',
+}
+
 interface HeaderProps {
   factoryName: string
   userName: string
+  userRole?: string
   onOpenFactory: () => void
   onOpenPrint: () => void
   onOpenBackup: () => void
+  onOpenUsers: () => void
   onLogout: () => void
   onNavigate: (tab: TabKey) => void
+  canManageUsers?: boolean
 }
 
 export function Header({
   factoryName,
   userName,
+  userRole,
   onOpenFactory,
   onOpenPrint,
   onOpenBackup,
+  onOpenUsers,
   onLogout,
   onNavigate,
+  canManageUsers = false,
 }: HeaderProps) {
   const { theme, toggleTheme } = useTheme()
   const isOnline = useConnectionStatus()
@@ -44,6 +66,7 @@ export function Header({
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<SearchResult[]>([])
   const [searching, setSearching] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
 
   const handleSearch = async (q: string) => {
     setSearchQuery(q)
@@ -78,6 +101,14 @@ export function Header({
     setSearchResults([])
   }
 
+  const handleLogout = () => {
+    setMenuOpen(false)
+    if (!confirm('هل تريد تسجيل الخروج؟')) return
+    // Call server logout to clear cookie
+    fetch('/api/auth/logout', { method: 'POST' }).catch(() => {})
+    onLogout()
+  }
+
   return (
     <>
       <header className="sticky top-0 z-20 bg-white/95 backdrop-blur-md border-b border-slate-200">
@@ -89,7 +120,17 @@ export function Header({
             </div>
             <div className="min-w-0">
               <h1 className="text-sm font-bold text-slate-800 truncate">{factoryName}</h1>
-              <p className="text-[10px] text-slate-500 truncate">{userName}</p>
+              <div className="flex items-center gap-1.5">
+                <p className="text-[10px] text-slate-500 truncate">{userName}</p>
+                {userRole && ROLE_LABELS[userRole] && (
+                  <span className={cn(
+                    'text-[9px] px-1.5 py-0.5 rounded-full font-medium leading-none',
+                    ROLE_COLORS[userRole] || 'bg-slate-100 text-slate-600'
+                  )}>
+                    {ROLE_LABELS[userRole]}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 
@@ -116,45 +157,65 @@ export function Header({
               {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
 
-            {/* More menu */}
-            <div className="relative group">
-              <button className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 transition-colors">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10" />
-                </svg>
+            {/* Menu button - tap to open */}
+            <div className="relative">
+              <button
+                onClick={() => setMenuOpen(!menuOpen)}
+                className={cn(
+                  'w-8 h-8 rounded-lg flex items-center justify-center transition-colors',
+                  menuOpen ? 'bg-slate-800 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                )}
+              >
+                {menuOpen ? <X className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
               </button>
-              {/* Dropdown */}
-              <div className="absolute left-0 top-full mt-1 w-48 bg-white rounded-xl shadow-xl border border-slate-100 py-1 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
-                <button
-                  onClick={onOpenFactory}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
-                >
-                  <Factory className="w-4 h-4 text-amber-600" />
-                  بيانات المصنع
-                </button>
-                <button
-                  onClick={onOpenPrint}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
-                >
-                  <Printer className="w-4 h-4 text-slate-600" />
-                  إعدادات الطباعة
-                </button>
-                <button
-                  onClick={onOpenBackup}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
-                >
-                  <Database className="w-4 h-4 text-slate-600" />
-                  نسخ احتياطي
-                </button>
-                <div className="border-t border-slate-100 my-1" />
-                <button
-                  onClick={onLogout}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-rose-600 hover:bg-rose-50"
-                >
-                  <LogOut className="w-4 h-4" />
-                  تسجيل الخروج
-                </button>
-              </div>
+
+              {/* Dropdown Menu */}
+              {menuOpen && (
+                <>
+                  {/* Backdrop for mobile */}
+                  <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
+                  <div className="absolute left-0 top-full mt-1 w-52 bg-white rounded-xl shadow-xl border border-slate-100 py-1 z-50 animate-in fade-in slide-in-from-top-2 duration-150">
+                    <button
+                      onClick={() => { setMenuOpen(false); onOpenFactory() }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                    >
+                      <Factory className="w-4 h-4 text-amber-600" />
+                      بيانات المصنع
+                    </button>
+                    <button
+                      onClick={() => { setMenuOpen(false); onOpenPrint() }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                    >
+                      <Printer className="w-4 h-4 text-slate-600" />
+                      إعدادات الطباعة
+                    </button>
+                    <button
+                      onClick={() => { setMenuOpen(false); onOpenBackup() }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                    >
+                      <Database className="w-4 h-4 text-slate-600" />
+                      نسخ احتياطي
+                    </button>
+                    {canManageUsers && (
+                      <button
+                        onClick={() => { setMenuOpen(false); onOpenUsers() }}
+                        className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                      >
+                        <Users className="w-4 h-4 text-purple-600" />
+                        إدارة المستخدمين
+                      </button>
+                    )}
+                    <div className="border-t border-slate-100 my-1" />
+                    <button
+                      onClick={handleLogout}
+                      className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-rose-600 hover:bg-rose-50 transition-colors"
+                    >
+                      <LogOut className="w-4 h-4" />
+                      تسجيل الخروج
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -162,7 +223,7 @@ export function Header({
 
       {/* Search Dialog */}
       <Dialog open={searchOpen} onOpenChange={setSearchOpen}>
-        <DialogContent 
+        <DialogContent
           variant="bottom-sheet"
           className="p-0"
           dir="rtl"
