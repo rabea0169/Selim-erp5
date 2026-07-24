@@ -8,6 +8,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from '@/components/ui/dialog'
 import { useToast } from '@/hooks/use-toast'
 import { PrintSettingsDialog } from './PrintSettingsDialog'
@@ -94,6 +95,7 @@ export function PrintButton({
               <Printer className="w-5 h-5 text-emerald-600" />
               معاينة الطباعة - {title}
             </DialogTitle>
+          <DialogDescription className="sr-only">معاينة وطباعة المستند</DialogDescription>
           </DialogHeader>
 
           <div className="bg-slate-50 rounded-xl p-4 max-h-[60vh] overflow-y-auto">

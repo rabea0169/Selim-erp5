@@ -10,6 +10,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from '@/components/ui/dialog'
 import { useToast } from '@/hooks/use-toast'
 import { globalSearchService, type SearchResult } from '@/lib/db'
@@ -167,6 +168,7 @@ export function Header({
           </div>
           <DialogHeader className="px-4 pb-2">
             <DialogTitle className="text-right text-base">البحث الشامل</DialogTitle>
+            <DialogDescription className="sr-only">ابحث في كل بيانات التطبيق</DialogDescription>
           </DialogHeader>
           <div className="px-4 pb-4">
             <div className="relative mb-3">

@@ -11,6 +11,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
 import {
@@ -95,7 +96,8 @@ export function PurchaseForm({ open, onOpenChange, onSaved, suppliers }: Purchas
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto" dir="rtl">
-        <DialogHeader><DialogTitle className="text-right">فاتورة مشتريات جديدة</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle className="text-right">فاتورة مشتريات جديدة</DialogTitle>
+          <DialogDescription className="sr-only">فاتورة مشتريات جديدة</DialogDescription></DialogHeader>
         <div className="space-y-3">
           <div>
             <Label className="text-xs">اختر مورد مسجل (اختياري)</Label>

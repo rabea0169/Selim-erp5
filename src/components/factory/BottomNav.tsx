@@ -19,6 +19,7 @@ import {
   Dialog,
   DialogContent,
   DialogTitle,
+  DialogDescription,
 } from '@/components/ui/dialog'
 
 export type TabKey =
@@ -166,6 +167,7 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
       <Dialog open={moreOpen} onOpenChange={setMoreOpen}>
         <DialogContent className="max-w-md p-0 border-0 rounded-t-3xl rounded-b-none fixed bottom-0 left-0 right-0 translate-y-0 sm:rounded-3xl sm:bottom-1/2 sm:translate-y-1/2" dir="rtl">
           <DialogTitle className="sr-only">كل الأقسام</DialogTitle>
+          <DialogDescription className="sr-only">اختر القسم الذي تريد فتحه</DialogDescription>
           {/* Handle bar */}
           <div className="flex justify-center pt-3 pb-2">
             <div className="w-12 h-1 bg-slate-300 rounded-full" />
@@ -173,7 +175,7 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
 
           <div className="px-4 pb-6">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-base font-bold text-slate-800">كل الأقسام</h3>
+              <span className="text-base font-bold text-slate-800">كل الأقسام</span>
               <button
                 onClick={() => setMoreOpen(false)}
                 className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200"

@@ -14,6 +14,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
 import { useToast } from '@/hooks/use-toast'
@@ -98,6 +99,7 @@ export function TransactionForm({
               </>
             )}
           </DialogTitle>
+          <DialogDescription className="sr-only">تسجيل سلفة أو قبض</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <div>

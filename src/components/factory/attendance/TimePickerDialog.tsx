@@ -9,6 +9,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
 import {
@@ -89,6 +90,7 @@ export function TimePickerDialog({ state, onChange, date, onSave }: TimePickerDi
               </>
             )}
           </DialogTitle>
+          <DialogDescription className="sr-only">اختيار وقت الحضور أو الانصراف</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">

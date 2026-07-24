@@ -23,6 +23,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
 import { useToast } from '@/hooks/use-toast'
@@ -308,6 +309,7 @@ function SupplierForm({
       <DialogContent className="max-w-md" dir="rtl">
         <DialogHeader>
           <DialogTitle className="text-right">{supplier ? 'تعديل مورد' : 'مورد جديد'}</DialogTitle>
+          <DialogDescription className="sr-only">إدارة بيانات الموردين</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           {contactsSupported && (
@@ -485,6 +487,7 @@ function SupplierReport({ supplier, onClose }: { supplier: Supplier; onClose: ()
             <FileText className="w-5 h-5 text-amber-600" />
             تقرير المورد: {supplier.name}
           </DialogTitle>
+          <DialogDescription className="sr-only">إدارة بيانات الموردين</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-2">

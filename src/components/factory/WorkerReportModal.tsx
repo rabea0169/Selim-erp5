@@ -16,6 +16,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from '@/components/ui/dialog'
 import { useToast } from '@/hooks/use-toast'
 import { formatCurrency, formatDate, todayStr, startOfMonth } from '@/lib/format'
@@ -339,6 +340,7 @@ export function WorkerReportModal({ worker, onClose }: WorkerReportModalProps) {
             <FileText className="w-5 h-5 text-purple-600" />
             تقرير الموظف: {worker.name}
           </DialogTitle>
+          <DialogDescription className="sr-only">تقرير الموظف الكامل</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-2">

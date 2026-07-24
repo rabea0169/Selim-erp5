@@ -23,6 +23,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
 import { useToast } from '@/hooks/use-toast'
@@ -446,6 +447,7 @@ function ProductForm({ open, onOpenChange, editProduct, onSaved }: ProductFormPr
           <DialogTitle className="text-right">
             {editProduct ? 'تعديل المنتج' : 'منتج جديد'}
           </DialogTitle>
+          <DialogDescription className="sr-only">إدارة المنتجات وأسعارها</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <div>

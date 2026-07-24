@@ -16,6 +16,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
 import { useToast } from '@/hooks/use-toast'
@@ -105,6 +106,7 @@ export function BackupRestore({ open, onOpenChange }: { open: boolean; onOpenCha
               <Database className="w-5 h-5 text-emerald-600" />
               النسخ الاحتياطي والاسترجاع
             </DialogTitle>
+          <DialogDescription className="sr-only">النسخ الاحتياطي والاسترجاع</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-3">
@@ -194,6 +196,7 @@ export function BackupRestore({ open, onOpenChange }: { open: boolean; onOpenCha
                 <AlertTriangle className="w-5 h-5 text-amber-600" />
                 تأكيد الاسترجاع
               </DialogTitle>
+          <DialogDescription className="sr-only">النسخ الاحتياطي والاسترجاع</DialogDescription>
             </DialogHeader>
             <div className="space-y-2 text-sm">
               <p className="text-slate-700">سيتم استبدال البيانات الحالية ببيانات الملف التالي:</p>

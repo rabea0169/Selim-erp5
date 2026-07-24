@@ -29,6 +29,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
 import {
@@ -613,6 +614,7 @@ function CompleteOrderDialog({
       <DialogContent className="max-w-sm" dir="rtl">
         <DialogHeader>
           <DialogTitle className="text-right">إكمال أمر التشغيل</DialogTitle>
+          <DialogDescription className="sr-only">إدارة أوامر التشغيل</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <div className="bg-emerald-50 rounded-lg p-3 text-xs">
@@ -812,6 +814,7 @@ function ProductionOrderForm({
       <DialogContent className="max-w-lg max-h-[92vh] overflow-y-auto" dir="rtl">
         <DialogHeader>
           <DialogTitle className="text-right">أمر تشغيل جديد</DialogTitle>
+          <DialogDescription className="sr-only">إدارة أوامر التشغيل</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           {/* المنتج */}

@@ -24,6 +24,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
 import {
@@ -408,6 +409,7 @@ function TreasuryTransactionForm({ open, onOpenChange, type, onSaved }: FormProp
             )}
             {isDeposit ? 'إيداع في الخزينة' : 'سحب من الخزينة'}
           </DialogTitle>
+          <DialogDescription className="sr-only">إدارة معاملات الخزينة</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3">

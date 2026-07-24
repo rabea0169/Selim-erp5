@@ -20,6 +20,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
 import {
@@ -320,6 +321,7 @@ function ProductionForm({
       <DialogContent className="max-w-md" dir="rtl">
         <DialogHeader>
           <DialogTitle className="text-right">تسجيل إنتاج جديد</DialogTitle>
+          <DialogDescription className="sr-only">تسجيل إنتاج الموظفين بالقطعة</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <div>

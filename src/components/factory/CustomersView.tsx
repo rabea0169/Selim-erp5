@@ -23,6 +23,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
 import { useToast } from '@/hooks/use-toast'
@@ -316,6 +317,7 @@ function CustomerForm({
           <DialogTitle className="text-right">
             {customer ? 'تعديل عميل' : 'عميل جديد'}
           </DialogTitle>
+          <DialogDescription className="sr-only">إدارة بيانات العملاء</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           {contactsSupported && (
@@ -499,6 +501,7 @@ function CustomerReport({
             <FileText className="w-5 h-5 text-blue-600" />
             تقرير العميل: {customer.name}
           </DialogTitle>
+          <DialogDescription className="sr-only">إدارة بيانات العملاء</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-2">

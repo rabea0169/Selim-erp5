@@ -10,6 +10,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from '@/components/ui/dialog'
 import { useToast } from '@/hooks/use-toast'
 import { expenseCategoryRepository, dataChangeEmitter } from '@/lib/db'
@@ -69,6 +70,7 @@ export function CategoryManager({ open, onOpenChange, categories, onSaved }: Cat
       <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto" dir="rtl">
         <DialogHeader>
           <DialogTitle className="text-right">إدارة بنود المصاريف</DialogTitle>
+          <DialogDescription className="sr-only">إدارة بنود المصاريف</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <div className="bg-slate-50 rounded-lg p-3 space-y-2">

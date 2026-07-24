@@ -31,6 +31,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
 import {
@@ -617,6 +618,7 @@ function WarehouseForm({ open, onOpenChange, onSaved }: WarehouseFormProps) {
       <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto" dir="rtl">
         <DialogHeader>
           <DialogTitle className="text-right">مخزن جديد</DialogTitle>
+          <DialogDescription className="sr-only">إدارة المخازن والمواد</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <div>
@@ -762,6 +764,7 @@ function MaterialForm({
       <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto" dir="rtl">
         <DialogHeader>
           <DialogTitle className="text-right">مادة جديدة</DialogTitle>
+          <DialogDescription className="sr-only">إدارة المخازن والمواد</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <div>
@@ -967,6 +970,7 @@ function StockMovementForm({
             )}
             {isAdd ? 'إضافة كمية' : 'سحب كمية'}
           </DialogTitle>
+          <DialogDescription className="sr-only">إدارة المخازن والمواد</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <div className="bg-slate-50 rounded-lg p-3 flex items-center justify-between">

@@ -11,6 +11,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
 import {
@@ -147,6 +148,7 @@ export function WorkerForm({ open, onOpenChange, onSaved }: WorkerFormProps) {
       <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto" dir="rtl">
         <DialogHeader>
           <DialogTitle className="text-right">موظف جديد</DialogTitle>
+          <DialogDescription className="sr-only">إضافة موظف جديد</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           {contactsSupported && (

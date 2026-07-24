@@ -10,6 +10,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
 import {
@@ -75,6 +76,7 @@ export function ExpenseForm({ open, onOpenChange, categories, onSaved }: Expense
       <DialogContent className="max-w-md" dir="rtl">
         <DialogHeader>
           <DialogTitle className="text-right">مصروف جديد</DialogTitle>
+          <DialogDescription className="sr-only">تسجيل مصروف جديد</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <div>

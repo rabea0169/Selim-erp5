@@ -9,6 +9,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
 import { formatDate } from '@/lib/format'
@@ -54,6 +55,7 @@ export function StatusDialog({ state, onChange, date, onSave }: StatusDialogProp
               </>
             )}
           </DialogTitle>
+          <DialogDescription className="sr-only">تسجيل غياب أو إجازة</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3">

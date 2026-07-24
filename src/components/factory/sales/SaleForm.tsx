@@ -11,6 +11,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
 import {
@@ -103,6 +104,7 @@ export function SaleForm({ open, onOpenChange, onSaved, customers }: SaleFormPro
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto" dir="rtl">
         <DialogHeader>
           <DialogTitle className="text-right">فاتورة مبيعات جديدة</DialogTitle>
+          <DialogDescription className="sr-only">فاتورة مبيعات جديدة</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3">

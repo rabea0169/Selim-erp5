@@ -25,6 +25,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
 import { useToast } from '@/hooks/use-toast'
@@ -144,6 +145,8 @@ export function FactorySettingsView({ open, onOpenChange }: { open: boolean; onO
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="max-w-md">
+          <DialogTitle className="sr-only">جارٍ التحميل</DialogTitle>
+          <DialogDescription className="sr-only">إدارة بيانات المصنع</DialogDescription>
           <div className="flex items-center justify-center py-8">
             <div className="w-8 h-8 border-4 border-emerald-200 border-t-emerald-600 rounded-full animate-spin" />
           </div>
@@ -160,6 +163,7 @@ export function FactorySettingsView({ open, onOpenChange }: { open: boolean; onO
             <Factory className="w-5 h-5 text-amber-600" />
             بيانات المصنع
           </DialogTitle>
+          <DialogDescription className="sr-only">إدارة بيانات المصنع وشعاره</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
