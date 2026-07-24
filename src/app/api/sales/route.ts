@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db } from '@/lib/db-server'
 
 // GET /api/sales?from=&to=&q=
 export async function GET(req: NextRequest) {

@@ -1,6 +1,6 @@
 import bcrypt from 'bcryptjs'
 import { cookies } from 'next/headers'
-import { db } from '@/lib/db'
+import { db } from '@/lib/db-server'
 
 const SESSION_COOKIE = 'factory_session'
 const SESSION_EXPIRY_DAYS = 30

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db } from '@/lib/db-server'
 
 // GET /api/reports?from=&to=
 // returns aggregated totals for all transaction types in the date range

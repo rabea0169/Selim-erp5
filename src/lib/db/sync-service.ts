@@ -8,29 +8,42 @@ const SYNC_ENABLED_KEY = 'serverSyncEnabled'
 
 class SyncService {
   private intervalId: ReturnType<typeof setInterval> | null = null
+  private pendingChanges: Set<string> = new Set()
 
+  // المزامنة مفعّلة افتراضياً
   isEnabled(): boolean {
-    return localStorage.getItem(SYNC_ENABLED_KEY) === 'true'
+    const stored = localStorage.getItem(SYNC_ENABLED_KEY)
+    return stored !== 'false' // مفعّل افتراضياً ما لم يتم تعطيله صراحةً
   }
 
   setEnabled(enabled: boolean) {
     localStorage.setItem(SYNC_ENABLED_KEY, String(enabled))
   }
 
-  // بدء المزامنة التلقائية
+  // بدء المزامنة التلقائية - تعمل افتراضياً بدون تفاعل المستخدم
   start() {
     if (typeof window === 'undefined') return
     if (!this.isEnabled()) return
 
-    // مزامنة فورية بعد 10 ثواني
+    // مزامنة فورية بعد 5 ثواني
     setTimeout(() => {
       Promise.resolve().then(() => this.sync())
-    }, 10000)
+    }, 5000)
 
-    // مزامنة كل 5 دقائق
+    // مزامنة كل دقيقتين (أكثر تكراراً)
     this.intervalId = setInterval(() => {
       Promise.resolve().then(() => this.sync())
-    }, 5 * 60 * 1000)
+    }, 2 * 60 * 1000)
+
+    // مزامنة عند العودة online
+    window.addEventListener('online', () => {
+      Promise.resolve().then(() => this.sync())
+    })
+
+    // مزامنة عند focus على التطبيق
+    window.addEventListener('focus', () => {
+      Promise.resolve().then(() => this.sync())
+    })
   }
 
   stop() {
@@ -38,6 +51,24 @@ class SyncService {
       clearInterval(this.intervalId)
       this.intervalId = null
     }
+  }
+
+  // تسجيل تغيير للمزامنة الفورية
+  notifyChange(entityType: string) {
+    this.pendingChanges.add(entityType)
+    // مزامنة فورية لو متصل
+    if (navigator.onLine) {
+      this.debouncedSync()
+    }
+  }
+
+  private debounceTimer: ReturnType<typeof setTimeout> | null = null
+
+  private debouncedSync() {
+    if (this.debounceTimer) clearTimeout(this.debounceTimer)
+    this.debounceTimer = setTimeout(() => {
+      Promise.resolve().then(() => this.sync())
+    }, 3000) // مزامنة بعد 3 ثواني من آخر تغيير
   }
 
   // مزامنة كاملة (push + pull)
@@ -82,6 +113,7 @@ class SyncService {
       }
 
       localStorage.setItem(SYNC_STATUS_KEY, String(Date.now()))
+      this.pendingChanges.clear()
       console.log('✅ Sync complete:', { pushed, pulled })
 
       return { success: true, pushed, pulled }
@@ -141,7 +173,6 @@ class SyncService {
 
       if (res.data) {
         await reportRepository.importAll({ data: res.data })
-        // إشعار كل الأقسام بالتحديث
         const allTypes = [
           'sales', 'purchases', 'workers', 'workerAdvances', 'workerReceipts',
           'workerAttendance', 'production', 'customers', 'suppliers', 'expenses',
@@ -177,7 +208,7 @@ class SyncService {
   isStale(): boolean {
     const last = this.getLastSyncDate()
     if (!last) return true
-    return Date.now() - last.getTime() > 30 * 60 * 1000 // 30 دقيقة
+    return Date.now() - last.getTime() > 10 * 60 * 1000 // 10 دقائق
   }
 }
 

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db } from '@/lib/db-server'
 
 // POST /api/restore - استرجاع البيانات من ملف JSON
 export async function POST(req: NextRequest) {

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+import { db } from '@/lib/db-server'
 
 // GET /api/backup - تصدير كل البيانات بصيغة JSON
 export async function GET() {

@@ -1,12 +1,11 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  output: "standalone",
-  /* config options here */
+  reactStrictMode: true,
   typescript: {
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: false,
   },
-  reactStrictMode: false,
+  allowedDevOrigins: ['preview-*.space-z.ai'],
 };
 
 export default nextConfig;
