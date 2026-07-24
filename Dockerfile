@@ -29,7 +29,7 @@ WORKDIR /app
 ENV NODE_ENV=production
 
 # تثبيت Prisma لتشغيل db push عند البدء
-RUN npm install prisma @prisma/client --no-save --legacy-peer-deps
+RUN npm install prisma@6.11.1 @prisma/client@6.11.1 --no-save --legacy-peer-deps
 
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
