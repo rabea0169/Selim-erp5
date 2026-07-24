@@ -1,0 +1,1032 @@
+     1→'use client'
+     2→
+     3→import { useState, useEffect } from 'react'
+     4→import {
+     5→  Plus,
+     6→  Search,
+     7→  Factory,
+     8→  Play,
+     9→  Check,
+    10→  CheckCircle2,
+    11→  ChevronLeft,
+    12→  Calendar,
+    13→  Package,
+    14→  Layers,
+    15→  ListChecks,
+    16→  X,
+    17→  Trash2,
+    18→  AlertCircle,
+    19→  Circle,
+    20→  Clock,
+    21→} from 'lucide-react'
+    22→import { Button } from '@/components/ui/button'
+    23→import { Input } from '@/components/ui/input'
+    24→import { Label } from '@/components/ui/label'
+    25→import { Badge } from '@/components/ui/badge'
+    26→import { Textarea } from '@/components/ui/textarea'
+    27→import {
+    28→  Dialog,
+    29→  DialogContent,
+    30→  DialogHeader,
+    31→  DialogTitle,
+    32→  DialogDescription,
+    33→  DialogFooter,
+    34→} from '@/components/ui/dialog'
+    35→import {
+    36→  Select,
+    37→  SelectContent,
+    38→  SelectItem,
+    39→  SelectTrigger,
+    40→  SelectValue,
+    41→} from '@/components/ui/select'
+    42→import { useToast } from '@/hooks/use-toast'
+    43→import { formatCurrency, formatDate, todayStr } from '@/lib/format'
+    44→import {
+    45→  productionOrderRepository,
+    46→  productRepository,
+    47→  materialRepository,
+    48→  dataChangeEmitter,
+    49→  useLiveData,
+    50→  type ProductionOrder,
+    51→  type Product,
+    52→  type Material,
+    53→} from '@/lib/db'
+    54→
+    55→const STATUS_LABELS: Record<ProductionOrder['status'], string> = {
+    56→  draft: 'مسودة',
+    57→  in_progress: 'قيد التنفيذ',
+    58→  completed: 'مكتمل',
+    59→  cancelled: 'ملغي',
+    60→}
+    61→
+    62→const STATUS_STYLES: Record<ProductionOrder['status'], string> = {
+    63→  draft: 'bg-slate-100 text-slate-700 border-slate-200',
+    64→  in_progress: 'bg-blue-50 text-blue-700 border-blue-200',
+    65→  completed: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    66→  cancelled: 'bg-rose-50 text-rose-700 border-rose-200',
+    67→}
+    68→
+    69→const DEFAULT_STAGES = ['قص', 'خياطة', 'تشطيب', 'تعبئة']
+    70→
+    71→interface OrdersData {
+    72→  orders: ProductionOrder[]
+    73→  products: Product[]
+    74→  materials: Material[]
+    75→}
+    76→
+    77→async function fetchOrdersData(statusFilter: string): Promise<OrdersData> {
+    78→  const [orders, products, materials] = await Promise.all([
+    79→    statusFilter === 'all'
+    80→      ? productionOrderRepository.getAll()
+    81→      : productionOrderRepository.getByStatus(statusFilter as ProductionOrder['status']),
+    82→    productRepository.getAll(),
+    83→    materialRepository.getAll(),
+    84→  ])
+    85→  return {
+    86→    orders: orders.sort(
+    87→      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+    88→    ),
+    89→    products,
+    90→    materials,
+    91→  }
+    92→}
+    93→
+    94→export function ProductionOrdersView() {
+    95→  const [statusFilter, setStatusFilter] = useState<string>('all')
+    96→  const [open, setOpen] = useState(false)
+    97→  const [detailOrderId, setDetailOrderId] = useState<string | null>(null)
+    98→  const { toast } = useToast()
+    99→
+   100→  const { data, loading, reload } = useLiveData<OrdersData>(
+   101→    () => fetchOrdersData(statusFilter),
+   102→    ['productionOrders', 'products', 'materials']
+   103→  )
+   104→
+   105→  // إعادة التحميل عند تغير الفلتر
+   106→  useEffect(() => {
+   107→    reload()
+   108→  }, [statusFilter, reload])
+   109→
+   110→  const orders: ProductionOrder[] = data?.orders || []
+   111→  const products: Product[] = data?.products || []
+   112→  const materials: Material[] = data?.materials || []
+   113→
+   114→  const detailOrder = detailOrderId
+   115→    ? orders.find((o) => o.id === detailOrderId)
+   116→    : null
+   117→
+   118→  if (detailOrder) {
+   119→    return (
+   120→      <ProductionOrderDetail
+   121→        order={detailOrder}
+   122→        onBack={() => setDetailOrderId(null)}
+   123→        onChanged={reload}
+   124→      />
+   125→    )
+   126→  }
+   127→
+   128→  const inProgressCount = orders.filter((o) => o.status === 'in_progress').length
+   129→  const completedCount = orders.filter((o) => o.status === 'completed').length
+   130→
+   131→  return (
+   132→    <div className="space-y-4">
+   133→      <div className="flex items-center justify-between">
+   134→        <div>
+   135→          <h2 className="text-xl font-bold text-slate-800">أوامر التشغيل</h2>
+   136→          <p className="text-xs text-slate-500">إدارة أوامر التصنيع ومراحلها</p>
+   137→        </div>
+   138→        <Button
+   139→          onClick={() => setOpen(true)}
+   140→          className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm h-9 text-xs font-medium"
+   141→        >
+   142→          <Plus className="w-4 h-4 ml-1" />
+   143→          أمر تشغيل
+   144→        </Button>
+   145→      </div>
+   146→
+   147→      {/* إحصائيات */}
+   148→      <div className="grid grid-cols-3 gap-2">
+   149→        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-3">
+   150→          <div className="flex items-center justify-between mb-1">
+   151→            <p className="text-[10px] text-slate-500">الإجمالي</p>
+   152→            <Factory className="w-3.5 h-3.5 text-slate-400" />
+   153→          </div>
+   154→          <p className="text-sm font-bold text-slate-800">{orders.length}</p>
+   155→        </div>
+   156→        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-3">
+   157→          <div className="flex items-center justify-between mb-1">
+   158→            <p className="text-[10px] text-blue-600">قيد التنفيذ</p>
+   159→            <Clock className="w-3.5 h-3.5 text-blue-400" />
+   160→          </div>
+   161→          <p className="text-sm font-bold text-blue-700">{inProgressCount}</p>
+   162→        </div>
+   163→        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-3">
+   164→          <div className="flex items-center justify-between mb-1">
+   165→            <p className="text-[10px] text-emerald-600">مكتملة</p>
+   166→            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+   167→          </div>
+   168→          <p className="text-sm font-bold text-emerald-700">{completedCount}</p>
+   169→        </div>
+   170→      </div>
+   171→
+   172→      {/* فلترة بالحالة */}
+   173→      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-3">
+   174→        <Label className="text-[10px] text-slate-500 mb-1 block">فلترة بالحالة</Label>
+   175→        <Select value={statusFilter} onValueChange={setStatusFilter}>
+   176→          <SelectTrigger className="bg-slate-50">
+   177→            <SelectValue />
+   178→          </SelectTrigger>
+   179→          <SelectContent>
+   180→            <SelectItem value="all">كل الحالات</SelectItem>
+   181→            <SelectItem value="draft">مسودة</SelectItem>
+   182→            <SelectItem value="in_progress">قيد التنفيذ</SelectItem>
+   183→            <SelectItem value="completed">مكتملة</SelectItem>
+   184→            <SelectItem value="cancelled">ملغية</SelectItem>
+   185→          </SelectContent>
+   186→        </Select>
+   187→      </div>
+   188→
+   189→      {/* قائمة الأوامر */}
+   190→      {loading ? (
+   191→        <div className="space-y-2">
+   192→          {[1, 2, 3].map((i) => (
+   193→            <div key={i} className="h-24 bg-slate-200 rounded-2xl animate-pulse" />
+   194→          ))}
+   195→        </div>
+   196→      ) : orders.length === 0 ? (
+   197→        <div className="bg-white rounded-2xl p-8 text-center border border-slate-100">
+   198→          <Factory className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+   199→          <p className="text-sm text-slate-500">لا توجد أوامر تشغيل</p>
+   200→          <p className="text-xs text-slate-400 mt-1">ابدأ بإنشاء أول أمر</p>
+   201→        </div>
+   202→      ) : (
+   203→        <div className="space-y-2">
+   204→          {orders.map((o) => {
+   205→            const progress =
+   206→              o.quantity > 0
+   207→                ? Math.min(100, (o.completedQuantity / o.quantity) * 100)
+   208→                : 0
+   209→            const completedStages = o.stages.filter(
+   210→              (s) => s.status === 'completed'
+   211→            ).length
+   212→            const product = products.find((p) => p.id === o.productId)
+   213→            return (
+   214→              <button
+   215→                key={o.id}
+   216→                onClick={() => setDetailOrderId(o.id)}
+   217→                className="w-full bg-white rounded-2xl shadow-sm border border-slate-100 p-3 hover:shadow-md transition-all text-right"
+   218→              >
+   219→                <div className="flex items-start justify-between mb-2">
+   220→                  <div className="flex-1">
+   221→                    <div className="flex items-center gap-2 mb-1">
+   222→                      <p className="text-sm font-bold text-slate-800">
+   223→                        {o.orderNumber}
+   224→                      </p>
+   225→                      <Badge
+   226→                        variant="outline"
+   227→                        className={`text-[10px] ${STATUS_STYLES[o.status]}`}
+   228→                      >
+   229→                        {STATUS_LABELS[o.status]}
+   230→                      </Badge>
+   231→                    </div>
+   232→                    <p className="text-xs text-slate-600 font-medium">
+   233→                      {o.productName}
+   234→                    </p>
+   235→                    <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-1">
+   236→                      <Calendar className="w-3 h-3" />
+   237→                      {formatDate(o.date)}
+   238→                      {o.expectedEndDate && (
+   239→                        <span>• تسليم: {formatDate(o.expectedEndDate)}</span>
+   240→                      )}
+   241→                    </div>
+   242→                  </div>
+   243→                  <ChevronLeft className="w-4 h-4 text-slate-400" />
+   244→                </div>
+   245→
+   246→                {/* شريط التقدم */}
+   247→                <div className="space-y-1">
+   248→                  <div className="flex items-center justify-between text-[10px] text-slate-500">
+   249→                    <span>
+   250→                      الإنتاج: {o.completedQuantity} / {o.quantity} {o.unit}
+   251→                    </span>
+   252→                    <span>
+   253→                      المراحل: {completedStages} / {o.stages.length}
+   254→                    </span>
+   255→                  </div>
+   256→                  <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+   257→                    <div
+   258→                      className="h-full bg-gradient-to-l from-emerald-500 to-teal-600 transition-all"
+   259→                      style={{ width: `${progress}%` }}
+   260→                    />
+   261→                  </div>
+   262→                </div>
+   263→              </button>
+   264→            )
+   265→          })}
+   266→        </div>
+   267→      )}
+   268→
+   269→      <ProductionOrderForm
+   270→        open={open}
+   271→        onOpenChange={setOpen}
+   272→        products={products}
+   273→        materials={materials}
+   274→        onSaved={() => {
+   275→          setOpen(false)
+   276→          reload()
+   277→        }}
+   278→      />
+   279→    </div>
+   280→  )
+   281→}
+   282→
+   283→// ====== تفاصيل أمر التشغيل ======
+   284→interface DetailProps {
+   285→  order: ProductionOrder
+   286→  onBack: () => void
+   287→  onChanged: () => void
+   288→}
+   289→
+   290→function ProductionOrderDetail({ order, onBack, onChanged }: DetailProps) {
+   291→  const { toast } = useToast()
+   292→  const [completeOpen, setCompleteOpen] = useState(false)
+   293→
+   294→  const handleStartStage = async (stageId: string) => {
+   295→    try {
+   296→      await productionOrderRepository.startStage(order.id, stageId)
+   297→      dataChangeEmitter.notifyUpdate('productionOrders')
+   298→      onChanged()
+   299→      toast({ title: 'تم بدء المرحلة' })
+   300→    } catch (e: any) {
+   301→      toast({ title: 'خطأ', description: e.message, variant: 'destructive' })
+   302→    }
+   303→  }
+   304→
+   305→  const handleCompleteStage = async (stageId: string) => {
+   306→    try {
+   307→      await productionOrderRepository.completeStage(order.id, stageId)
+   308→      dataChangeEmitter.notifyUpdate('productionOrders')
+   309→      onChanged()
+   310→      toast({ title: 'تم إكمال المرحلة' })
+   311→    } catch (e: any) {
+   312→      toast({ title: 'خطأ', description: e.message, variant: 'destructive' })
+   313→    }
+   314→  }
+   315→
+   316→  const handleCancel = async () => {
+   317→    if (!confirm('إلغاء أمر التشغيل؟')) return
+   318→    try {
+   319→      await productionOrderRepository.update(order.id, {
+   320→        status: 'cancelled',
+   321→      })
+   322→      dataChangeEmitter.notifyUpdate('productionOrders')
+   323→      onChanged()
+   324→      toast({ title: 'تم إلغاء الأمر' })
+   325→    } catch (e: any) {
+   326→      toast({ title: 'خطأ', description: e.message, variant: 'destructive' })
+   327→    }
+   328→  }
+   329→
+   330→  const handleCompleteOrder = async (completedQuantity: number) => {
+   331→    try {
+   332→      await productionOrderRepository.completeOrder(order.id, completedQuantity)
+   333→      dataChangeEmitter.notifyUpdate('productionOrders')
+   334→      dataChangeEmitter.notifyUpdate('products')
+   335→      onChanged()
+   336→      setCompleteOpen(false)
+   337→      toast({ title: 'تم إكمال أمر التشغيل' })
+   338→    } catch (e: any) {
+   339→      toast({ title: 'خطأ', description: e.message, variant: 'destructive' })
+   340→    }
+   341→  }
+   342→
+   343→  const progress =
+   344→    order.quantity > 0
+   345→      ? Math.min(100, (order.completedQuantity / order.quantity) * 100)
+   346→      : 0
+   347→  const isCompleted = order.status === 'completed'
+   348→  const isCancelled = order.status === 'cancelled'
+   349→
+   350→  return (
+   351→    <div className="space-y-4">
+   352→      <div className="flex items-center justify-between">
+   353→        <button
+   354→          onClick={onBack}
+   355→          className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700"
+   356→        >
+   357→          <ChevronLeft className="w-4 h-4 rotate-180" />
+   358→          رجوع للأوامر
+   359→        </button>
+   360→        <Badge
+   361→          variant="outline"
+   362→          className={`text-[10px] ${STATUS_STYLES[order.status]}`}
+   363→        >
+   364→          {STATUS_LABELS[order.status]}
+   365→        </Badge>
+   366→      </div>
+   367→
+   368→      {/* رأس الأمر */}
+   369→      <div className="bg-gradient-to-br from-slate-800 to-slate-900 text-white rounded-2xl p-4 shadow-md">
+   370→        <div className="flex items-start justify-between mb-3">
+   371→          <div>
+   372→            <p className="text-[10px] text-slate-300">رقم الأمر</p>
+   373→            <p className="text-lg font-bold">{order.orderNumber}</p>
+   374→          </div>
+   375→          <div className="w-10 h-10 rounded-xl bg-white/10 backdrop-blur flex items-center justify-center">
+   376→            <Factory className="w-5 h-5 text-emerald-400" />
+   377→          </div>
+   378→        </div>
+   379→        <div className="grid grid-cols-2 gap-2 text-xs">
+   380→          <div className="bg-white/10 backdrop-blur rounded-lg p-2">
+   381→            <p className="text-slate-300">المنتج</p>
+   382→            <p className="font-bold text-white truncate">{order.productName}</p>
+   383→          </div>
+   384→          <div className="bg-white/10 backdrop-blur rounded-lg p-2">
+   385→            <p className="text-slate-300">الكمية المطلوبة</p>
+   386→            <p className="font-bold text-white">
+   387→              {order.quantity} {order.unit}
+   388→            </p>
+   389→          </div>
+   390→          <div className="bg-white/10 backdrop-blur rounded-lg p-2">
+   391→            <p className="text-slate-300">المنجز</p>
+   392→            <p className="font-bold text-emerald-300">
+   393→              {order.completedQuantity} {order.unit}
+   394→            </p>
+   395→          </div>
+   396→          <div className="bg-white/10 backdrop-blur rounded-lg p-2">
+   397→            <p className="text-slate-300">التاريخ</p>
+   398→            <p className="font-bold text-white">{formatDate(order.date)}</p>
+   399→          </div>
+   400→        </div>
+   401→        {order.expectedEndDate && (
+   402→          <div className="mt-2 bg-white/10 backdrop-blur rounded-lg p-2 text-xs flex items-center justify-between">
+   403→            <span className="text-slate-300">تاريخ التسليم المتوقع</span>
+   404→            <span className="font-bold text-amber-300">
+   405→              {formatDate(order.expectedEndDate)}
+   406→            </span>
+   407→          </div>
+   408→        )}
+   409→      </div>
+   410→
+   411→      {/* شريط التقدم */}
+   412→      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-3">
+   413→        <div className="flex items-center justify-between text-[11px] text-slate-600 mb-1.5">
+   414→          <span className="font-bold">نسبة الإنجاز</span>
+   415→          <span className="font-bold text-emerald-700">{progress.toFixed(0)}%</span>
+   416→        </div>
+   417→        <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+   418→          <div
+   419→            className="h-full bg-gradient-to-l from-emerald-500 to-teal-600 transition-all"
+   420→            style={{ width: `${progress}%` }}
+   421→          />
+   422→        </div>
+   423→      </div>
+   424→
+   425→      {/* المواد المستخدمة */}
+   426→      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-3">
+   427→        <p className="text-xs font-bold text-slate-700 mb-2 flex items-center gap-1">
+   428→          <Package className="w-3.5 h-3.5" />
+   429→          المواد الخام المستخدمة
+   430→        </p>
+   431→        {order.materials.length === 0 ? (
+   432→          <p className="text-[11px] text-slate-400 text-center py-2">
+   433→            لا توجد مواد مسجلة
+   434→          </p>
+   435→        ) : (
+   436→          <div className="space-y-1.5">
+   437→            {order.materials.map((m) => (
+   438→              <div
+   439→                key={m.id}
+   440→                className="flex items-center justify-between text-xs bg-slate-50 rounded-lg p-2"
+   441→              >
+   442→                <span className="text-slate-700 font-medium">{m.materialName}</span>
+   443→                <span className="font-bold text-slate-800">
+   444→                  {m.quantity} {m.unit}
+   445→                </span>
+   446→              </div>
+   447→            ))}
+   448→          </div>
+   449→        )}
+   450→      </div>
+   451→
+   452→      {/* مراحل التصنيع */}
+   453→      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-3">
+   454→        <p className="text-xs font-bold text-slate-700 mb-2 flex items-center gap-1">
+   455→          <ListChecks className="w-3.5 h-3.5" />
+   456→          مراحل التصنيع
+   457→        </p>
+   458→        {order.stages.length === 0 ? (
+   459→          <p className="text-[11px] text-slate-400 text-center py-2">
+   460→            لا توجد مراحل مسجلة
+   461→          </p>
+   462→        ) : (
+   463→          <div className="space-y-2">
+   464→            {order.stages.map((s, idx) => {
+   465→              const stageStyle =
+   466→                s.status === 'completed'
+   467→                  ? {
+   468→                      bg: 'bg-emerald-50',
+   469→                      text: 'text-emerald-700',
+   470→                      border: 'border-emerald-200',
+   471→                      icon: <CheckCircle2 className="w-4 h-4 text-emerald-600" />,
+   472→                    }
+   473→                  : s.status === 'in_progress'
+   474→                  ? {
+   475→                      bg: 'bg-blue-50',
+   476→                      text: 'text-blue-700',
+   477→                      border: 'border-blue-200',
+   478→                      icon: <Clock className="w-4 h-4 text-blue-600" />,
+   479→                    }
+   480→                  : {
+   481→                      bg: 'bg-slate-50',
+   482→                      text: 'text-slate-600',
+   483→                      border: 'border-slate-200',
+   484→                      icon: <Circle className="w-4 h-4 text-slate-400" />,
+   485→                    }
+   486→              return (
+   487→                <div
+   488→                  key={s.id}
+   489→                  className={`rounded-lg p-2 border ${stageStyle.bg} ${stageStyle.border}`}
+   490→                >
+   491→                  <div className="flex items-center justify-between">
+   492→                    <div className="flex items-center gap-2 flex-1">
+   493→                      <span className="text-[10px] font-bold text-slate-400">
+   494→                        {idx + 1}
+   495→                      </span>
+   496→                      {stageStyle.icon}
+   497→                      <div className="flex-1">
+   498→                        <p className={`text-xs font-bold ${stageStyle.text}`}>
+   499→                          {s.name}
+   500→                        </p>
+   501→                        <div className="flex items-center gap-2 text-[10px] text-slate-500">
+   502→                          {s.startedAt && (
+   503→                            <span>بدء: {formatDate(s.startedAt)}</span>
+   504→                          )}
+   505→                          {s.completedAt && (
+   506→                            <span>إكمال: {formatDate(s.completedAt)}</span>
+   507→                          )}
+   508→                        </div>
+   509→                      </div>
+   510→                    </div>
+   511→                    {!isCompleted && !isCancelled && (
+   512→                      <div className="flex gap-1">
+   513→                        {s.status === 'pending' && (
+   514→                          <Button
+   515→                            size="sm"
+   516→                            variant="outline"
+   517→                            onClick={() => handleStartStage(s.id)}
+   518→                            className="h-7 text-[10px] font-medium border-blue-200 text-blue-700 hover:bg-blue-50"
+   519→                          >
+   520→                            <Play className="w-3 h-3 ml-1" />
+   521→                            بدء
+   522→                          </Button>
+   523→                        )}
+   524→                        {s.status === 'in_progress' && (
+   525→                          <Button
+   526→                            size="sm"
+   527→                            variant="outline"
+   528→                            onClick={() => handleCompleteStage(s.id)}
+   529→                            className="h-7 text-[10px] font-medium border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+   530→                          >
+   531→                            <Check className="w-3 h-3 ml-1" />
+   532→                            إكمال
+   533→                          </Button>
+   534→                        )}
+   535→                      </div>
+   536→                    )}
+   537→                  </div>
+   538→                </div>
+   539→              )
+   540→            })}
+   541→          </div>
+   542→        )}
+   543→      </div>
+   544→
+   545→      {/* ملاحظات */}
+   546→      {order.notes && (
+   547→        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-3">
+   548→          <p className="text-xs font-bold text-slate-700 mb-1">ملاحظات</p>
+   549→          <p className="text-[11px] text-slate-600 whitespace-pre-wrap">
+   550→            {order.notes}
+   551→          </p>
+   552→        </div>
+   553→      )}
+   554→
+   555→      {/* أزرار الإجراءات */}
+   556→      {!isCompleted && !isCancelled && (
+   557→        <div className="grid grid-cols-2 gap-2">
+   558→          <Button
+   559→            variant="outline"
+   560→            onClick={handleCancel}
+   561→            className="h-9 text-xs font-medium border-rose-200 text-rose-700 hover:bg-rose-50"
+   562→          >
+   563→            <X className="w-4 h-4 ml-1" />
+   564→            إلغاء الأمر
+   565→          </Button>
+   566→          <Button
+   567→            onClick={() => setCompleteOpen(true)}
+   568→            className="bg-emerald-600 hover:bg-emerald-700 text-white h-9 text-xs font-medium"
+   569→          >
+   570→            <CheckCircle2 className="w-4 h-4 ml-1" />
+   571→            إكمال الأمر
+   572→          </Button>
+   573→        </div>
+   574→      )}
+   575→
+   576→      {completeOpen && (
+   577→        <CompleteOrderDialog
+   578→          open={completeOpen}
+   579→          onOpenChange={setCompleteOpen}
+   580→          order={order}
+   581→          onConfirm={handleCompleteOrder}
+   582→        />
+   583→      )}
+   584→    </div>
+   585→  )
+   586→}
+   587→
+   588→// ====== نموذج إكمال الأمر ======
+   589→function CompleteOrderDialog({
+   590→  open,
+   591→  onOpenChange,
+   592→  order,
+   593→  onConfirm,
+   594→}: {
+   595→  open: boolean
+   596→  onOpenChange: (v: boolean) => void
+   597→  order: ProductionOrder
+   598→  onConfirm: (qty: number) => void
+   599→}) {
+   600→  const [qty, setQty] = useState(String(order.quantity))
+   601→  const { toast } = useToast()
+   602→
+   603→  const confirm = () => {
+   604→    const num = Number(qty)
+   605→    if (!num || num <= 0) {
+   606→      toast({ title: 'أدخل كمية صحيحة', variant: 'destructive' })
+   607→      return
+   608→    }
+   609→    onConfirm(num)
+   610→  }
+   611→
+   612→  return (
+   613→    <Dialog open={open} onOpenChange={onOpenChange}>
+   614→      <DialogContent className="max-w-sm" dir="rtl">
+   615→        <DialogHeader>
+   616→          <DialogTitle className="text-right">إكمال أمر التشغيل</DialogTitle>
+   617→          <DialogDescription className="sr-only">إدارة أوامر التشغيل</DialogDescription>
+   618→        </DialogHeader>
+   619→        <div className="space-y-3">
+   620→          <div className="bg-emerald-50 rounded-lg p-3 text-xs">
+   621→            <p className="text-emerald-800">
+   622→              <AlertCircle className="w-3.5 h-3.5 inline ml-1" />
+   623→              سيتم إضافة الكمية المنتهية لمخزون المنتج
+   624→            </p>
+   625→          </div>
+   626→          <div>
+   627→            <Label className="text-xs">الكمية المنتهية *</Label>
+   628→            <Input
+   629→              type="number"
+   630→              value={qty}
+   631→              onChange={(e) => setQty(e.target.value)}
+   632→              placeholder="0"
+   633→              className="bg-slate-50 font-bold text-emerald-700"
+   634→            />
+   635→            <p className="text-[10px] text-slate-500 mt-1">
+   636→              المطلوب: {order.quantity} {order.unit}
+   637→            </p>
+   638→          </div>
+   639→        </div>
+   640→        <DialogFooter className="gap-2">
+   641→          <Button
+   642→            variant="outline"
+   643→            onClick={() => onOpenChange(false)}
+   644→            className="h-9 text-xs font-medium"
+   645→          >
+   646→            إلغاء
+   647→          </Button>
+   648→          <Button
+   649→            onClick={confirm}
+   650→            className="bg-emerald-600 hover:bg-emerald-700 text-white h-9 text-xs font-medium"
+   651→          >
+   652→            <CheckCircle2 className="w-4 h-4 ml-1" />
+   653→            تأكيد الإكمال
+   654→          </Button>
+   655→        </DialogFooter>
+   656→      </DialogContent>
+   657→    </Dialog>
+   658→  )
+   659→}
+   660→
+   661→// ====== نموذج إنشاء أمر تشغيل ======
+   662→interface FormProps {
+   663→  open: boolean
+   664→  onOpenChange: (v: boolean) => void
+   665→  products: Product[]
+   666→  materials: Material[]
+   667→  onSaved: () => void
+   668→}
+   669→
+   670→interface MaterialSelection {
+   671→  materialId: string
+   672→  quantity: number
+   673→}
+   674→
+   675→function ProductionOrderForm({
+   676→  open,
+   677→  onOpenChange,
+   678→  products,
+   679→  materials,
+   680→  onSaved,
+   681→}: FormProps) {
+   682→  const [productId, setProductId] = useState('')
+   683→  const [quantity, setQuantity] = useState('1')
+   684→  const [selectedMaterials, setSelectedMaterials] = useState<MaterialSelection[]>([])
+   685→  const [stages, setStages] = useState<string[]>(DEFAULT_STAGES)
+   686→  const [expectedEndDate, setExpectedEndDate] = useState('')
+   687→  const [notes, setNotes] = useState('')
+   688→  const [saving, setSaving] = useState(false)
+   689→  const { toast } = useToast()
+   690→
+   691→  // reset عند الإغلاق
+   692→  useEffect(() => {
+   693→    if (!open) {
+   694→      // تأخير بسيط لتجنب flicker
+   695→      Promise.resolve().then(() => {
+   696→        setProductId('')
+   697→        setQuantity('1')
+   698→        setSelectedMaterials([])
+   699→        setStages(DEFAULT_STAGES)
+   700→        setExpectedEndDate('')
+   701→        setNotes('')
+   702→      })
+   703→    }
+   704→  }, [open])
+   705→
+   706→  const selectedProduct = products.find((p) => p.id === productId)
+   707→
+   708→  // المواد الخام المتاحة (في مخازن المواد الخام)
+   709→  const availableMaterials = materials
+   710→
+   711→  const addMaterial = () => {
+   712→    setSelectedMaterials([
+   713→      ...selectedMaterials,
+   714→      { materialId: '', quantity: 1 },
+   715→    ])
+   716→  }
+   717→
+   718→  const updateMaterial = (idx: number, field: 'materialId' | 'quantity', value: any) => {
+   719→    const updated = [...selectedMaterials]
+   720→    updated[idx] = { ...updated[idx], [field]: value }
+   721→    setSelectedMaterials(updated)
+   722→  }
+   723→
+   724→  const removeMaterial = (idx: number) => {
+   725→    setSelectedMaterials(selectedMaterials.filter((_, i) => i !== idx))
+   726→  }
+   727→
+   728→  const addStage = () => {
+   729→    setStages([...stages, ''])
+   730→  }
+   731→
+   732→  const updateStage = (idx: number, value: string) => {
+   733→    const updated = [...stages]
+   734→    updated[idx] = value
+   735→    setStages(updated)
+   736→  }
+   737→
+   738→  const removeStage = (idx: number) => {
+   739→    setStages(stages.filter((_, i) => i !== idx))
+   740→  }
+   741→
+   742→  const save = async () => {
+   743→    if (!productId) {
+   744→      toast({ title: 'اختر المنتج', variant: 'destructive' })
+   745→      return
+   746→    }
+   747→    if (!selectedProduct) {
+   748→      toast({ title: 'المنتج غير موجود', variant: 'destructive' })
+   749→      return
+   750→    }
+   751→    const qty = Number(quantity)
+   752→    if (!qty || qty <= 0) {
+   753→      toast({ title: 'أدخل كمية صحيحة', variant: 'destructive' })
+   754→      return
+   755→    }
+   756→
+   757→    // تحقق من المواد
+   758→    const validMaterials = selectedMaterials.filter((m) => m.materialId)
+   759→    for (const sm of validMaterials) {
+   760→      const mat = materials.find((m) => m.id === sm.materialId)
+   761→      if (!mat) {
+   762→        toast({ title: 'مادة غير موجودة', variant: 'destructive' })
+   763→        return
+   764→      }
+   765→      if (mat.quantity < sm.quantity * qty) {
+   766→        toast({
+   767→          title: `المادة ${mat.name} غير متاحة`,
+   768→          description: `متاح: ${mat.quantity} ${mat.unit} • مطلوب: ${sm.quantity * qty}`,
+   769→          variant: 'destructive',
+   770→        })
+   771→        return
+   772→      }
+   773→    }
+   774→
+   775→    const validStages = stages.filter((s) => s.trim())
+   776→
+   777→    setSaving(true)
+   778→    try {
+   779→      await productionOrderRepository.createOrder({
+   780→        productId: selectedProduct.id,
+   781→        productName: selectedProduct.name,
+   782→        quantity: qty,
+   783→        unit: selectedProduct.unit,
+   784→        materials: validMaterials.map((sm) => {
+   785→          const mat = materials.find((m) => m.id === sm.materialId)!
+   786→          return {
+   787→            materialId: sm.materialId,
+   788→            materialName: mat.name,
+   789→            quantity: sm.quantity * qty,
+   790→            unit: mat.unit,
+   791→          }
+   792→        }),
+   793→        stages: validStages.map((name) => ({ name: name.trim() })),
+   794→        expectedEndDate: expectedEndDate || undefined,
+   795→        notes: notes.trim() || undefined,
+   796→      })
+   797→      dataChangeEmitter.notifyCreate('productionOrders')
+   798→      dataChangeEmitter.notifyUpdate('materials')
+   799→      dataChangeEmitter.notifyCreate('materialTransactions')
+   800→      toast({
+   801→        title: 'تم إنشاء أمر التشغيل',
+   802→        description: 'تم سحب المواد الخام من المخزن',
+   803→      })
+   804→      onSaved()
+   805→    } catch (e: any) {
+   806→      toast({ title: 'خطأ', description: e.message, variant: 'destructive' })
+   807→    } finally {
+   808→      setSaving(false)
+   809→    }
+   810→  }
+   811→
+   812→  return (
+   813→    <Dialog open={open} onOpenChange={onOpenChange}>
+   814→      <DialogContent className="max-w-lg max-h-[92vh] overflow-y-auto" dir="rtl">
+   815→        <DialogHeader>
+   816→          <DialogTitle className="text-right">أمر تشغيل جديد</DialogTitle>
+   817→          <DialogDescription className="sr-only">إدارة أوامر التشغيل</DialogDescription>
+   818→        </DialogHeader>
+   819→        <div className="space-y-3">
+   820→          {/* المنتج */}
+   821→          <div>
+   822→            <Label className="text-xs">المنتج *</Label>
+   823→            <Select
+   824→              value={productId || '__none__'}
+   825→              onValueChange={(v) => setProductId(v === '__none__' ? '' : v)}
+   826→            >
+   827→              <SelectTrigger className="bg-slate-50">
+   828→                <SelectValue placeholder="اختر المنتج" />
+   829→              </SelectTrigger>
+   830→              <SelectContent>
+   831→                <SelectItem value="__none__">— اختر —</SelectItem>
+   832→                {products.map((p) => (
+   833→                  <SelectItem key={p.id} value={p.id}>
+   834→                    {p.name} (متاح: {p.quantity} {p.unit})
+   835→                  </SelectItem>
+   836→                ))}
+   837→              </SelectContent>
+   838→            </Select>
+   839→          </div>
+   840→
+   841→          {/* الكمية */}
+   842→          <div>
+   843→            <Label className="text-xs">الكمية المطلوبة *</Label>
+   844→            <Input
+   845→              type="number"
+   846→              value={quantity}
+   847→              onChange={(e) => setQuantity(e.target.value)}
+   848→              placeholder="1"
+   849→              className="bg-slate-50 font-bold"
+   850→            />
+   851→            {selectedProduct && (
+   852→              <p className="text-[10px] text-slate-500 mt-1">
+   853→                التكلفة المتوقعة: {formatCurrency(selectedProduct.cost * (Number(quantity) || 0))}
+   854→              </p>
+   855→            )}
+   856→          </div>
+   857→
+   858→          {/* المواد الخام */}
+   859→          <div className="bg-slate-50 rounded-lg p-2 space-y-2">
+   860→            <div className="flex items-center justify-between">
+   861→              <Label className="text-xs font-bold">المواد الخام</Label>
+   862→              <Button
+   863→                type="button"
+   864→                variant="outline"
+   865→                size="sm"
+   866→                onClick={addMaterial}
+   867→                className="h-7 text-[11px] border-amber-200 text-amber-700 hover:bg-amber-50"
+   868→              >
+   869→                <Plus className="w-3 h-3 ml-1" />
+   870→                إضافة مادة
+   871→              </Button>
+   872→            </div>
+   873→            {selectedMaterials.length === 0 ? (
+   874→              <p className="text-[10px] text-slate-400 text-center py-2">
+   875→                لا توجد مواد مضافة (يمكن الإضافة لاحقاً)
+   876→              </p>
+   877→            ) : (
+   878→              <div className="space-y-2">
+   879→                {selectedMaterials.map((sm, idx) => {
+   880→                  const mat = materials.find((m) => m.id === sm.materialId)
+   881→                  return (
+   882→                    <div
+   883→                      key={idx}
+   884→                      className="bg-white rounded-lg p-2 space-y-1.5 border border-slate-200"
+   885→                    >
+   886→                      <div className="flex items-center gap-2">
+   887→                        <Select
+   888→                          value={sm.materialId || '__none__'}
+   889→                          onValueChange={(v) =>
+   890→                            updateMaterial(idx, 'materialId', v === '__none__' ? '' : v)
+   891→                          }
+   892→                        >
+   893→                          <SelectTrigger className="bg-slate-50 text-xs h-8 flex-1">
+   894→                            <SelectValue placeholder="اختر المادة" />
+   895→                          </SelectTrigger>
+   896→                          <SelectContent>
+   897→                            <SelectItem value="__none__">— اختر —</SelectItem>
+   898→                            {availableMaterials.map((m) => (
+   899→                              <SelectItem key={m.id} value={m.id}>
+   900→                                {m.name} (متاح: {m.quantity} {m.unit})
+   901→                              </SelectItem>
+   902→                            ))}
+   903→                          </SelectContent>
+   904→                        </Select>
+   905→                        <Button
+   906→                          type="button"
+   907→                          variant="ghost"
+   908→                          size="icon"
+   909→                          onClick={() => removeMaterial(idx)}
+   910→                          className="h-7 w-7 text-rose-500 shrink-0"
+   911→                        >
+   912→                          <Trash2 className="w-3 h-3" />
+   913→                        </Button>
+   914→                      </div>
+   915→                      <div className="grid grid-cols-2 gap-1.5">
+   916→                        <div>
+   917→                          <Label className="text-[10px]">الكمية لكل وحدة</Label>
+   918→                          <Input
+   919→                            type="number"
+   920→                            value={sm.quantity}
+   921→                            onChange={(e) =>
+   922→                              updateMaterial(idx, 'quantity', Number(e.target.value))
+   923→                            }
+   924→                            className="bg-slate-50 text-xs h-8"
+   925→                          />
+   926→                        </div>
+   927→                        <div>
+   928→                          <Label className="text-[10px]">الإجمالي</Label>
+   929→                          <div className="h-8 px-2 flex items-center bg-amber-50 rounded-md text-[11px] font-bold text-amber-700">
+   930→                            {sm.quantity * (Number(quantity) || 0)} {mat?.unit || ''}
+   931→                          </div>
+   932→                        </div>
+   933→                      </div>
+   934→                    </div>
+   935→                  )
+   936→                })}
+   937→              </div>
+   938→            )}
+   939→          </div>
+   940→
+   941→          {/* مراحل التصنيع */}
+   942→          <div className="bg-slate-50 rounded-lg p-2 space-y-2">
+   943→            <div className="flex items-center justify-between">
+   944→              <Label className="text-xs font-bold flex items-center gap-1">
+   945→                <Layers className="w-3 h-3" />
+   946→                مراحل التصنيع
+   947→              </Label>
+   948→              <Button
+   949→                type="button"
+   950→                variant="outline"
+   951→                size="sm"
+   952→                onClick={addStage}
+   953→                className="h-7 text-[11px] border-blue-200 text-blue-700 hover:bg-blue-50"
+   954→              >
+   955→                <Plus className="w-3 h-3 ml-1" />
+   956→                إضافة مرحلة
+   957→              </Button>
+   958→            </div>
+   959→            <div className="space-y-1.5">
+   960→              {stages.map((s, idx) => (
+   961→                <div key={idx} className="flex items-center gap-2">
+   962→                  <span className="text-[10px] font-bold text-slate-400 w-4">
+   963→                    {idx + 1}
+   964→                  </span>
+   965→                  <Input
+   966→                    value={s}
+   967→                    onChange={(e) => updateStage(idx, e.target.value)}
+   968→                    placeholder="اسم المرحلة"
+   969→                    className="bg-white text-xs h-8"
+   970→                  />
+   971→                  {stages.length > 1 && (
+   972→                    <Button
+   973→                      type="button"
+   974→                      variant="ghost"
+   975→                      size="icon"
+   976→                      onClick={() => removeStage(idx)}
+   977→                      className="h-7 w-7 text-rose-500 shrink-0"
+   978→                    >
+   979→                      <X className="w-3 h-3" />
+   980→                    </Button>
+   981→                  )}
+   982→                </div>
+   983→              ))}
+   984→            </div>
+   985→          </div>
+   986→
+   987→          {/* تاريخ التسليم */}
+   988→          <div>
+   989→            <Label className="text-xs">تاريخ التسليم المتوقع</Label>
+   990→            <Input
+   991→              type="date"
+   992→              value={expectedEndDate}
+   993→              onChange={(e) => setExpectedEndDate(e.target.value)}
+   994→              className="bg-slate-50"
+   995→            />
+   996→          </div>
+   997→
+   998→          {/* ملاحظات */}
+   999→          <div>
+  1000→            <Label className="text-xs">ملاحظات</Label>
+  1001→            <Textarea
+  1002→              value={notes}
+  1003→              onChange={(e) => setNotes(e.target.value)}
+  1004→              placeholder="ملاحظات إضافية..."
+  1005→              className="bg-slate-50 text-sm"
+  1006→              rows={2}
+  1007→            />
+  1008→          </div>
+  1009→        </div>
+  1010→
+  1011→        <DialogFooter className="gap-2">
+  1012→          <Button
+  1013→            variant="outline"
+  1014→            onClick={() => onOpenChange(false)}
+  1015→            disabled={saving}
+  1016→            className="h-9 text-xs font-medium"
+  1017→          >
+  1018→            إلغاء
+  1019→          </Button>
+  1020→          <Button
+  1021→            onClick={save}
+  1022→            disabled={saving}
+  1023→            className="bg-emerald-600 hover:bg-emerald-700 text-white h-9 text-xs font-medium"
+  1024→          >
+  1025→            {saving ? 'جارٍ الحفظ...' : 'إنشاء الأمر'}
+  1026→          </Button>
+  1027→        </DialogFooter>
+  1028→      </DialogContent>
+  1029→    </Dialog>
+  1030→  )
+  1031→}
+  1032→

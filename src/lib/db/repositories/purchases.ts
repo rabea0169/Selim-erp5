@@ -1,5 +1,6 @@
 import { BaseRepository } from './base'
 import { getDB, generateId, nowISO } from '../connection'
+import { materialRepository } from './warehouses'
 import type { Purchase, PurchaseItem } from '../types'
 
 class PurchaseRepository extends BaseRepository<Purchase> {
@@ -67,7 +68,12 @@ class PurchaseRepository extends BaseRepository<Purchase> {
     date: string
     paid: number
     notes?: string
-    items: Array<{ itemName: string; quantity: number; unitPrice: number }>
+    items: Array<{
+      itemName: string
+      materialId?: string
+      quantity: number
+      unitPrice: number
+    }>
   }): Promise<Purchase> {
     const db = await this.getDB()
     const tx = db.transaction(['purchases', 'purchaseItems', 'treasuryTransactions'], 'readwrite')
@@ -98,6 +104,7 @@ class PurchaseRepository extends BaseRepository<Purchase> {
         id: generateId(),
         purchaseId,
         itemName: it.itemName,
+        materialId: it.materialId,
         quantity: it.quantity,
         unitPrice: it.unitPrice,
         total: it.quantity * it.unitPrice,
@@ -124,6 +131,24 @@ class PurchaseRepository extends BaseRepository<Purchase> {
     }
 
     await tx.done
+
+    // إضافة الكميات للمواد الخام المرتبطة (خارج المعاملة لتجنب تعارض object stores)
+    for (const it of data.items) {
+      if (it.materialId) {
+        try {
+          await materialRepository.addStock(
+            it.materialId,
+            it.quantity,
+            it.unitPrice,
+            `شراء - ${data.supplierName}${data.invoiceNo ? ` (فاتورة ${data.invoiceNo})` : ''}`,
+            `من فاتورة مشتريات ${purchaseId}`
+          )
+        } catch (e) {
+          // لو المادة محذوفة - تجاهل
+          console.warn('Could not add stock to material', it.materialId, e)
+        }
+      }
+    }
 
     return { ...purchase, items }
   }

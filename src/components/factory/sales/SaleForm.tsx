@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { Plus, Trash2 } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Plus, Trash2, Package } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -21,14 +21,24 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { useToast } from '@/hooks/use-toast'
 import { formatCurrency, todayStr } from '@/lib/format'
-import { saleRepository, dataChangeEmitter, type Customer } from '@/lib/db'
+import { saleRepository, productRepository, dataChangeEmitter, type Customer, type Product } from '@/lib/db'
 
 interface SaleFormProps {
   open: boolean
   onOpenChange: (v: boolean) => void
   onSaved: () => void
   customers: Customer[]
+}
+
+interface SaleFormItem {
+  productName: string
+  productId?: string
+  priceType: 'wholesale' | 'half_wholesale' | 'retail' | 'custom'
+  quantity: number
+  unitPrice: number
+  total: number
 }
 
 export function SaleForm({ open, onOpenChange, onSaved, customers }: SaleFormProps) {
@@ -38,16 +48,74 @@ export function SaleForm({ open, onOpenChange, onSaved, customers }: SaleFormPro
   const [date, setDate] = useState(todayStr())
   const [paid, setPaid] = useState('')
   const [notes, setNotes] = useState('')
-  const [items, setItems] = useState<Array<{ itemName: string; quantity: number; unitPrice: number; total: number }>>([
-    { itemName: '', quantity: 1, unitPrice: 0, total: 0 },
+  const [items, setItems] = useState<SaleFormItem[]>([
+    { productName: '', priceType: 'custom', quantity: 1, unitPrice: 0, total: 0 },
   ])
   const [saving, setSaving] = useState(false)
+  const [products, setProducts] = useState<Product[]>([])
+  const { toast } = useToast()
+
+  // تحميل المنتجات
+  useEffect(() => {
+    if (open) {
+      productRepository.getAll().then(setProducts).catch(() => {})
+    }
+  }, [open])
 
   const total = items.reduce((s, it) => s + it.quantity * it.unitPrice, 0)
 
-  const updateItem = (i: number, field: string, value: any) => {
+  const updateItem = (i: number, field: keyof SaleFormItem, value: any) => {
     const newItems = [...items]
     ;(newItems[i] as any)[field] = value
+    newItems[i].total = newItems[i].quantity * newItems[i].unitPrice
+    setItems(newItems)
+  }
+
+  // اختيار منتج من القائمة
+  const selectProduct = (i: number, productId: string) => {
+    if (productId === '__none__') {
+      updateItem(i, 'productId', undefined)
+      updateItem(i, 'productName', '')
+      updateItem(i, 'unitPrice', 0)
+      updateItem(i, 'priceType', 'custom')
+      return
+    }
+    const product = products.find((p) => p.id === productId)
+    if (product) {
+      const newItems = [...items]
+      newItems[i].productName = product.name
+      newItems[i].productId = product.id
+      newItems[i].priceType = 'retail'
+      newItems[i].unitPrice = product.retailPrice
+      newItems[i].total = newItems[i].quantity * newItems[i].unitPrice
+      setItems(newItems)
+    }
+  }
+
+  // تغيير نوع السعر
+  const changePriceType = (i: number, priceType: string) => {
+    const item = items[i]
+    if (!item.productId) {
+      // لو مش مربوط بمنتج، خليه custom
+      updateItem(i, 'priceType', 'custom')
+      return
+    }
+    const product = products.find((p) => p.id === item.productId)
+    if (!product) return
+
+    const newItems = [...items]
+    newItems[i].priceType = priceType as SaleFormItem['priceType']
+    switch (priceType) {
+      case 'wholesale':
+        newItems[i].unitPrice = product.wholesalePrice
+        break
+      case 'half_wholesale':
+        newItems[i].unitPrice = product.halfWholesalePrice
+        break
+      case 'retail':
+        newItems[i].unitPrice = product.retailPrice
+        break
+    }
     newItems[i].total = newItems[i].quantity * newItems[i].unitPrice
     setItems(newItems)
   }
@@ -59,7 +127,7 @@ export function SaleForm({ open, onOpenChange, onSaved, customers }: SaleFormPro
     setDate(todayStr())
     setPaid('')
     setNotes('')
-    setItems([{ itemName: '', quantity: 1, unitPrice: 0, total: 0 }])
+    setItems([{ productName: '', priceType: 'custom', quantity: 1, unitPrice: 0, total: 0 }])
   }
 
   const selectCustomer = (id: string) => {
@@ -71,9 +139,26 @@ export function SaleForm({ open, onOpenChange, onSaved, customers }: SaleFormPro
   }
 
   const save = async () => {
-    if (!customerName.trim()) return
-    const validItems = items.filter((it) => it.itemName.trim())
-    if (validItems.length === 0) return
+    if (!customerName.trim()) {
+      toast({ title: 'تنبيه', description: 'أدخل اسم العميل', variant: 'destructive' })
+      return
+    }
+    const validItems = items.filter((it) => it.productName.trim())
+    if (validItems.length === 0) {
+      toast({ title: 'تنبيه', description: 'أضف صنفاً واحداً على الأقل', variant: 'destructive' })
+      return
+    }
+    // التحقق من الكميات
+    for (const it of validItems) {
+      if (it.quantity <= 0) {
+        toast({ title: 'تنبيه', description: 'الكمية يجب أن تكون موجبة', variant: 'destructive' })
+        return
+      }
+      if (it.unitPrice < 0) {
+        toast({ title: 'تنبيه', description: 'السعر يجب أن يكون موجباً', variant: 'destructive' })
+        return
+      }
+    }
     setSaving(true)
     try {
       await saleRepository.createWithItems({
@@ -84,16 +169,20 @@ export function SaleForm({ open, onOpenChange, onSaved, customers }: SaleFormPro
         paid: Number(paid) || 0,
         notes,
         items: validItems.map((it) => ({
-          itemName: it.itemName,
+          itemName: it.productName,
+          productId: it.productId,
+          priceType: it.priceType,
           quantity: Number(it.quantity),
           unitPrice: Number(it.unitPrice),
         })),
       })
       dataChangeEmitter.notifyCreate('sales')
+      dataChangeEmitter.notifyUpdate('products')
+      dataChangeEmitter.notifyUpdate('treasuryTransactions')
       reset()
       onSaved()
     } catch (e: any) {
-      console.error(e)
+      toast({ title: 'خطأ', description: e.message, variant: 'destructive' })
     } finally {
       setSaving(false)
     }
@@ -108,6 +197,7 @@ export function SaleForm({ open, onOpenChange, onSaved, customers }: SaleFormPro
         </DialogHeader>
 
         <div className="space-y-3">
+          {/* اختيار العميل */}
           <div>
             <Label className="text-xs">اختر عميل مسجل (اختياري)</Label>
             <Select value={customerId || '__none__'} onValueChange={selectCustomer}>
@@ -150,6 +240,7 @@ export function SaleForm({ open, onOpenChange, onSaved, customers }: SaleFormPro
             </div>
           </div>
 
+          {/* الأصناف */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <Label className="text-xs font-bold">الأصناف</Label>
@@ -157,7 +248,7 @@ export function SaleForm({ open, onOpenChange, onSaved, customers }: SaleFormPro
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => setItems([...items, { itemName: '', quantity: 1, unitPrice: 0, total: 0 }])}
+                onClick={() => setItems([...items, { productName: '', priceType: 'custom', quantity: 1, unitPrice: 0, total: 0 }])}
                 className="h-7 text-xs"
               >
                 <Plus className="w-3 h-3 ml-1" />
@@ -167,11 +258,30 @@ export function SaleForm({ open, onOpenChange, onSaved, customers }: SaleFormPro
 
             {items.map((it, i) => (
               <div key={i} className="bg-slate-50 rounded-lg p-2 space-y-2">
+                {/* اختيار المنتج */}
                 <div className="flex items-center gap-2">
+                  {products.length > 0 && (
+                    <Select
+                      value={it.productId || '__none__'}
+                      onValueChange={(v) => selectProduct(i, v)}
+                    >
+                      <SelectTrigger className="bg-white text-sm h-8 w-9 shrink-0" title="اختيار منتج">
+                        <Package className="w-3.5 h-3.5" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">— يدوي —</SelectItem>
+                        {products.map((p) => (
+                          <SelectItem key={p.id} value={p.id}>
+                            {p.name} (متاح: {p.quantity})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                   <Input
                     placeholder="اسم الصنف / الموديل"
-                    value={it.itemName}
-                    onChange={(e) => updateItem(i, 'itemName', e.target.value)}
+                    value={it.productName}
+                    onChange={(e) => updateItem(i, 'productName', e.target.value)}
                     className="bg-white text-sm h-8"
                   />
                   {items.length > 1 && (
@@ -186,14 +296,34 @@ export function SaleForm({ open, onOpenChange, onSaved, customers }: SaleFormPro
                     </Button>
                   )}
                 </div>
-                <div className="grid grid-cols-3 gap-1">
+
+                {/* نوع السعر + الكمية + السعر */}
+                <div className="grid grid-cols-4 gap-1">
+                  <div>
+                    <Label className="text-[10px]">نوع السعر</Label>
+                    <Select
+                      value={it.priceType}
+                      onValueChange={(v) => changePriceType(i, v)}
+                      disabled={!it.productId}
+                    >
+                      <SelectTrigger className="bg-white text-sm h-8">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="wholesale">جملة</SelectItem>
+                        <SelectItem value="half_wholesale">نصف جملة</SelectItem>
+                        <SelectItem value="retail">قطاعي</SelectItem>
+                        <SelectItem value="custom">مخصص</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                   <div>
                     <Label className="text-[10px]">الكمية</Label>
-                    <Input type="number" value={it.quantity} onChange={(e) => updateItem(i, 'quantity', Number(e.target.value))} className="bg-white text-sm h-8" />
+                    <Input type="number" value={it.quantity} onChange={(e) => updateItem(i, 'quantity', Number(e.target.value))} className="bg-white text-sm h-8" min="1" />
                   </div>
                   <div>
                     <Label className="text-[10px]">سعر الوحدة</Label>
-                    <Input type="number" value={it.unitPrice} onChange={(e) => updateItem(i, 'unitPrice', Number(e.target.value))} className="bg-white text-sm h-8" />
+                    <Input type="number" value={it.unitPrice} onChange={(e) => updateItem(i, 'unitPrice', Number(e.target.value))} className="bg-white text-sm h-8" min="0" />
                   </div>
                   <div>
                     <Label className="text-[10px]">الإجمالي</Label>
@@ -202,13 +332,36 @@ export function SaleForm({ open, onOpenChange, onSaved, customers }: SaleFormPro
                     </div>
                   </div>
                 </div>
+
+                {/* عرض مخزون المنتج */}
+                {it.productId && (() => {
+                  const p = products.find((x) => x.id === it.productId)
+                  if (!p) return null
+                  return (
+                    <div className="flex items-center gap-2 text-[10px]">
+                      <span className="text-slate-500">المتاح: {p.quantity} {p.unit}</span>
+                      {p.quantity < it.quantity && (
+                        <span className="text-rose-600 font-bold">⚠️ الكمية المطلوبة أكبر من المتاح!</span>
+                      )}
+                    </div>
+                  )
+                })()}
               </div>
             ))}
           </div>
 
-          <div className="bg-gradient-to-l from-emerald-500 to-teal-600 text-white rounded-lg p-3 flex items-center justify-between">
-            <span className="text-sm">الإجمالي الكلي</span>
-            <span className="text-lg font-bold">{formatCurrency(total)}</span>
+          {/* الإجمالي + الأجل */}
+          <div className="bg-gradient-to-l from-emerald-500 to-teal-600 text-white rounded-lg p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-sm">الإجمالي الكلي</span>
+              <span className="text-lg font-bold">{formatCurrency(total)}</span>
+            </div>
+            {Number(paid) > 0 && Number(paid) < total && (
+              <div className="flex items-center justify-between text-xs bg-white/10 rounded px-2 py-1">
+                <span>المتبقي (آجل)</span>
+                <span className="font-bold">{formatCurrency(total - (Number(paid) || 0))}</span>
+              </div>
+            )}
           </div>
 
           <div>
