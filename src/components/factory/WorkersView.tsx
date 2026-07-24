@@ -23,8 +23,6 @@ import { WorkerCard } from './workers/WorkerCard'
 import { WorkerForm } from './workers/WorkerForm'
 import type { WorkerWithStats } from './workers/types'
 
-type SubView = 'list' | 'attendance' | 'production'
-
 // جلب الموظفين مع الإحصائيات (يدعم البحث)
 async function fetchWorkers(search: string): Promise<WorkerWithStats[]> {
   const data = search
@@ -73,7 +71,7 @@ async function fetchWorkers(search: string): Promise<WorkerWithStats[]> {
 export function WorkersView() {
   const [search, setSearch] = useState('')
   const [open, setOpen] = useState(false)
-  const [subView, setSubView] = useState<SubView>('list')
+  const [subView, setSubView] = useState<'list' | 'attendance' | 'production'>('list')
   const { toast } = useToast()
 
   // تحميل الموظفين مع التحديث الفوري عند تغير السلف/القبض/الإنتاج
@@ -86,13 +84,6 @@ export function WorkersView() {
   useEffect(() => {
     reload()
   }, [search, reload])
-
-  if (subView === 'attendance') {
-    return <AttendanceView onBack={() => setSubView('list')} />
-  }
-  if (subView === 'production') {
-    return <ProductionView onBack={() => setSubView('list')} />
-  }
 
   const workersList = workers || []
   const totalAdvances = workersList.reduce((s, w) => s + w.totalAdvances, 0)
@@ -150,6 +141,10 @@ export function WorkersView() {
           إنتاج بالقطعة
         </button>
       </div>
+
+      {/* Render sub view */}
+      {subView === 'attendance' && <AttendanceView onBack={() => setSubView('list')} />}
+      {subView === 'production' && <ProductionView onBack={() => setSubView('list')} />}
 
       <div className="grid grid-cols-3 gap-2">
         <div className="bg-purple-50 rounded-xl p-3 border border-purple-100">
