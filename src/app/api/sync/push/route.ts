@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { requireAuth, withCompanyScope } from '@/lib/permissions'
 
-// POST /api/sync/push - رفع بيانات من IndexedDB للسيرفر
+// POST /api/sync/push
 export async function POST(req: NextRequest) {
   try {
+    const auth = await requireAuth('create')
+    if (!auth.authorized) return auth.response
+
     const body = await req.json()
-    const { data, userId } = body
+    const { data } = body
 
     if (!data) {
       return NextResponse.json({ error: 'لا توجد بيانات' }, { status: 400 })
@@ -13,7 +17,6 @@ export async function POST(req: NextRequest) {
 
     const results: Record<string, number> = {}
 
-    // رفع كل الجداول
     const tableMap: Record<string, any> = {
       users: 'user',
       factorySettings: 'factorySettings',
@@ -49,7 +52,6 @@ export async function POST(req: NextRequest) {
       let count = 0
       for (const record of records) {
         try {
-          // تحويل التواريخ
           const processed: any = {}
           for (const [key, value] of Object.entries(record)) {
             if (typeof value === 'string' && (key.includes('date') || key.includes('At') || key.includes('timestamp'))) {
@@ -58,8 +60,11 @@ export async function POST(req: NextRequest) {
               processed[key] = value
             }
           }
+          // إضافة companyId للجداول التي تدعمه
+          if (record.companyId === undefined || record.companyId === null) {
+            processed.companyId = auth.companyId
+          }
 
-          // upsert (إنشاء أو تحديث)
           await (db as any)[modelName].upsert({
             where: { id: record.id },
             create: processed,

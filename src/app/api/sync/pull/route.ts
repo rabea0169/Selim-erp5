@@ -1,44 +1,44 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { requireAuth } from '@/lib/permissions'
 
-// GET /api/sync/pull - تحميل بيانات من السيرفر لـ IndexedDB
+// GET /api/sync/pull
 export async function GET() {
   try {
+    const auth = await requireAuth('read')
+    if (!auth.authorized) return auth.response
+
     const data: Record<string, any[]> = {}
+    const companyId = auth.companyId
 
     const tables = [
-      'factorySettings',
-      'worker',
-      'workerAdvance',
-      'workerReceipt',
-      'workerAttendance',
-      'production',
-      'customer',
-      'supplier',
-      'sale',
-      'saleItem',
-      'purchase',
-      'purchaseItem',
-      'expenseCategory',
-      'expense',
-      'treasuryTransaction',
-      'warehouse',
-      'material',
-      'materialTransaction',
-      'product',
-      'productionOrder',
-      'payment',
-      'saleReturn',
-      'purchaseReturn',
-      'auditLog',
+      'factorySettings', 'worker', 'workerAdvance', 'workerReceipt',
+      'workerAttendance', 'production', 'customer', 'supplier',
+      'sale', 'saleItem', 'purchase', 'purchaseItem',
+      'expenseCategory', 'expense', 'treasuryTransaction',
+      'warehouse', 'material', 'materialTransaction',
+      'product', 'productionOrder', 'payment',
+      'saleReturn', 'purchaseReturn', 'auditLog',
     ]
 
     for (const table of tables) {
       try {
+        const whereClause: any = {}
+        // الفلترة بالشركة للجداول التي تدعم companyId
+        const companyTables = [
+          'worker', 'customer', 'supplier', 'sale', 'purchase',
+          'expenseCategory', 'expense', 'treasuryTransaction',
+          'product', 'productionOrder', 'payment',
+          'saleReturn', 'purchaseReturn', 'auditLog',
+        ]
+        if (companyTables.includes(table)) {
+          whereClause.companyId = companyId
+        }
+
         const records = await (db as any)[table].findMany({
+          where: Object.keys(whereClause).length > 0 ? whereClause : undefined,
           orderBy: { createdAt: 'asc' },
         })
-        // تحويل التواريخ لـ ISO string
         data[table] = records.map((r: any) => {
           const processed: any = {}
           for (const [key, value] of Object.entries(r)) {

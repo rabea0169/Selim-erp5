@@ -1,14 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { requireAuth, withCompanyScope } from '@/lib/permissions'
 
 export async function GET(req: NextRequest) {
   try {
+    const auth = await requireAuth('read')
+    if (!auth.authorized) return auth.response
+
     const { searchParams } = new URL(req.url)
     const from = searchParams.get('from')
     const to = searchParams.get('to')
     const workerId = searchParams.get('workerId')
 
-    const where: any = {}
+    const where: any = withCompanyScope({}, auth.companyId)
+    if (workerId) where.workerId = workerId
     if (from || to) {
       where.date = {}
       if (from) where.date.gte = new Date(from)
@@ -18,7 +23,6 @@ export async function GET(req: NextRequest) {
         where.date.lte = toDate
       }
     }
-    if (workerId) where.workerId = workerId
 
     const receipts = await db.workerReceipt.findMany({
       where,
@@ -34,46 +38,30 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const auth = await requireAuth('create')
+    if (!auth.authorized) return auth.response
+
     const body = await req.json()
     const { workerId, amount, date, notes } = body
 
-    // التحقق من البيانات
     if (!workerId) {
-      return NextResponse.json(
-        { error: 'الموظف مطلوب' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'الموظف مطلوب' }, { status: 400 })
     }
     if (!date) {
-      return NextResponse.json(
-        { error: 'التاريخ مطلوب' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'التاريخ مطلوب' }, { status: 400 })
     }
     const amt = Number(amount)
     if (isNaN(amt) || amt <= 0) {
-      return NextResponse.json(
-        { error: 'المبلغ يجب أن يكون رقماً موجباً' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'المبلغ يجب أن يكون رقماً موجباً' }, { status: 400 })
     }
 
-    // التحقق من وجود الموظف
-    const worker = await db.worker.findUnique({ where: { id: workerId } })
+    const worker = await db.worker.findFirst({ where: { id: workerId, companyId: auth.companyId } })
     if (!worker) {
-      return NextResponse.json(
-        { error: 'الموظف غير موجود' },
-        { status: 404 }
-      )
+      return NextResponse.json({ error: 'الموظف غير موجود' }, { status: 404 })
     }
 
     const receipt = await db.workerReceipt.create({
-      data: {
-        workerId,
-        amount: amt,
-        date: new Date(date),
-        notes: notes?.trim() || null,
-      },
+      data: { workerId, amount: amt, date: new Date(date), notes: notes?.trim() || null },
       include: { worker: true },
     })
     return NextResponse.json({ receipt })

@@ -21,13 +21,22 @@ class UserRepository extends BaseRepository<User> {
     username: string
     password: string
     name: string
+    role?: string
+    companyId?: string
+    phone?: string
+    securityQuestion?: string
+    securityAnswer?: string
   }): Promise<User> {
     const passwordHash = await bcrypt.hash(data.password, 10)
     return this.create({
       username: data.username,
       passwordHash,
       name: data.name,
-      role: 'admin',
+      role: (data.role || 'admin') as User['role'],
+      companyId: data.companyId || '',
+      phone: data.phone,
+      securityQuestion: data.securityQuestion,
+      securityAnswerHash: data.securityAnswer ? await bcrypt.hash(data.securityAnswer.toLowerCase(), 10) : undefined,
     })
   }
 

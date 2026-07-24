@@ -1,15 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { requireAuth, withCompanyScope } from '@/lib/permissions'
 
 export async function GET(req: NextRequest) {
   try {
+    const auth = await requireAuth('read')
+    if (!auth.authorized) return auth.response
+
     const { searchParams } = new URL(req.url)
     const from = searchParams.get('from')
     const to = searchParams.get('to')
     const categoryId = searchParams.get('categoryId')
     const q = searchParams.get('q') || ''
 
-    const where: any = {}
+    const where: any = withCompanyScope({}, auth.companyId)
     if (from || to) {
       where.date = {}
       if (from) where.date.gte = new Date(from)
@@ -36,46 +40,36 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const auth = await requireAuth('create')
+    if (!auth.authorized) return auth.response
+
     const body = await req.json()
     const { categoryId, amount, date, notes } = body
 
-    // التحقق من البيانات
     if (!categoryId) {
-      return NextResponse.json(
-        { error: 'بند المصروف مطلوب' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'بند المصروف مطلوب' }, { status: 400 })
     }
     if (!date) {
-      return NextResponse.json(
-        { error: 'التاريخ مطلوب' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'التاريخ مطلوب' }, { status: 400 })
     }
     const amt = Number(amount)
     if (isNaN(amt) || amt <= 0) {
-      return NextResponse.json(
-        { error: 'المبلغ يجب أن يكون رقماً موجباً' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'المبلغ يجب أن يكون رقماً موجباً' }, { status: 400 })
     }
 
-    // التحقق من وجود الفئة
-    const cat = await db.expenseCategory.findUnique({ where: { id: categoryId } })
+    const cat = await db.expenseCategory.findFirst({ where: { id: categoryId, companyId: auth.companyId } })
     if (!cat) {
-      return NextResponse.json(
-        { error: 'فئة المصروف غير موجودة' },
-        { status: 404 }
-      )
+      return NextResponse.json({ error: 'فئة المصروف غير موجودة' }, { status: 404 })
     }
 
     const expense = await db.expense.create({
       data: {
         categoryId,
-        categoryName: cat.name, // تخزين اسم الفئة لسرعة العرض
+        categoryName: cat.name,
         amount: amt,
         date: new Date(date),
         notes: notes?.trim() || null,
+        companyId: auth.companyId,
       },
       include: { category: true },
     })

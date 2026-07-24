@@ -1,14 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { requireAuth, withCompanyScope } from '@/lib/permissions'
 
 export async function GET(req: NextRequest) {
   try {
+    const auth = await requireAuth('read')
+    if (!auth.authorized) return auth.response
+
     const { searchParams } = new URL(req.url)
     const from = searchParams.get('from')
     const to = searchParams.get('to')
     const workerId = searchParams.get('workerId')
 
-    const where: any = {}
+    const where: any = withCompanyScope({}, auth.companyId)
     if (workerId) where.workerId = workerId
     if (from || to) {
       where.date = {}
@@ -34,50 +38,33 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const auth = await requireAuth('create')
+    if (!auth.authorized) return auth.response
+
     const body = await req.json()
     const { workerId, date, modelName, quantity, unitPrice, notes } = body
 
-    // التحقق من البيانات
     if (!workerId) {
-      return NextResponse.json(
-        { error: 'الموظف مطلوب' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'الموظف مطلوب' }, { status: 400 })
     }
     if (!date) {
-      return NextResponse.json(
-        { error: 'التاريخ مطلوب' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'التاريخ مطلوب' }, { status: 400 })
     }
     if (!modelName?.trim()) {
-      return NextResponse.json(
-        { error: 'اسم الموديل مطلوب' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'اسم الموديل مطلوب' }, { status: 400 })
     }
     const qty = Number(quantity)
     const price = Number(unitPrice)
     if (isNaN(qty) || qty <= 0) {
-      return NextResponse.json(
-        { error: 'الكمية يجب أن تكون رقماً موجباً' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'الكمية يجب أن تكون رقماً موجباً' }, { status: 400 })
     }
     if (isNaN(price) || price < 0) {
-      return NextResponse.json(
-        { error: 'سعر القطعة يجب أن يكون رقماً موجباً' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'سعر القطعة يجب أن يكون رقماً موجباً' }, { status: 400 })
     }
 
-    // التحقق من وجود الموظف
-    const worker = await db.worker.findUnique({ where: { id: workerId } })
+    const worker = await db.worker.findFirst({ where: { id: workerId, companyId: auth.companyId } })
     if (!worker) {
-      return NextResponse.json(
-        { error: 'الموظف غير موجود' },
-        { status: 404 }
-      )
+      return NextResponse.json({ error: 'الموظف غير موجود' }, { status: 404 })
     }
 
     const production = await db.production.create({

@@ -1,14 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { requireAuth, withCompanyScope } from '@/lib/permissions'
 
 export async function GET(req: NextRequest) {
   try {
+    const auth = await requireAuth('read')
+    if (!auth.authorized) return auth.response
+
     const { searchParams } = new URL(req.url)
     const from = searchParams.get('from')
     const to = searchParams.get('to')
     const q = searchParams.get('q') || ''
 
-    const where: any = {}
+    const where: any = withCompanyScope({}, auth.companyId)
     if (from || to) {
       where.date = {}
       if (from) where.date.gte = new Date(from)
@@ -40,6 +44,9 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const auth = await requireAuth('create')
+    if (!auth.authorized) return auth.response
+
     const body = await req.json()
     const {
       supplierName,
@@ -51,34 +58,21 @@ export async function POST(req: NextRequest) {
       notes,
     } = body
 
-    // التحقق من البيانات المدخلة
     if (!supplierName?.trim()) {
-      return NextResponse.json(
-        { error: 'اسم المورد مطلوب' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'اسم المورد مطلوب' }, { status: 400 })
     }
     if (!date) {
-      return NextResponse.json(
-        { error: 'التاريخ مطلوب' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'التاريخ مطلوب' }, { status: 400 })
     }
     if (!Array.isArray(items) || items.length === 0) {
-      return NextResponse.json(
-        { error: 'يجب إضافة صنف واحد على الأقل' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'يجب إضافة صنف واحد على الأقل' }, { status: 400 })
     }
 
     const validItems = items.filter(
       (it: any) => it.itemName?.trim() && Number(it.quantity) > 0 && Number(it.unitPrice) >= 0
     )
     if (validItems.length === 0) {
-      return NextResponse.json(
-        { error: 'أضف صنفاً صحيحاً واحداً على الأقل' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'أضف صنفاً صحيحاً واحداً على الأقل' }, { status: 400 })
     }
 
     const total = validItems.reduce(
@@ -87,16 +81,12 @@ export async function POST(req: NextRequest) {
     )
     const paidAmount = Number(paid) || 0
 
-    // التحقق من وجود المورد لو تم تحديده
     if (supplierId_ref) {
-      const supplier = await db.supplier.findUnique({
-        where: { id: supplierId_ref },
+      const supplier = await db.supplier.findFirst({
+        where: { id: supplierId_ref, companyId: auth.companyId },
       })
       if (!supplier) {
-        return NextResponse.json(
-          { error: 'المورد المحدد غير موجود' },
-          { status: 400 }
-        )
+        return NextResponse.json({ error: 'المورد المحدد غير موجود' }, { status: 400 })
       }
     }
 
@@ -110,6 +100,7 @@ export async function POST(req: NextRequest) {
           total,
           paid: paidAmount,
           notes: notes?.trim() || null,
+          companyId: auth.companyId,
           items: {
             create: validItems.map((it: any) => ({
               itemName: it.itemName.trim(),

@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { requireAuth, withCompanyScope } from '@/lib/permissions'
 
 export async function GET(req: NextRequest) {
   try {
+    const auth = await requireAuth('read')
+    if (!auth.authorized) return auth.response
+
     const { searchParams } = new URL(req.url)
     const q = searchParams.get('q') || ''
 
-    const where: any = {}
+    const where: any = withCompanyScope({}, auth.companyId)
     if (q) {
       where.OR = [
         { name: { contains: q } },
@@ -24,7 +28,6 @@ export async function GET(req: NextRequest) {
       orderBy: { createdAt: 'desc' },
     })
 
-    // Calculate totals
     const workersWithTotals = workers.map((w) => {
       const totalAdvances = w.advances.reduce((s, a) => s + a.amount, 0)
       const totalReceipts = w.receipts.reduce((s, r) => s + r.amount, 0)
@@ -44,15 +47,14 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const auth = await requireAuth('create')
+    if (!auth.authorized) return auth.response
+
     const body = await req.json()
     const { name, phone, job, type, notes } = body
 
-    // التحقق من البيانات
     if (!name?.trim()) {
-      return NextResponse.json(
-        { error: 'اسم الموظف مطلوب' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'اسم الموظف مطلوب' }, { status: 400 })
     }
 
     const validType = type === 'production' ? 'production' : 'monthly'
@@ -64,6 +66,7 @@ export async function POST(req: NextRequest) {
         job: job?.trim() || null,
         type: validType,
         notes: notes?.trim() || null,
+        companyId: auth.companyId,
       },
     })
     return NextResponse.json({ worker })

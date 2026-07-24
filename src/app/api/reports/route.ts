@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { requireAuth, withCompanyScope } from '@/lib/permissions'
 
 // GET /api/reports?from=&to=
-// returns aggregated totals for all transaction types in the date range
 export async function GET(req: NextRequest) {
   try {
+    const auth = await requireAuth('read')
+    if (!auth.authorized) return auth.response
+
     const { searchParams } = new URL(req.url)
     const from = searchParams.get('from')
     const to = searchParams.get('to')
@@ -18,10 +21,11 @@ export async function GET(req: NextRequest) {
     }
 
     const dateFilter = from || to ? { date: dateRange } : {}
+    const companyFilter = withCompanyScope({}, auth.companyId)
 
     // Sales totals
     const sales = await db.sale.findMany({
-      where: dateFilter,
+      where: { ...companyFilter, ...dateFilter },
       include: { items: true },
       orderBy: { date: 'desc' },
     })
@@ -31,7 +35,7 @@ export async function GET(req: NextRequest) {
 
     // Purchases totals
     const purchases = await db.purchase.findMany({
-      where: dateFilter,
+      where: { ...companyFilter, ...dateFilter },
       include: { items: true },
       orderBy: { date: 'desc' },
     })
@@ -41,7 +45,7 @@ export async function GET(req: NextRequest) {
 
     // Worker advances
     const advances = await db.workerAdvance.findMany({
-      where: dateFilter,
+      where: { ...companyFilter, ...dateFilter },
       include: { worker: true },
       orderBy: { date: 'desc' },
     })
@@ -49,15 +53,15 @@ export async function GET(req: NextRequest) {
 
     // Worker receipts
     const receipts = await db.workerReceipt.findMany({
-      where: dateFilter,
+      where: { ...companyFilter, ...dateFilter },
       include: { worker: true },
       orderBy: { date: 'desc' },
     })
     const receiptsTotal = receipts.reduce((s, x) => s + x.amount, 0)
 
-    // Worker production (piece-rate)
+    // Worker production
     const productions = await db.production.findMany({
-      where: dateFilter,
+      where: { ...companyFilter, ...dateFilter },
       include: { worker: true },
       orderBy: { date: 'desc' },
     })
@@ -66,27 +70,25 @@ export async function GET(req: NextRequest) {
 
     // Worker attendance
     const attendance = await db.workerAttendance.findMany({
-      where: dateFilter,
+      where: { ...companyFilter, ...dateFilter },
       include: { worker: true },
       orderBy: { date: 'desc' },
     })
 
     // Expenses
     const expenses = await db.expense.findMany({
-      where: dateFilter,
+      where: { ...companyFilter, ...dateFilter },
       include: { category: true },
       orderBy: { date: 'desc' },
     })
     const expensesTotal = expenses.reduce((s, x) => s + x.amount, 0)
 
-    // Expenses grouped by category
     const expensesByCategory: Record<string, number> = {}
     for (const e of expenses) {
       const key = e.categoryName
       expensesByCategory[key] = (expensesByCategory[key] || 0) + e.amount
     }
 
-    // Top selling items
     const itemAgg: Record<string, { qty: number; total: number }> = {}
     for (const s of sales) {
       for (const it of s.items) {
@@ -100,7 +102,6 @@ export async function GET(req: NextRequest) {
       .sort((a, b) => b.total - a.total)
       .slice(0, 10)
 
-    // Production by model
     const prodByModel: Record<string, { qty: number; total: number }> = {}
     for (const p of productions) {
       if (!prodByModel[p.modelName]) prodByModel[p.modelName] = { qty: 0, total: 0 }
@@ -112,37 +113,19 @@ export async function GET(req: NextRequest) {
       .sort((a, b) => b.total - a.total)
       .slice(0, 10)
 
-    // Net calculation
-    // الإنتاج بالقطعة يُعتبر مصروف لأنه يستحق للموظف
     const netProfit =
       salesTotal - purchasesTotal - expensesTotal - advancesTotal + receiptsTotal - productionTotal
 
     return NextResponse.json({
       range: { from, to },
       summary: {
-        salesTotal,
-        salesPaid,
-        salesRemaining,
-        purchasesTotal,
-        purchasesPaid,
-        purchasesRemaining,
-        advancesTotal,
-        receiptsTotal,
-        productionTotal,
-        productionPieces,
-        expensesTotal,
-        netProfit,
+        salesTotal, salesPaid, salesRemaining,
+        purchasesTotal, purchasesPaid, purchasesRemaining,
+        advancesTotal, receiptsTotal, productionTotal, productionPieces,
+        expensesTotal, netProfit,
       },
-      sales,
-      purchases,
-      advances,
-      receipts,
-      productions,
-      attendance,
-      expenses,
-      expensesByCategory,
-      topItems,
-      topModels,
+      sales, purchases, advances, receipts, productions, attendance, expenses,
+      expensesByCategory, topItems, topModels,
     })
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })

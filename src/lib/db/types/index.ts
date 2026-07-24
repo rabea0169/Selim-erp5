@@ -26,7 +26,11 @@ export interface User {
   username: string
   passwordHash: string
   name: string
-  role: 'admin' | 'user'
+  phone?: string
+  role: 'owner' | 'admin' | 'manager' | 'employee' | 'viewer'
+  securityQuestion?: string
+  securityAnswerHash?: string
+  companyId: string
   createdAt: string
   updatedAt: string
 }
@@ -406,6 +410,7 @@ export type TableName =
   | 'saleReturnItems'
   | 'purchaseReturns'
   | 'purchaseReturnItems'
+  | 'companies'
 
 export interface DatabaseSchema {
   factorySettings: FactorySettings
@@ -435,6 +440,7 @@ export interface DatabaseSchema {
   saleReturnItems: SaleReturnItem
   purchaseReturns: PurchaseReturn
   purchaseReturnItems: PurchaseReturnItem
+  companies: any
 }
 
 // إضافة AuditLogEntry type

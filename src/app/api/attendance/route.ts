@@ -1,19 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { requireAuth, withCompanyScope } from '@/lib/permissions'
 
 export async function GET(req: NextRequest) {
   try {
+    const auth = await requireAuth('read')
+    if (!auth.authorized) return auth.response
+
     const { searchParams } = new URL(req.url)
     const from = searchParams.get('from')
     const to = searchParams.get('to')
     const workerId = searchParams.get('workerId')
     const date = searchParams.get('date')
 
-    const where: any = {}
+    const where: any = withCompanyScope({}, auth.companyId)
     if (workerId) where.workerId = workerId
 
     if (date) {
-      // فلترة بيوم محدد
       const d = new Date(date)
       d.setHours(0, 0, 0, 0)
       const next = new Date(d)
@@ -43,53 +46,36 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const auth = await requireAuth('create')
+    if (!auth.authorized) return auth.response
+
     const body = await req.json()
     const { workerId, date, checkIn, checkOut, status, notes } = body
 
-    // التحقق من البيانات
     if (!workerId) {
-      return NextResponse.json(
-        { error: 'الموظف مطلوب' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'الموظف مطلوب' }, { status: 400 })
     }
     if (!date) {
-      return NextResponse.json(
-        { error: 'التاريخ مطلوب' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'التاريخ مطلوب' }, { status: 400 })
     }
 
-    // التحقق من وجود الموظف
-    const worker = await db.worker.findUnique({ where: { id: workerId } })
+    const worker = await db.worker.findFirst({ where: { id: workerId, companyId: auth.companyId } })
     if (!worker) {
-      return NextResponse.json(
-        { error: 'الموظف غير موجود' },
-        { status: 404 }
-      )
+      return NextResponse.json({ error: 'الموظف غير موجود' }, { status: 404 })
     }
 
-    // التحقق من الحالة
-    const validStatus = ['present', 'absent', 'leave'].includes(status)
-      ? status
-      : 'present'
+    const validStatus = ['present', 'absent', 'leave'].includes(status) ? status : 'present'
 
-    // تحديد بداية ونهاية اليوم المحدد
     const dayStart = new Date(date)
     dayStart.setHours(0, 0, 0, 0)
     const dayEnd = new Date(dayStart)
     dayEnd.setDate(dayEnd.getDate() + 1)
 
-    // البحث عن سجل موجود لنفس الموظف في نفس اليوم
     const existing = await db.workerAttendance.findFirst({
-      where: {
-        workerId,
-        date: { gte: dayStart, lt: dayEnd },
-      },
+      where: { workerId, date: { gte: dayStart, lt: dayEnd } },
     })
 
     if (existing) {
-      // تحديث السجل الموجود
       const updated = await db.workerAttendance.update({
         where: { id: existing.id },
         data: {
@@ -103,7 +89,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ attendance: updated, updated: true })
     }
 
-    // إنشاء سجل جديد
     const record = await db.workerAttendance.create({
       data: {
         workerId,

@@ -8,17 +8,60 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ====== الشركة (Multi-Tenancy) ======
+model Company {
+  id               String   @id @default(cuid())
+  name             String
+  nameEn           String?
+  email            String?
+  phone            String?
+  address          String?
+  subscriptionPlan String   @default("free")
+  maxUsers         Int      @default(5)
+  createdAt        DateTime @default(now())
+
+  users            User[]
+  workers          Worker[]
+  customers        Customer[]
+  suppliers        Supplier[]
+  sales            Sale[]
+  purchases        Purchase[]
+  expenses         Expense[]
+  expenseCategories ExpenseCategory[]
+  treasuryTransactions TreasuryTransaction[]
+  warehouses        Warehouse[]
+  materials         Material[]
+  products          Product[]
+  productionOrders  ProductionOrder[]
+  payments          Payment[]
+  saleReturns       SaleReturn[]
+  purchaseReturns   PurchaseReturn[]
+  factorySettings   FactorySettings?
+  auditLogs         AuditLog[]
+  materialTransactions MaterialTransaction[]
+
+  @@index([name])
+}
+
 // ====== المستخدمون ======
 model User {
-  id           String   @id @default(cuid())
-  username     String   @unique
-  passwordHash String
-  name         String
-  role         String   @default("admin")
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id              String   @id @default(cuid())
+  username        String   @unique
+  passwordHash    String
+  name            String
+  phone           String?
+  role            String   @default("admin")
+  securityQuestion String?
+  securityAnswerHash String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  auditLogs AuditLog[]
+  companyId       String
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  auditLogs       AuditLog[]
+
+  @@index([companyId])
 }
 
 // ====== سجل العمليات ======
@@ -33,10 +76,13 @@ model AuditLog {
   metadata    Json?
   timestamp   DateTime @default(now())
 
-  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@index([entityType])
   @@index([timestamp])
+  @@index([companyId])
 }
 
 // ====== إعدادات المصنع ======
@@ -58,6 +104,9 @@ model FactorySettings {
   defaultPaperSize    String?  @default("A4")
   taxRate             Float?   @default(0)
   updatedAt           DateTime @updatedAt
+
+  companyId           String   @unique
+  company             Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 }
 
 // ====== الموظفون ======
@@ -76,12 +125,16 @@ model Worker {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
+  companyId       String
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
   advances     WorkerAdvance[]
   receipts     WorkerReceipt[]
   attendance   WorkerAttendance[]
   productions  Production[]
 
   @@index([name])
+  @@index([companyId])
 }
 
 model WorkerAdvance {
@@ -160,10 +213,14 @@ model Customer {
   openingBalance Float?   @default(0)
   createdAt      DateTime @default(now())
 
+  companyId       String
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
   sales    Sale[]
   payments Payment[] @relation("PaymentCustomer")
 
   @@index([name])
+  @@index([companyId])
 }
 
 model Supplier {
@@ -176,10 +233,14 @@ model Supplier {
   openingBalance Float?   @default(0)
   createdAt      DateTime @default(now())
 
+  companyId       String
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
   purchases      Purchase[]
   payments       Payment[] @relation("PaymentSupplier")
 
   @@index([name])
+  @@index([companyId])
 }
 
 // ====== المبيعات ======
@@ -202,12 +263,16 @@ model Sale {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
+  companyId       String
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
   customer Customer? @relation(fields: [customerId_ref], references: [id], onDelete: SetNull)
   items    SaleItem[]
   returns  SaleReturn[]
 
   @@index([date])
   @@index([customerId_ref])
+  @@index([companyId])
 }
 
 model SaleItem {
@@ -245,12 +310,16 @@ model Purchase {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
+  companyId       String
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
   supplier Supplier? @relation(fields: [supplierId_ref], references: [id], onDelete: SetNull)
   items    PurchaseItem[]
   returns  PurchaseReturn[]
 
   @@index([date])
   @@index([supplierId_ref])
+  @@index([companyId])
 }
 
 model PurchaseItem {
@@ -274,6 +343,9 @@ model ExpenseCategory {
   notes     String?
   createdAt DateTime @default(now())
 
+  companyId       String
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
   expenses Expense[]
 }
 
@@ -286,10 +358,14 @@ model Expense {
   notes        String?
   createdAt    DateTime @default(now())
 
+  companyId       String
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
   category ExpenseCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
 
   @@index([date])
   @@index([categoryId])
+  @@index([companyId])
 }
 
 // ====== الخزينة ======
@@ -305,8 +381,12 @@ model TreasuryTransaction {
   notes         String?
   createdAt     DateTime @default(now())
 
+  companyId       String
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
   @@index([date])
   @@index([type])
+  @@index([companyId])
 }
 
 // ====== المخازن ======
@@ -318,10 +398,14 @@ model Warehouse {
   notes     String?
   createdAt DateTime @default(now())
 
+  companyId       String
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
   materials Material[]
   products  Product[]
 }
 
+// ====== المواد الخام ======
 model Material {
   id            String   @id @default(cuid())
   name          String
@@ -334,17 +418,23 @@ model Material {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
+  companyId           String
+  company             Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
   warehouse           Warehouse             @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
   materialTransactions MaterialTransaction[]
 
   @@index([warehouseId])
   @@index([name])
+  @@index([companyId])
 }
 
 model MaterialTransaction {
   id            String   @id @default(cuid())
   materialId    String
   warehouseId   String
+  companyId     String
+  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   type          String
   quantity      Float
   unitCost      Float?
@@ -360,6 +450,7 @@ model MaterialTransaction {
   @@index([materialId])
   @@index([date])
   @@index([warehouseId])
+  @@index([companyId])
 }
 
 // ====== المنتجات ======
@@ -379,10 +470,14 @@ model Product {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
+  companyId           String
+  company             Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
   warehouse Warehouse? @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
 
   @@index([name])
   @@index([warehouseId])
+  @@index([companyId])
 }
 
 // ====== أوامر التشغيل ======
@@ -404,9 +499,13 @@ model ProductionOrder {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
+  companyId           String
+  company             Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
   @@index([date])
   @@index([status])
   @@index([productId])
+  @@index([companyId])
 }
 
 // ====== السدادات ======
@@ -423,12 +522,16 @@ model Payment {
   notes      String?
   createdAt  DateTime @default(now())
 
+  companyId       String
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
   customer Customer? @relation("PaymentCustomer", fields: [partyId], references: [id], onDelete: SetNull, map: "payment_customer_fk")
   supplier Supplier? @relation("PaymentSupplier", fields: [partyId], references: [id], onDelete: SetNull, map: "payment_supplier_fk")
 
   @@index([date])
   @@index([partyId])
   @@index([type])
+  @@index([companyId])
 }
 
 // ====== مرتجع المبيعات ======
@@ -447,10 +550,14 @@ model SaleReturn {
   notes         String?
   createdAt     DateTime @default(now())
 
+  companyId       String
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
   sale Sale @relation(fields: [saleId], references: [id], onDelete: Cascade)
 
   @@index([date])
   @@index([saleId])
+  @@index([companyId])
 }
 
 // ====== مرتجع المشتريات ======
@@ -468,8 +575,12 @@ model PurchaseReturn {
   notes          String?
   createdAt      DateTime @default(now())
 
+  companyId       String
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
   purchase Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
 
   @@index([date])
   @@index([purchaseId])
+  @@index([companyId])
 }

@@ -1,26 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { requireAuth } from '@/lib/permissions'
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const auth = await requireAuth('update')
+    if (!auth.authorized) return auth.response
+
     const { id } = await params
     const body = await req.json()
     const { name, phone, address, notes } = body
 
     if (!name?.trim()) {
-      return NextResponse.json(
-        { error: 'اسم العميل مطلوب' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'اسم العميل مطلوب' }, { status: 400 })
     }
 
-    // التحقق من وجود العميل
-    const existing = await db.customer.findUnique({ where: { id } })
+    const existing = await db.customer.findFirst({ where: { id, companyId: auth.companyId } })
     if (!existing) {
-      return NextResponse.json(
-        { error: 'العميل غير موجود' },
-        { status: 404 }
-      )
+      return NextResponse.json({ error: 'العميل غير موجود' }, { status: 404 })
     }
 
     const customer = await db.customer.update({
@@ -40,24 +37,20 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const auth = await requireAuth('delete')
+    if (!auth.authorized) return auth.response
+
     const { id } = await params
 
-    // التحقق من وجود العميل
-    const existing = await db.customer.findUnique({ where: { id } })
+    const existing = await db.customer.findFirst({ where: { id, companyId: auth.companyId } })
     if (!existing) {
-      return NextResponse.json(
-        { error: 'العميل غير موجود' },
-        { status: 404 }
-      )
+      return NextResponse.json({ error: 'العميل غير موجود' }, { status: 404 })
     }
 
-    // فصل المبيعات المرتبطة بهذا العميل (SetNull بسبب العلاقة الاختيارية)
-    // لكن نحتفظ باسم العميل في customerName للفواتير القديمة
     await db.sale.updateMany({
       where: { customerId_ref: id },
       data: { customerId_ref: null },
     })
-
     await db.customer.delete({ where: { id } })
     return NextResponse.json({ success: true })
   } catch (e: any) {
