@@ -1,5 +1,6 @@
 import { BaseRepository } from './base'
 import { getDB, generateId, nowISO } from '../connection'
+import { productRepository } from './products'
 import type { Sale, SaleItem } from '../types'
 
 class SaleRepository extends BaseRepository<Sale> {
@@ -67,10 +68,16 @@ class SaleRepository extends BaseRepository<Sale> {
     date: string
     paid: number
     notes?: string
-    items: Array<{ itemName: string; quantity: number; unitPrice: number }>
+    items: Array<{
+      itemName: string
+      productId?: string
+      priceType?: 'wholesale' | 'half_wholesale' | 'retail' | 'custom'
+      quantity: number
+      unitPrice: number
+    }>
   }): Promise<Sale> {
     const db = await this.getDB()
-    const tx = db.transaction(['sales', 'saleItems', 'treasuryTransactions'], 'readwrite')
+    const tx = db.transaction(['sales', 'saleItems', 'treasuryTransactions', 'products'], 'readwrite')
 
     const total = data.items.reduce((s, it) => s + it.quantity * it.unitPrice, 0)
     const now = nowISO()
@@ -98,12 +105,29 @@ class SaleRepository extends BaseRepository<Sale> {
         id: generateId(),
         saleId,
         itemName: it.itemName,
+        productId: it.productId,
+        priceType: it.priceType,
         quantity: it.quantity,
         unitPrice: it.unitPrice,
         total: it.quantity * it.unitPrice,
       }
       await tx.objectStore('saleItems').add(item)
       items.push(item)
+
+      // سحب الكمية من مخزون المنتج (لو مربوط بـ productId)
+      if (it.productId) {
+        const product = await tx.objectStore('products').get(it.productId)
+        if (product) {
+          if (product.quantity < it.quantity) {
+            throw new Error(`الكمية المتاحة من ${product.name} (${product.quantity}) أقل من المطلوب (${it.quantity})`)
+          }
+          await tx.objectStore('products').put({
+            ...product,
+            quantity: product.quantity - it.quantity,
+            updatedAt: now,
+          })
+        }
+      }
     }
 
     // إيداع المبلغ المدفوع في الخزينة تلقائياً
@@ -130,13 +154,28 @@ class SaleRepository extends BaseRepository<Sale> {
 
   async delete(id: string): Promise<void> {
     const db = await this.getDB()
-    const tx = db.transaction(['sales', 'saleItems', 'treasuryTransactions'], 'readwrite')
+    const tx = db.transaction(['sales', 'saleItems', 'treasuryTransactions', 'products'], 'readwrite')
 
     // حذف المعاملات المرتبطة في الخزينة
     const allTreasury = await tx.objectStore('treasuryTransactions').getAll()
     for (const t of allTreasury) {
       if (t.referenceType === 'sale' && t.referenceId === id) {
         await tx.objectStore('treasuryTransactions').delete(t.id)
+      }
+    }
+
+    // إرجاع الكميات للمنتجات (لو مربوطة بـ productId)
+    const items = await tx.objectStore('saleItems').index('by-sale').getAll(id)
+    for (const item of items) {
+      if (item.productId) {
+        const product = await tx.objectStore('products').get(item.productId)
+        if (product) {
+          await tx.objectStore('products').put({
+            ...product,
+            quantity: product.quantity + item.quantity,
+            updatedAt: nowISO(),
+          })
+        }
       }
     }
 

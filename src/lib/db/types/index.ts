@@ -116,6 +116,8 @@ export interface SaleItem {
   id: string
   saleId: string
   itemName: string
+  productId?: string        // ربط بالمنتج (اختياري)
+  priceType?: 'wholesale' | 'half_wholesale' | 'retail' | 'custom'  // نوع السعر المستخدم
   quantity: number
   unitPrice: number
   total: number
@@ -139,6 +141,7 @@ export interface PurchaseItem {
   id: string
   purchaseId: string
   itemName: string
+  materialId?: string        // ربط بالمادة الخام (اختياري - لو المشترى مادة خام)
   quantity: number
   unitPrice: number
   total: number
