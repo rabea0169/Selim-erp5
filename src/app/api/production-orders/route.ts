@@ -59,9 +59,8 @@ export async function POST(req: NextRequest) {
     if (isNaN(qty) || qty <= 0) {
       return NextResponse.json({ error: 'الكمية يجب أن تكون رقماً موجباً' }, { status: 400 })
     }
-    if (!date) {
-      return NextResponse.json({ error: 'التاريخ مطلوب' }, { status: 400 })
-    }
+    // نموذج أمر التشغيل لا يرسل تاريخاً، فيُعتبر تاريخ الإنشاء
+    const orderDate = date ? new Date(date) : new Date()
 
     const product = await db.product.findFirst({ where: { id: productId, companyId: auth.companyId } })
     if (!product) {
@@ -78,7 +77,7 @@ export async function POST(req: NextRequest) {
         status: status?.trim() || 'draft',
         materials: materials ?? [],
         stages: stages ?? [],
-        date: new Date(date),
+        date: orderDate,
         expectedEndDate: expectedEndDate ? new Date(expectedEndDate) : null,
         notes: notes?.trim() || null,
         companyId: auth.companyId,
