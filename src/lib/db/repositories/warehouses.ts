@@ -1,15 +1,14 @@
 import { BaseRepository } from './base'
-import { getDB, generateId, nowISO } from '../connection'
 import type { Warehouse, Material, MaterialTransaction } from '../types'
 
 class WarehouseRepository extends BaseRepository<Warehouse> {
   constructor() {
-    super('warehouses', false)
+    super('warehouses')
   }
 
   async getByType(type: Warehouse['type']): Promise<Warehouse[]> {
-    const db = await this.getDB() as any
-    return db.getAllFromIndex('warehouses', 'by-type', type)
+    const all = await this.getAll()
+    return all.filter((w) => w.type === type)
   }
 
   async seedDefaults(): Promise<void> {
@@ -28,22 +27,18 @@ class WarehouseRepository extends BaseRepository<Warehouse> {
 
 class MaterialRepository extends BaseRepository<Material> {
   constructor() {
-    super('materials', true)
+    super('materials')
   }
 
   async getByWarehouse(warehouseId: string): Promise<Material[]> {
-    const db = await this.getDB() as any
-    return db.getAllFromIndex('materials', 'by-warehouse', warehouseId)
+    const all = await this.getAll()
+    return all.filter((m) => m.warehouseId === warehouseId)
   }
 
   async search(query: string): Promise<Material[]> {
-    const all = await this.getAll()
-    if (!query) return all
-    const q = query.toLowerCase()
-    return all.filter((m) => m.name.toLowerCase().includes(q))
+    return super.search(query)
   }
 
-  // إضافة كمية لمادة + تسجيل الحركة
   async addStock(
     materialId: string,
     quantity: number,
@@ -51,44 +46,18 @@ class MaterialRepository extends BaseRepository<Material> {
     reason: string,
     notes?: string
   ): Promise<void> {
-    const db = await getDB()
-    const tx = db.transaction(['materials', 'materialTransactions'], 'readwrite')
-
-    const material = await tx.objectStore('materials').get(materialId)
+    const material = await this.getById(materialId)
     if (!material) throw new Error('المادة غير موجودة')
-
-    // حساب متوسط التكلفة
     const totalOldValue = material.quantity * material.unitCost
     const totalNewValue = quantity * unitCost
     const newQuantity = material.quantity + quantity
     const newUnitCost = newQuantity > 0 ? (totalOldValue + totalNewValue) / newQuantity : unitCost
-
-    await tx.objectStore('materials').put({
-      ...material,
+    await this.update(materialId, {
       quantity: newQuantity,
       unitCost: newUnitCost,
-      updatedAt: nowISO(),
-    })
-
-    // تسجيل الحركة
-    const transaction: MaterialTransaction = {
-      id: generateId(),
-      materialId,
-      warehouseId: material.warehouseId,
-      type: 'in',
-      quantity,
-      unitCost,
-      date: nowISO(),
-      reason,
-      notes,
-      createdAt: nowISO(),
-    }
-    await tx.objectStore('materialTransactions').add(transaction)
-
-    await tx.done
+    } as Partial<Material>)
   }
 
-  // سحب كمية من مادة + تسجيل الحركة
   async consumeStock(
     materialId: string,
     quantity: number,
@@ -97,61 +66,26 @@ class MaterialRepository extends BaseRepository<Material> {
     referenceId?: string,
     notes?: string
   ): Promise<void> {
-    const db = await getDB()
-    const tx = db.transaction(['materials', 'materialTransactions'], 'readwrite')
-
-    const material = await tx.objectStore('materials').get(materialId)
+    const material = await this.getById(materialId)
     if (!material) throw new Error('المادة غير موجودة')
     if (material.quantity < quantity) {
       throw new Error(`الكمية المتاحة (${material.quantity}) أقل من المطلوب (${quantity})`)
     }
-
-    await tx.objectStore('materials').put({
-      ...material,
+    await this.update(materialId, {
       quantity: material.quantity - quantity,
-      updatedAt: nowISO(),
-    })
-
-    const transaction: MaterialTransaction = {
-      id: generateId(),
-      materialId,
-      warehouseId: material.warehouseId,
-      type: 'out',
-      quantity,
-      unitCost: material.unitCost,
-      date: nowISO(),
-      reason,
-      referenceType,
-      referenceId,
-      notes,
-      createdAt: nowISO(),
-    }
-    await tx.objectStore('materialTransactions').add(transaction)
-
-    await tx.done
+    } as Partial<Material>)
   }
 
-  // الحركات لمادة معينة
   async getTransactions(materialId: string): Promise<MaterialTransaction[]> {
-    const db = await this.getDB() as any
-    const result = await db.getAllFromIndex('materialTransactions', 'by-material', materialId)
-    return result.sort((a: MaterialTransaction, b: MaterialTransaction) =>
-      new Date(b.date).getTime() - new Date(a.date).getTime()
-    )
+    const all = await materialTransactionRepository.getAll()
+    return all
+      .filter((t) => t.materialId === materialId)
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
   }
 
-  // كل الحركات
   async getAllTransactions(from?: string, to?: string): Promise<MaterialTransaction[]> {
-    const db = await this.getDB() as any
-    let result: MaterialTransaction[]
-    if (from && to) {
-      const toDate = new Date(to)
-      toDate.setHours(23, 59, 59, 999)
-      result = await db.getAllFromIndex('materialTransactions', 'by-date', IDBKeyRange.bound(from, toDate.toISOString()))
-    } else {
-      result = await db.getAll('materialTransactions')
-    }
-    return result.sort((a: MaterialTransaction, b: MaterialTransaction) =>
+    const result = await materialTransactionRepository.search(undefined, from, to)
+    return result.sort((a, b) =>
       new Date(b.date).getTime() - new Date(a.date).getTime()
     )
   }
@@ -159,34 +93,19 @@ class MaterialRepository extends BaseRepository<Material> {
 
 class MaterialTransactionRepository extends BaseRepository<MaterialTransaction> {
   constructor() {
-    super('materialTransactions', false)
+    super('materialTransactions')
   }
 
   async getByMaterial(materialId: string): Promise<MaterialTransaction[]> {
-    const db = await this.getDB() as any
-    const result = await db.getAllFromIndex('materialTransactions', 'by-material', materialId)
-    return result.sort((a: MaterialTransaction, b: MaterialTransaction) =>
-      new Date(b.date).getTime() - new Date(a.date).getTime()
-    )
+    const all = await this.getAll()
+    return all
+      .filter((t) => t.materialId === materialId)
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
   }
 
   async getByDateRange(from?: string, to?: string): Promise<MaterialTransaction[]> {
-    const db = await this.getDB() as any
-    let result: MaterialTransaction[]
-    if (from && to) {
-      const toDate = new Date(to)
-      toDate.setHours(23, 59, 59, 999)
-      result = await db.getAllFromIndex('materialTransactions', 'by-date', IDBKeyRange.bound(from, toDate.toISOString()))
-    } else if (from) {
-      result = await db.getAllFromIndex('materialTransactions', 'by-date', IDBKeyRange.lowerBound(from))
-    } else if (to) {
-      const toDate = new Date(to)
-      toDate.setHours(23, 59, 59, 999)
-      result = await db.getAllFromIndex('materialTransactions', 'by-date', IDBKeyRange.upperBound(toDate.toISOString()))
-    } else {
-      result = await this.getAll()
-    }
-    return result.sort((a: MaterialTransaction, b: MaterialTransaction) =>
+    const result = await super.search(undefined, from, to)
+    return result.sort((a, b) =>
       new Date(b.date).getTime() - new Date(a.date).getTime()
     )
   }

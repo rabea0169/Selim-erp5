@@ -1,50 +1,30 @@
-import bcrypt from 'bcryptjs'
 import { BaseRepository } from './base'
 import type { User } from '../types'
 
 class UserRepository extends BaseRepository<User> {
   constructor() {
-    super('users', true)
-  }
-
-  async getByUsername(username: string): Promise<User | undefined> {
-    const db = await this.getDB()
-    return db.getFromIndex('users', 'by-username', username)
+    // users ليس لها API path في API_MAP - لا تحتاجها
+    super('users', '/api/auth/users', 'users', 'user')
   }
 
   async hasAnyUser(): Promise<boolean> {
-    const count = await this.count()
-    return count > 0
+    try {
+      const res = await fetch('/api/auth/register')
+      const data = await res.json()
+      return data.hasUsers === true
+    } catch {
+      return false
+    }
   }
 
-  async createWithPassword(data: {
-    username: string
-    password: string
-    name: string
-    role?: string
-    companyId?: string
-    phone?: string
-    securityQuestion?: string
-    securityAnswer?: string
-  }): Promise<User> {
-    const passwordHash = await bcrypt.hash(data.password, 10)
-    return this.create({
-      username: data.username,
-      passwordHash,
-      name: data.name,
-      role: (data.role || 'admin') as User['role'],
-      companyId: data.companyId || '',
-      phone: data.phone,
-      securityQuestion: data.securityQuestion,
-      securityAnswerHash: data.securityAnswer ? await bcrypt.hash(data.securityAnswer.toLowerCase(), 10) : undefined,
-    })
+  async createWithPassword(_data: any): Promise<User> {
+    // إنشاء المستخدمين يتم عبر /api/auth/register
+    throw new Error('استخدم /api/auth/register لإنشاء مستخدم')
   }
 
-  async verifyPassword(username: string, password: string): Promise<User | null> {
-    const user = await this.getByUsername(username)
-    if (!user) return null
-    const valid = await bcrypt.compare(password, user.passwordHash)
-    return valid ? user : null
+  async verifyPassword(_username: string, _password: string): Promise<User | null> {
+    // التحقق يتم عبر /api/auth/login
+    return null
   }
 }
 

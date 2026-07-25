@@ -3,7 +3,7 @@ import type { ExpenseCategory } from '../types'
 
 class ExpenseCategoryRepository extends BaseRepository<ExpenseCategory> {
   constructor() {
-    super('expenseCategories', true)
+    super('expenseCategories')
   }
 
   async getByName(name: string): Promise<ExpenseCategory | undefined> {

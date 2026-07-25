@@ -3,37 +3,21 @@ import type { Production } from '../types'
 
 class ProductionRepository extends BaseRepository<Production> {
   constructor() {
-    super('production', true)
+    super('production')
   }
 
   async getByWorker(workerId: string): Promise<Production[]> {
-    const result = await this.getByIndex('by-worker', workerId)
-    return result.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    const result = await this.getAll()
+    return result
+      .filter((p) => p.workerId === workerId)
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
   }
 
   async getByDateRange(from?: string, to?: string, workerId?: string): Promise<Production[]> {
-    let result: Production[]
-    if (from || to) {
-      const db = await this.getDB()
-      if (from && to) {
-        const toDate = new Date(to)
-        toDate.setHours(23, 59, 59, 999)
-        result = await db.getAllFromIndex('production', 'by-date', IDBKeyRange.bound(from, toDate.toISOString()))
-      } else if (from) {
-        result = await db.getAllFromIndex('production', 'by-date', IDBKeyRange.lowerBound(from))
-      } else {
-        const toDate = new Date(to!)
-        toDate.setHours(23, 59, 59, 999)
-        result = await db.getAllFromIndex('production', 'by-date', IDBKeyRange.upperBound(toDate.toISOString()))
-      }
-    } else {
-      result = await this.getAll()
-    }
-
+    let result = await super.search(undefined, from, to)
     if (workerId) {
       result = result.filter((p) => p.workerId === workerId)
     }
-
     return result.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
   }
 
@@ -46,10 +30,7 @@ class ProductionRepository extends BaseRepository<Production> {
     notes?: string
   }): Promise<Production> {
     const total = data.quantity * data.unitPrice
-    return this.create({
-      ...data,
-      total,
-    })
+    return this.create({ ...data, total })
   }
 }
 

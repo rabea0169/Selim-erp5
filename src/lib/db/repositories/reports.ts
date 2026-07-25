@@ -1,4 +1,3 @@
-import { getDB } from '../connection'
 import {
   saleRepository,
   purchaseRepository,
@@ -16,7 +15,6 @@ import type {
   Production,
   WorkerAttendance,
   Expense,
-  DatabaseSchema,
 } from '../types'
 
 export interface ReportSummary {
@@ -63,26 +61,26 @@ class ReportRepository {
       workerAttendanceRepository.getByDateRange(from, to),
     ])
 
-    const salesTotal = sales.reduce((s, x) => s + x.total, 0)
-    const salesPaid = sales.reduce((s, x) => s + x.paid, 0)
-    const purchasesTotal = purchases.reduce((s, x) => s + x.total, 0)
-    const purchasesPaid = purchases.reduce((s, x) => s + x.paid, 0)
-    const advancesTotal = advances.reduce((s, x) => s + x.amount, 0)
-    const receiptsTotal = receipts.reduce((s, x) => s + x.amount, 0)
-    const productionTotal = productions.reduce((s, x) => s + x.total, 0)
-    const productionPieces = productions.reduce((s, x) => s + x.quantity, 0)
-    const expensesTotal = expenses.reduce((s, x) => s + x.amount, 0)
+    const salesTotal = sales.reduce((s, x) => s + (x as any).total, 0)
+    const salesPaid = sales.reduce((s, x) => s + (x as any).paid, 0)
+    const purchasesTotal = purchases.reduce((s, x) => s + (x as any).total, 0)
+    const purchasesPaid = purchases.reduce((s, x) => s + (x as any).paid, 0)
+    const advancesTotal = advances.reduce((s, x) => s + (x as any).amount, 0)
+    const receiptsTotal = receipts.reduce((s, x) => s + (x as any).amount, 0)
+    const productionTotal = productions.reduce((s, x) => s + (x as any).total, 0)
+    const productionPieces = productions.reduce((s, x) => s + (x as any).quantity, 0)
+    const expensesTotal = expenses.reduce((s, x) => s + (x as any).amount, 0)
 
-    // المصاريف حسب البند
     const expensesByCategory: Record<string, number> = {}
     for (const e of expenses) {
-      expensesByCategory[e.categoryName] = (expensesByCategory[e.categoryName] || 0) + e.amount
+      const exp = e as any
+      expensesByCategory[exp.categoryName] = (expensesByCategory[exp.categoryName] || 0) + exp.amount
     }
 
-    // أكثر الأصناف مبيعاً
     const itemAgg: Record<string, { qty: number; total: number }> = {}
     for (const s of sales) {
-      for (const it of s.items) {
+      const sale = s as any
+      for (const it of (sale.items || [])) {
         if (!itemAgg[it.itemName]) itemAgg[it.itemName] = { qty: 0, total: 0 }
         itemAgg[it.itemName].qty += it.quantity
         itemAgg[it.itemName].total += it.total
@@ -93,117 +91,50 @@ class ReportRepository {
       .sort((a, b) => b.total - a.total)
       .slice(0, 10)
 
-    // أكثر الموديلات إنتاجاً
     const modelAgg: Record<string, { qty: number; total: number }> = {}
     for (const p of productions) {
-      if (!modelAgg[p.modelName]) modelAgg[p.modelName] = { qty: 0, total: 0 }
-      modelAgg[p.modelName].qty += p.quantity
-      modelAgg[p.modelName].total += p.total
+      const prod = p as any
+      if (!modelAgg[prod.modelName]) modelAgg[prod.modelName] = { qty: 0, total: 0 }
+      modelAgg[prod.modelName].qty += prod.quantity
+      modelAgg[prod.modelName].total += prod.total
     }
     const topModels = Object.entries(modelAgg)
       .map(([name, v]) => ({ name, ...v }))
       .sort((a, b) => b.total - a.total)
       .slice(0, 10)
 
-    // صافي الربح
     const netProfit =
       salesTotal - purchasesTotal - expensesTotal - advancesTotal + receiptsTotal - productionTotal
 
     return {
       range: { from, to },
       summary: {
-        salesTotal,
-        salesPaid,
-        salesRemaining: salesTotal - salesPaid,
-        purchasesTotal,
-        purchasesPaid,
-        purchasesRemaining: purchasesTotal - purchasesPaid,
-        advancesTotal,
-        receiptsTotal,
-        productionTotal,
-        productionPieces,
-        expensesTotal,
-        netProfit,
+        salesTotal, salesPaid, salesRemaining: salesTotal - salesPaid,
+        purchasesTotal, purchasesPaid, purchasesRemaining: purchasesTotal - purchasesPaid,
+        advancesTotal, receiptsTotal, productionTotal, productionPieces,
+        expensesTotal, netProfit,
       },
-      sales,
-      purchases,
-      advances,
-      receipts,
-      productions,
-      attendance,
-      expenses,
-      expensesByCategory,
-      topItems,
-      topModels,
+      sales, purchases, advances, receipts, productions, attendance, expenses,
+      expensesByCategory, topItems, topModels,
     }
   }
 
-  // نسخة احتياطية كاملة
+  // النسخ الاحتياطي يتم عبر API
   async exportAll(): Promise<any> {
-    const db = await getDB()
-    const tables: Array<keyof DatabaseSchema> = [
-      'users', 'workers', 'workerAdvances', 'workerReceipts', 'workerAttendance',
-      'production', 'customers', 'suppliers', 'sales', 'saleItems',
-      'purchases', 'purchaseItems', 'expenseCategories', 'expenses',
-    ]
-
-    const data: any = {}
-    for (const table of tables) {
-      data[table] = await db.getAll(table)
-    }
-
-    return {
-      version: 3,
-      app: 'clothing-factory-management',
-      type: 'offline-first',
-      exportedAt: new Date().toISOString(),
-      data,
-    }
+    const res = await fetch('/api/backup', { method: 'POST' })
+    return res.json()
   }
 
-  // استرجاع النسخة الاحتياطية
+  // الاسترجاع يتم عبر API
   async importAll(backupData: any): Promise<{ success: boolean; counts: any }> {
-    if (!backupData?.data) {
-      throw new Error('بيانات النسخة الاحتياطية غير صحيحة')
-    }
-
-    const db = await getDB()
-    const data = backupData.data
-
-    const tables: Array<keyof DatabaseSchema> = [
-      'users', 'workers', 'workerAdvances', 'workerReceipts', 'workerAttendance',
-      'production', 'customers', 'suppliers', 'sales', 'saleItems',
-      'purchases', 'purchaseItems', 'expenseCategories', 'expenses',
-    ]
-
-    const tx = db.transaction(tables, 'readwrite')
-
-    // حذف كل البيانات الحالية
-    for (const table of tables) {
-      await tx.objectStore(table).clear()
-    }
-
-    // إدراج البيانات الجديدة
-    for (const table of tables) {
-      const records = data[table] || []
-      for (const record of records) {
-        await tx.objectStore(table).put(record)
-      }
-    }
-
-    await tx.done
-
-    return {
-      success: true,
-      counts: {
-        workers: data.workers?.length || 0,
-        customers: data.customers?.length || 0,
-        suppliers: data.suppliers?.length || 0,
-        sales: data.sales?.length || 0,
-        purchases: data.purchases?.length || 0,
-        expenses: data.expenses?.length || 0,
-      },
-    }
+    const res = await fetch('/api/restore', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(backupData),
+    })
+    const data = await res.json()
+    if (data.error) throw new Error(data.error)
+    return data
   }
 }
 
