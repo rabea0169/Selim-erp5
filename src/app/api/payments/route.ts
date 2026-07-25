@@ -2,17 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
 import { requireAuth } from '@/lib/require-auth'
 import { withCompanyScope } from '@/lib/permissions'
-
-// العميل يرسل partyId موحّداً؛ التخزين يفصله إلى customerId/supplierId
-function toPartyFields(type: string, partyId: string) {
-  return type.startsWith('supplier')
-    ? { customerId: null, supplierId: partyId }
-    : { customerId: partyId, supplierId: null }
-}
-
-function withPartyId<T extends { customerId: string | null; supplierId: string | null }>(payment: T) {
-  return { ...payment, partyId: payment.customerId || payment.supplierId }
-}
+import { isSupplierPayment, toPartyColumns, withPartyId } from '@/lib/payment-party'
 
 // GET /api/payments?from=&to=&type=&partyId=
 export async function GET(req: NextRequest) {
@@ -69,7 +59,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'التاريخ مطلوب' }, { status: 400 })
     }
 
-    const isSupplier = type.startsWith('supplier')
+    const isSupplier = isSupplierPayment(type)
     const party = isSupplier
       ? await db.supplier.findFirst({ where: { id: partyId, companyId: auth.companyId } })
       : await db.customer.findFirst({ where: { id: partyId, companyId: auth.companyId } })
@@ -80,7 +70,7 @@ export async function POST(req: NextRequest) {
     const payment = await db.payment.create({
       data: {
         type: type.trim(),
-        ...toPartyFields(type, partyId),
+        ...toPartyColumns(type, partyId),
         partyName: partyName?.trim() || party.name,
         invoiceId: invoiceId || null,
         invoiceNo: invoiceNo?.trim() || null,

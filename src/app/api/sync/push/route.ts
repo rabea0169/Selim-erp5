@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
 import { requireAuth } from '@/lib/require-auth'
+import { toPartyColumns } from '@/lib/payment-party'
 
 // POST /api/sync/push
 export async function POST(req: NextRequest) {
@@ -16,6 +17,14 @@ export async function POST(req: NextRequest) {
     }
 
     const results: Record<string, number> = {}
+
+    // الجداول التي تحمل companyId مباشرة
+    const companyModels = [
+      'user', 'factorySettings', 'worker', 'customer', 'supplier', 'sale', 'purchase',
+      'expenseCategory', 'expense', 'treasuryTransaction', 'warehouse', 'material',
+      'materialTransaction', 'product', 'productionOrder', 'payment', 'saleReturn',
+      'purchaseReturn', 'auditLog',
+    ]
 
     const tableMap: Record<string, any> = {
       users: 'user',
@@ -72,8 +81,16 @@ export async function POST(req: NextRequest) {
           }
 
           // ضمان companyId الصحيح — لا يسمح للعميل بتحديد companyId مختلف
-          if ('companyId' in processed) {
+          if (companyModels.includes(modelName)) {
             processed.companyId = auth.companyId
+          } else {
+            delete processed.companyId
+          }
+
+          // السدادات: partyId المحلي يُترجم إلى customerId/supplierId
+          if (modelName === 'payment' && 'partyId' in processed) {
+            Object.assign(processed, toPartyColumns(processed.type, processed.partyId))
+            delete processed.partyId
           }
 
           if (!processed.id) continue

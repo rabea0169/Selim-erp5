@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
 import { requireAuth } from '@/lib/require-auth'
-
-function withPartyId<T extends { customerId: string | null; supplierId: string | null }>(payment: T) {
-  return { ...payment, partyId: payment.customerId || payment.supplierId }
-}
+import { withPartyId } from '@/lib/payment-party'
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {

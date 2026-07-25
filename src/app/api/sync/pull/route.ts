@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
 import { requireAuth } from '@/lib/require-auth'
+import { withPartyId } from '@/lib/payment-party'
 
 // GET /api/sync/pull
 export async function GET() {
@@ -36,9 +37,10 @@ export async function GET() {
           whereClause.companyId = companyId
         }
 
+        // FactorySettings لا يحتوي createdAt
         const records = await (db as any)[table].findMany({
           where: Object.keys(whereClause).length > 0 ? whereClause : undefined,
-          orderBy: { createdAt: 'asc' },
+          orderBy: table === 'factorySettings' ? undefined : { createdAt: 'asc' },
         })
         data[table] = records.map((r: any) => {
           const processed: any = {}
@@ -49,7 +51,7 @@ export async function GET() {
               processed[key] = value
             }
           }
-          return processed
+          return table === 'payment' ? withPartyId(processed) : processed
         })
       } catch (e: any) {
         console.error(`Error pulling ${table}:`, e.message)
