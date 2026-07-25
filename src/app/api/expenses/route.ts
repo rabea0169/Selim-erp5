@@ -68,16 +68,34 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'فئة المصروف غير موجودة' }, { status: 404 })
     }
 
-    const expense = await db.expense.create({
-      data: {
-        categoryId,
-        categoryName: cat.name,
-        amount: amt,
-        date: new Date(date),
-        notes: notes?.trim() || null,
-        companyId: auth.companyId,
-      },
-      include: { category: true },
+    const expense = await db.$transaction(async (tx) => {
+      const created = await tx.expense.create({
+        data: {
+          categoryId,
+          categoryName: cat.name,
+          amount: amt,
+          date: new Date(date),
+          notes: notes?.trim() || null,
+          companyId: auth.companyId,
+        },
+        include: { category: true },
+      })
+
+      // المصروف يخرج من الخزينة
+      await tx.treasuryTransaction.create({
+        data: {
+          type: 'withdrawal',
+          amount: amt,
+          date: new Date(date),
+          description: `مصروف: ${cat.name}`,
+          category: 'مصروفات',
+          referenceType: 'expense',
+          referenceId: created.id,
+          companyId: auth.companyId,
+        },
+      })
+
+      return created
     })
     return NextResponse.json({ expense })
   } catch (e: any) {

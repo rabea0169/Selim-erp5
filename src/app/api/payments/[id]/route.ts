@@ -30,7 +30,12 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
       return NextResponse.json({ error: 'السداد غير موجود' }, { status: 404 })
     }
 
-    await db.payment.delete({ where: { id } })
+    await db.$transaction(async (tx) => {
+      await tx.treasuryTransaction.deleteMany({
+        where: { referenceType: 'payment', referenceId: id, companyId: auth.companyId },
+      })
+      await tx.payment.delete({ where: { id } })
+    })
     return NextResponse.json({ success: true })
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })

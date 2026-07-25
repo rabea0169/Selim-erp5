@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
 import { requireAuth } from '@/lib/require-auth'
 import { withCompanyScope } from '@/lib/permissions'
+import { computeInvoiceTotals } from '@/lib/invoice-totals'
 
 // GET /api/sales?from=&to=&q=
 export async function GET(req: NextRequest) {
@@ -59,6 +60,10 @@ export async function POST(req: NextRequest) {
       items,
       paid,
       notes,
+      discountType,
+      discountValue,
+      taxRate,
+      extraFees,
     } = body
 
     if (!customerName?.trim()) {
@@ -78,10 +83,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'أضف صنفاً صحيحاً واحداً على الأقل' }, { status: 400 })
     }
 
-    const total = validItems.reduce(
+    const subtotal = validItems.reduce(
       (sum: number, it: any) => sum + Number(it.quantity) * Number(it.unitPrice),
       0
     )
+    const totals = computeInvoiceTotals({ subtotal, discountType, discountValue, taxRate, extraFees })
     const paidAmount = Number(paid) || 0
 
     if (customerId_ref) {
@@ -100,13 +106,22 @@ export async function POST(req: NextRequest) {
           customerId_ref: customerId_ref || null,
           invoiceNo: invoiceNo?.trim() || null,
           date: new Date(date),
-          total,
+          subtotal: totals.subtotal,
+          discountType: discountType || null,
+          discountValue: Number(discountValue) || 0,
+          discountAmount: totals.discountAmount,
+          taxRate: Number(taxRate) || 0,
+          taxAmount: totals.taxAmount,
+          extraFees: totals.extraFees,
+          total: totals.total,
           paid: paidAmount,
           notes: notes?.trim() || null,
           companyId: auth.companyId,
           items: {
             create: validItems.map((it: any) => ({
               itemName: it.itemName.trim(),
+              productId: it.productId || null,
+              priceType: it.priceType || null,
               quantity: Number(it.quantity),
               unitPrice: Number(it.unitPrice),
               total: Number(it.quantity) * Number(it.unitPrice),
@@ -115,6 +130,32 @@ export async function POST(req: NextRequest) {
         },
         include: { items: true },
       })
+
+      // خصم المباع من رصيد المنتج
+      for (const it of validItems) {
+        if (!it.productId) continue
+        await tx.product.updateMany({
+          where: { id: it.productId, companyId: auth.companyId },
+          data: { quantity: { decrement: Number(it.quantity) } },
+        })
+      }
+
+      // المحصل نقداً يدخل الخزينة
+      if (paidAmount > 0) {
+        await tx.treasuryTransaction.create({
+          data: {
+            type: 'deposit',
+            amount: paidAmount,
+            date: new Date(date),
+            description: `تحصيل فاتورة مبيعات ${newSale.invoiceNo || ''}`.trim(),
+            category: 'مبيعات',
+            referenceType: 'sale',
+            referenceId: newSale.id,
+            companyId: auth.companyId,
+          },
+        })
+      }
+
       return newSale
     })
 
