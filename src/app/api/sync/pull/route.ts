@@ -22,25 +22,42 @@ export async function GET() {
       'saleReturn', 'purchaseReturn', 'auditLog',
     ]
 
+    // الجداول التي تحمل companyId مباشرة
+    const companyTables = [
+      'factorySettings', 'worker', 'customer', 'supplier', 'sale', 'purchase',
+      'expenseCategory', 'expense', 'treasuryTransaction',
+      'warehouse', 'material', 'materialTransaction',
+      'product', 'productionOrder', 'payment',
+      'saleReturn', 'purchaseReturn', 'auditLog',
+    ]
+
+    // الجداول التي تُعزل عبر علاقة لأنها لا تحمل companyId
+    const relationScopes: Record<string, any> = {
+      workerAdvance: { worker: { companyId } },
+      workerReceipt: { worker: { companyId } },
+      workerAttendance: { worker: { companyId } },
+      production: { worker: { companyId } },
+      saleItem: { sale: { companyId } },
+      purchaseItem: { purchase: { companyId } },
+    }
+
+    // ترتيب حسب عمود موجود فعلاً في كل جدول
+    const orderBys: Record<string, any> = {
+      factorySettings: undefined,
+      saleItem: { id: 'asc' },
+      purchaseItem: { id: 'asc' },
+      auditLog: { timestamp: 'asc' },
+    }
+
     for (const table of tables) {
       try {
-        const whereClause: any = {}
-        // الفلترة بالشركة للجداول التي تدعم companyId
-        const companyTables = [
-          'worker', 'customer', 'supplier', 'sale', 'purchase',
-          'expenseCategory', 'expense', 'treasuryTransaction',
-          'warehouse', 'material', 'materialTransaction',
-          'product', 'productionOrder', 'payment',
-          'saleReturn', 'purchaseReturn', 'auditLog',
-        ]
-        if (companyTables.includes(table)) {
-          whereClause.companyId = companyId
-        }
+        const whereClause: any = companyTables.includes(table)
+          ? { companyId }
+          : relationScopes[table] ?? {}
 
-        // FactorySettings لا يحتوي createdAt
         const records = await (db as any)[table].findMany({
           where: Object.keys(whereClause).length > 0 ? whereClause : undefined,
-          orderBy: table === 'factorySettings' ? undefined : { createdAt: 'asc' },
+          orderBy: table in orderBys ? orderBys[table] : { createdAt: 'asc' },
         })
         data[table] = records.map((r: any) => {
           const processed: any = {}
