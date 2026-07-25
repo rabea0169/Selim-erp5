@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { registerUser, addUserToCompany, hasAnyUser, getCurrentUser } from '@/lib/auth'
 import { requireAuth } from '@/lib/require-auth'
+import { jsonError, serverError } from '@/lib/api'
 
 export async function POST(req: NextRequest) {
   try {
@@ -12,11 +13,11 @@ export async function POST(req: NextRequest) {
     if (!anyUser) {
       // التسجيل الأول: إنشاء شركة + مستخدم owner
       if (!companyName?.trim()) {
-        return NextResponse.json({ error: 'اسم الشركة مطلوب للتسجيل الأول' }, { status: 400 })
+        return jsonError('اسم الشركة مطلوب للتسجيل الأول')
       }
       const result = await registerUser(username, password, name, companyName, phone, securityQuestion, securityAnswer)
       if (!result.success) {
-        return NextResponse.json({ error: result.error }, { status: 400 })
+        return jsonError(result.error || '')
       }
       return NextResponse.json({ user: result.user })
     }
@@ -29,7 +30,7 @@ export async function POST(req: NextRequest) {
 
     // التحقق من أن المستخدم لديه صلاحية إدارة المستخدمين
     if (!hasPermission(auth.user.role, 'manageUsers')) {
-      return NextResponse.json({ error: 'ليس لديك صلاحية لإضافة مستخدمين' }, { status: 403 })
+      return jsonError('ليس لديك صلاحية لإضافة مستخدمين', 403)
     }
 
     const result = await addUserToCompany(
@@ -43,12 +44,12 @@ export async function POST(req: NextRequest) {
       securityAnswer,
     )
     if (!result.success) {
-      return NextResponse.json({ error: result.error }, { status: 400 })
+      return jsonError(result.error || '')
     }
 
     return NextResponse.json({ user: result.user })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    return serverError(e)
   }
 }
 
@@ -57,7 +58,7 @@ export async function GET() {
   try {
     const exists = await hasAnyUser()
     return NextResponse.json({ hasUsers: exists })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    return serverError(e)
   }
 }

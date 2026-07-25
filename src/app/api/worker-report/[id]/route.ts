@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { notFound, serverError } from '@/lib/api'
 
 // GET /api/worker-report/[id]?from=&to=
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -10,7 +11,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const to = searchParams.get('to')
 
     const worker = await db.worker.findUnique({ where: { id } })
-    if (!worker) return NextResponse.json({ error: 'الموظف غير موجود' }, { status: 404 })
+    if (!worker) return notFound('الموظف غير موجود')
 
     const dateRange: any = {}
     if (from) dateRange.gte = new Date(from)
@@ -53,7 +54,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       attendance,
       productions,
     })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    return serverError(e)
   }
 }

@@ -1,77 +1,63 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
-import { requireAuth } from '@/lib/require-auth'
 import { withCompanyScope } from '@/lib/permissions'
+import { withAuth, jsonError } from '@/lib/api'
 
 // GET /api/materials?warehouseId=
-export async function GET(req: NextRequest) {
-  try {
-    const auth = await requireAuth('read')
-    if (!auth.authorized) return auth.response
+export const GET = withAuth('read', async ({ auth, req }) => {
+  const { searchParams } = new URL(req.url)
+  const warehouseId = searchParams.get('warehouseId')
+  const q = searchParams.get('q') || ''
 
-    const { searchParams } = new URL(req.url)
-    const warehouseId = searchParams.get('warehouseId')
-    const q = searchParams.get('q') || ''
-
-    const where: any = withCompanyScope({}, auth.companyId)
-    if (warehouseId) where.warehouseId = warehouseId
-    if (q) {
-      where.name = { contains: q }
-    }
-
-    const materials = await db.material.findMany({
-      where,
-      include: { warehouse: true },
-      orderBy: { name: 'asc' },
-    })
-
-    return NextResponse.json({ materials })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  const where: any = withCompanyScope({}, auth.companyId)
+  if (warehouseId) where.warehouseId = warehouseId
+  if (q) {
+    where.name = { contains: q }
   }
-}
+
+  const materials = await db.material.findMany({
+    where,
+    include: { warehouse: true },
+    orderBy: { name: 'asc' },
+  })
+
+  return NextResponse.json({ materials })
+})
 
 // POST /api/materials
-export async function POST(req: NextRequest) {
-  try {
-    const auth = await requireAuth('create')
-    if (!auth.authorized) return auth.response
+export const POST = withAuth('create', async ({ auth, req }) => {
+  const body = await req.json()
+  const { name, unit, warehouseId, quantity, unitCost, reorderLevel, notes } = body
 
-    const body = await req.json()
-    const { name, unit, warehouseId, quantity, unitCost, reorderLevel, notes } = body
-
-    if (!name?.trim()) {
-      return NextResponse.json({ error: 'اسم المادة مطلوب' }, { status: 400 })
-    }
-    if (!unit?.trim()) {
-      return NextResponse.json({ error: 'الوحدة مطلوبة' }, { status: 400 })
-    }
-    if (!warehouseId) {
-      return NextResponse.json({ error: 'المخزن مطلوب' }, { status: 400 })
-    }
-
-    const warehouse = await db.warehouse.findFirst({
-      where: { id: warehouseId, companyId: auth.companyId },
-    })
-    if (!warehouse) {
-      return NextResponse.json({ error: 'المخزن غير موجود' }, { status: 400 })
-    }
-
-    const material = await db.material.create({
-      data: {
-        name: name.trim(),
-        unit: unit.trim(),
-        warehouseId,
-        quantity: Number(quantity) || 0,
-        unitCost: Number(unitCost) || 0,
-        reorderLevel: reorderLevel != null ? Number(reorderLevel) : null,
-        notes: notes?.trim() || null,
-        companyId: auth.companyId,
-      },
-    })
-
-    return NextResponse.json({ material })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  if (!name?.trim()) {
+    return jsonError('اسم المادة مطلوب')
   }
-}
+  if (!unit?.trim()) {
+    return jsonError('الوحدة مطلوبة')
+  }
+  if (!warehouseId) {
+    return jsonError('المخزن مطلوب')
+  }
+
+  const warehouse = await db.warehouse.findFirst({
+    where: { id: warehouseId, companyId: auth.companyId },
+  })
+  if (!warehouse) {
+    return jsonError('المخزن غير موجود')
+  }
+
+  const material = await db.material.create({
+    data: {
+      name: name.trim(),
+      unit: unit.trim(),
+      warehouseId,
+      quantity: Number(quantity) || 0,
+      unitCost: Number(unitCost) || 0,
+      reorderLevel: reorderLevel != null ? Number(reorderLevel) : null,
+      notes: notes?.trim() || null,
+      companyId: auth.companyId,
+    },
+  })
+
+  return NextResponse.json({ material })
+})
