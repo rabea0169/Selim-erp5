@@ -67,19 +67,37 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: isSupplier ? 'المورد غير موجود' : 'العميل غير موجود' }, { status: 404 })
     }
 
-    const payment = await db.payment.create({
-      data: {
-        type: type.trim(),
-        ...toPartyColumns(type, partyId),
-        partyName: partyName?.trim() || party.name,
-        invoiceId: invoiceId || null,
-        invoiceNo: invoiceNo?.trim() || null,
-        amount: amountNum,
-        date: new Date(date),
-        method: method?.trim() || null,
-        notes: notes?.trim() || null,
-        companyId: auth.companyId,
-      },
+    const payment = await db.$transaction(async (tx) => {
+      const created = await tx.payment.create({
+        data: {
+          type: type.trim(),
+          ...toPartyColumns(type, partyId),
+          partyName: partyName?.trim() || party.name,
+          invoiceId: invoiceId || null,
+          invoiceNo: invoiceNo?.trim() || null,
+          amount: amountNum,
+          date: new Date(date),
+          method: method?.trim() || null,
+          notes: notes?.trim() || null,
+          companyId: auth.companyId,
+        },
+      })
+
+      // تحصيل من عميل يدخل الخزينة، وسداد لمورد يخرج منها
+      await tx.treasuryTransaction.create({
+        data: {
+          type: isSupplier ? 'withdrawal' : 'deposit',
+          amount: amountNum,
+          date: new Date(date),
+          description: `${isSupplier ? 'سداد للمورد' : 'تحصيل من العميل'}: ${party.name}`,
+          category: isSupplier ? 'سداد موردين' : 'تحصيل عملاء',
+          referenceType: 'payment',
+          referenceId: created.id,
+          companyId: auth.companyId,
+        },
+      })
+
+      return created
     })
 
     return NextResponse.json({ payment: withPartyId(payment) })
