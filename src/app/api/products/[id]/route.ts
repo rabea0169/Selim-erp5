@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
 import { requireAuth } from '@/lib/require-auth'
+import { handleApiError } from '@/lib/api-error'
 
 // GET /api/products/[id]
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -20,8 +21,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     return NextResponse.json({ product })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    return handleApiError(e, 'GET /api/products/[id]')
   }
 }
 
@@ -82,8 +83,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     })
 
     return NextResponse.json({ product })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    return handleApiError(e, 'PUT /api/products/[id]')
   }
 }
 
@@ -96,7 +97,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     const { id } = await params
     await db.product.delete({ where: { id, companyId: auth.companyId } })
     return NextResponse.json({ success: true })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    return handleApiError(e, 'DELETE /api/products/[id]')
   }
 }

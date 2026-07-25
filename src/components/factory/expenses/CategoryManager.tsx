@@ -60,8 +60,9 @@ export function CategoryManager({ open, onOpenChange, categories, onSaved }: Cat
       dataChangeEmitter.notifyDelete('expenses')
       toast({ title: 'تم الحذف' })
       onSaved()
-    } catch {
-      toast({ title: 'خطأ', variant: 'destructive' })
+    } catch (e: any) {
+      console.error('[CategoryManager] تعذر حذف البند:', e)
+      toast({ title: 'تعذر حذف البند', description: e.message, variant: 'destructive' })
     }
   }
 

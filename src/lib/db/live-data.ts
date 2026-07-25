@@ -84,6 +84,7 @@ export const dataChangeEmitter = new DataChangeEmitter()
 
 // Hook للتحديث الفوري
 import { useEffect, useState, useCallback } from 'react'
+import { toast } from '@/hooks/use-toast'
 
 export function useLiveData<T>(
   fetcher: () => Promise<T>,
@@ -113,8 +114,14 @@ export function useLiveData<T>(
           setData(result)
         }
       } catch (e: any) {
+        console.error('[useLiveData] فشل تحميل البيانات:', e)
         if (mounted && !cancelled) {
           setError(e.message)
+          toast({
+            title: 'تعذر تحميل البيانات',
+            description: e.message,
+            variant: 'destructive',
+          })
         }
       } finally {
         if (mounted && !cancelled) {

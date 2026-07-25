@@ -524,7 +524,10 @@ function StatementDialog({ open, onOpenChange, customer }: StatementDialogProps)
       paymentRepository
         .getByParty(customer.customer.id)
         .then(setPayments)
-        .catch(() => setPayments([]))
+        .catch((e) => {
+          console.error('[ReceivablesView] تعذر تحميل السدادات:', e)
+          setPayments([])
+        })
         .finally(() => Promise.resolve().then(() => setLoadingPayments(false)))
     }
   }, [open, customer.customer.id])

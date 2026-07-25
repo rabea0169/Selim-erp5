@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
 import { requireAuth } from '@/lib/require-auth'
+import { handleApiError } from '@/lib/api-error'
 
 // GET /api/sync/pull
 export async function GET() {
@@ -9,6 +10,7 @@ export async function GET() {
     if (!auth.authorized) return auth.response
 
     const data: Record<string, any[]> = {}
+    const failedTables: string[] = []
     const companyId = auth.companyId
 
     const tables = [
@@ -51,10 +53,18 @@ export async function GET() {
           }
           return processed
         })
-      } catch (e: any) {
-        console.error(`Error pulling ${table}:`, e.message)
-        data[table] = []
+      } catch (e) {
+        console.error(`[API] GET /api/sync/pull failed for ${table}:`, e)
+        failedTables.push(table)
       }
+    }
+
+    // لا نرجع بيانات ناقصة: العميل يستبدل بياناته المحلية بما يصله
+    if (failedTables.length > 0) {
+      return NextResponse.json(
+        { error: `تعذر تحميل بعض الجداول: ${failedTables.join('، ')}` },
+        { status: 500 },
+      )
     }
 
     return NextResponse.json({
@@ -62,8 +72,7 @@ export async function GET() {
       data,
       pulledAt: new Date().toISOString(),
     })
-  } catch (e: any) {
-    console.error('Sync pull error:', e)
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    return handleApiError(e, 'GET /api/sync/pull')
   }
 }

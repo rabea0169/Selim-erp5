@@ -67,6 +67,7 @@ interface ReturnItem {
 export function ReturnsView({ onBack }: { onBack?: () => void }) {
   const currentUser = getCurrentUser()
   const perms = usePermissions(currentUser?.role)
+  const { toast } = useToast()
 
   const [tab, setTab] = useState<ReturnType>('sale')
   const [open, setOpen] = useState(false)
@@ -87,8 +88,10 @@ export function ReturnsView({ onBack }: { onBack?: () => void }) {
     if (!perms.canDelete) { alert('ليس لديك صلاحية الحذف'); return }
     try {
       await saleReturnRepository.delete(id)
+      toast({ title: 'تم الحذف' })
     } catch (e: any) {
-      console.error(e)
+      console.error('[ReturnsView] فشل حذف مرتجع المبيعات:', e)
+      toast({ title: 'تعذر حذف المرتجع', description: e.message, variant: 'destructive' })
     }
   }
   const handleDeletePurchase = async (id: string) => {
@@ -96,8 +99,10 @@ export function ReturnsView({ onBack }: { onBack?: () => void }) {
     if (!perms.canDelete) { alert('ليس لديك صلاحية الحذف'); return }
     try {
       await purchaseReturnRepository.delete(id)
+      toast({ title: 'تم الحذف' })
     } catch (e: any) {
-      console.error(e)
+      console.error('[ReturnsView] فشل حذف مرتجع المشتريات:', e)
+      toast({ title: 'تعذر حذف المرتجع', description: e.message, variant: 'destructive' })
     }
   }
 

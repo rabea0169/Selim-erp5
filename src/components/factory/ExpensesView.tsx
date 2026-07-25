@@ -96,8 +96,9 @@ export function ExpensesView() {
       await expenseRepository.delete(id)
       dataChangeEmitter.notifyDelete('expenses')
       toast({ title: 'تم الحذف' })
-    } catch {
-      toast({ title: 'خطأ', variant: 'destructive' })
+    } catch (e: any) {
+      console.error('[ExpensesView] تعذر حذف المصروف:', e)
+      toast({ title: 'تعذر حذف المصروف', description: e.message, variant: 'destructive' })
     }
   }
 

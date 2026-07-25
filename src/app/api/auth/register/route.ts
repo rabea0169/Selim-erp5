@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { registerUser, addUserToCompany, hasAnyUser, getCurrentUser } from '@/lib/auth'
 import { requireAuth } from '@/lib/require-auth'
+import { handleApiError } from '@/lib/api-error'
 
 export async function POST(req: NextRequest) {
   try {
@@ -47,8 +48,8 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ user: result.user })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    return handleApiError(e, 'POST /api/auth/register')
   }
 }
 
@@ -57,7 +58,7 @@ export async function GET() {
   try {
     const exists = await hasAnyUser()
     return NextResponse.json({ hasUsers: exists })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    return handleApiError(e, 'GET /api/auth/register')
   }
 }

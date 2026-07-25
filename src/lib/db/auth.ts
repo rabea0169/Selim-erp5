@@ -1,7 +1,7 @@
 'use client'
 
 import { userRepository } from './repositories'
-import type { User } from './types'
+import { apiFetch } from './api-client'
 
 const SESSION_KEY = 'factory_session_user'
 
@@ -21,51 +21,17 @@ export interface SessionUser {
   companyId: string
 }
 
-async function checkServerUser(username: string, password: string): Promise<SessionUser | null> {
-  try {
-    const res = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password }),
-    }).then((r) => r.json())
-    if (res.user) return res.user
-    return null
-  } catch {
-    return null
-  }
-}
-
-async function checkServerHasUsers(): Promise<boolean> {
-  try {
-    const res = await fetch('/api/auth/register').then((r) => r.json())
-    return res.hasUsers === true
-  } catch {
-    return false
-  }
-}
-
 export async function login(username: string, password: string): Promise<{ success: boolean; error?: string; user?: SessionUser }> {
   try {
-    const serverUser = await checkServerUser(username, password)
-    if (serverUser) {
-      localStorage.setItem(SESSION_KEY, JSON.stringify(serverUser))
-      return { success: true, user: serverUser }
-    }
-
-    const user = await userRepository.verifyPassword(username, password)
-    if (!user) {
+    const res = await apiFetch<{ user?: SessionUser }>('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    })
+    if (!res.user) {
       return { success: false, error: 'اسم المستخدم أو كلمة المرور غير صحيحة' }
     }
-
-    const sessionUser: SessionUser = {
-      id: user.id,
-      username: user.username,
-      name: user.name,
-      role: user.role,
-      companyId: '',
-    }
-    localStorage.setItem(SESSION_KEY, JSON.stringify(sessionUser))
-    return { success: true, user: sessionUser }
+    localStorage.setItem(SESSION_KEY, JSON.stringify(res.user))
+    return { success: true, user: res.user }
   } catch (e: any) {
     return { success: false, error: e.message }
   }
@@ -91,41 +57,17 @@ export async function register(
       return { success: false, error: 'الاسم مطلوب' }
     }
 
-    try {
-      const res = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password, name, companyName, phone, securityQuestion, securityAnswer }),
-      }).then((r) => r.json())
+    const res = await apiFetch<{ user?: SessionUser }>('/api/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ username, password, name, companyName, phone, securityQuestion, securityAnswer }),
+    })
 
-      if (res.error) {
-        return { success: false, error: res.error }
-      }
-      if (res.user) {
-        const sessionUser: SessionUser = res.user
-        localStorage.setItem(SESSION_KEY, JSON.stringify(sessionUser))
-        await userRepository.createWithPassword({ username, password, name })
-        return { success: true, user: sessionUser }
-      }
-    } catch {
-      // لو السيرفر مش متاح، نكمل محلياً
+    if (!res.user) {
+      return { success: false, error: 'تعذر إنشاء الحساب' }
     }
 
-    const existing = await userRepository.getByUsername(username)
-    if (existing) {
-      return { success: false, error: 'اسم المستخدم موجود بالفعل' }
-    }
-
-    const user = await userRepository.createWithPassword({ username, password, name })
-    const sessionUser: SessionUser = {
-      id: user.id,
-      username: user.username,
-      name: user.name,
-      role: user.role,
-      companyId: '',
-    }
-    localStorage.setItem(SESSION_KEY, JSON.stringify(sessionUser))
-    return { success: true, user: sessionUser }
+    localStorage.setItem(SESSION_KEY, JSON.stringify(res.user))
+    return { success: true, user: res.user }
   } catch (e: any) {
     return { success: false, error: e.message }
   }
@@ -136,7 +78,9 @@ export function getCurrentUser(): SessionUser | null {
   try {
     const stored = localStorage.getItem(SESSION_KEY)
     return stored ? JSON.parse(stored) : null
-  } catch {
+  } catch (e) {
+    console.error('[auth] جلسة محفوظة تالفة، سيتم حذفها:', e)
+    localStorage.removeItem(SESSION_KEY)
     return null
   }
 }
@@ -146,15 +90,12 @@ export function logout(): void {
 }
 
 export async function hasAnyUser(): Promise<boolean> {
-  const serverHas = await checkServerHasUsers()
-  if (serverHas) return true
   return userRepository.hasAnyUser()
 }
 
 export async function getSecurityQuestion(username: string): Promise<{ success: boolean; error?: string; question?: string }> {
   try {
-    const res = await fetch(`/api/auth/forgot-password?username=${encodeURIComponent(username)}`).then((r) => r.json())
-    if (res.error) return { success: false, error: res.error }
+    const res = await apiFetch<{ question?: string }>(`/api/auth/forgot-password?username=${encodeURIComponent(username)}`)
     return { success: true, question: res.question }
   } catch (e: any) {
     return { success: false, error: e.message }
@@ -167,12 +108,10 @@ export async function resetPassword(
   newPassword: string,
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const res = await fetch('/api/auth/forgot-password', {
+    await apiFetch('/api/auth/forgot-password', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, answer, newPassword }),
-    }).then((r) => r.json())
-    if (res.error) return { success: false, error: res.error }
+    })
     return { success: true }
   } catch (e: any) {
     return { success: false, error: e.message }

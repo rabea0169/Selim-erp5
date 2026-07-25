@@ -22,12 +22,12 @@ class AutoBackupService {
 
     // فحص فوري عند البدء (بعد 30 ثانية من فتح التطبيق)
     setTimeout(() => {
-      Promise.resolve().then(() => this.checkAndDownload())
+      this.checkAndDownload().catch((e) => console.error('فشل النسخ الاحتياطي التلقائي:', e))
     }, 30000)
 
     // فحص كل ساعة
     this.intervalId = setInterval(() => {
-      Promise.resolve().then(() => this.checkAndDownload())
+      this.checkAndDownload().catch((e) => console.error('فشل النسخ الاحتياطي التلقائي:', e))
     }, 60 * 60 * 1000)
   }
 
@@ -55,7 +55,10 @@ class AutoBackupService {
     const dayAgo = Date.now() - AUTO_BACKUP_INTERVAL
 
     if (!lastBackup || Number(lastBackup) < dayAgo) {
-      await this.downloadBackup()
+      const info = await this.downloadBackup()
+      if (!info) {
+        console.warn('تعذر إنشاء النسخة الاحتياطية التلقائية')
+      }
     }
   }
 
@@ -104,7 +107,9 @@ class AutoBackupService {
         const cache = await caches.open('auto-backups')
         const response = new Response(blob)
         await cache.put(`/auto-backup-${Date.now()}`, response)
-      } catch {}
+      } catch (e) {
+        console.warn('تعذر حفظ النسخة في Cache API:', e)
+      }
 
       console.log('✅ Auto backup downloaded:', fileName)
       return info
@@ -132,7 +137,8 @@ class AutoBackupService {
     try {
       const stored = localStorage.getItem('lastBackupInfo')
       return stored ? JSON.parse(stored) : null
-    } catch {
+    } catch (e) {
+      console.warn('معلومات النسخة المحفوظة تالفة:', e)
       return null
     }
   }
@@ -166,7 +172,8 @@ class AutoBackupService {
       const response = await cache.match(sortedKeys[0])
       const text = await response?.text()
       return text ? JSON.parse(text) : null
-    } catch {
+    } catch (e) {
+      console.error('تعذر قراءة النسخة من Cache API:', e)
       return null
     }
   }
@@ -177,7 +184,8 @@ class AutoBackupService {
       const cache = await caches.open('auto-backups')
       const keys = await cache.keys()
       return keys.length
-    } catch {
+    } catch (e) {
+      console.warn('تعذر قراءة عدد النسخ من Cache API:', e)
       return 0
     }
   }

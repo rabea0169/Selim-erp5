@@ -130,8 +130,9 @@ export function ProductionView({ onBack }: { onBack: () => void }) {
       await productionRepository.delete(id)
       dataChangeEmitter.notifyDelete('production')
       toast({ title: 'تم الحذف' })
-    } catch {
-      toast({ title: 'خطأ', variant: 'destructive' })
+    } catch (e: any) {
+      console.error('[ProductionView] تعذر حذف سجل الإنتاج:', e)
+      toast({ title: 'تعذر حذف سجل الإنتاج', description: e.message, variant: 'destructive' })
     }
   }
 

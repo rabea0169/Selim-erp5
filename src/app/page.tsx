@@ -55,7 +55,9 @@ export default function Home() {
           setFactorySettings(settings)
           autoBackupService.start()
           syncService.start()
-          warehouseRepository.seedDefaults().catch(() => {})
+          warehouseRepository.seedDefaults().catch((e) => {
+            console.error('تعذر تهيئة المخازن الافتراضية:', e)
+          })
           auditLogRepository.log({
             userId: currentUser.id,
             userName: currentUser.name,

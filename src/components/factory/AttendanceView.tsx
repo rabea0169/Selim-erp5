@@ -212,8 +212,9 @@ export function AttendanceView({ onBack }: { onBack: () => void }) {
       await workerAttendanceRepository.delete(id)
       dataChangeEmitter.notifyDelete('workerAttendance')
       toast({ title: 'تم الحذف' })
-    } catch {
-      toast({ title: 'خطأ', variant: 'destructive' })
+    } catch (e: any) {
+      console.error('[AttendanceView] تعذر حذف السجل:', e)
+      toast({ title: 'تعذر حذف السجل', description: e.message, variant: 'destructive' })
     }
   }
 

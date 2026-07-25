@@ -2,6 +2,7 @@
 
 import { reportRepository } from './repositories'
 import { dataChangeEmitter } from './live-data'
+import { apiFetch } from './api-client'
 
 const SYNC_STATUS_KEY = 'lastServerSync'
 const SYNC_ENABLED_KEY = 'serverSyncEnabled'
@@ -26,24 +27,16 @@ class SyncService {
     if (!this.isEnabled()) return
 
     // مزامنة فورية بعد 5 ثواني
-    setTimeout(() => {
-      Promise.resolve().then(() => this.sync())
-    }, 5000)
+    setTimeout(() => this.backgroundSync(), 5000)
 
     // مزامنة كل دقيقتين (أكثر تكراراً)
-    this.intervalId = setInterval(() => {
-      Promise.resolve().then(() => this.sync())
-    }, 2 * 60 * 1000)
+    this.intervalId = setInterval(() => this.backgroundSync(), 2 * 60 * 1000)
 
     // مزامنة عند العودة online
-    window.addEventListener('online', () => {
-      Promise.resolve().then(() => this.sync())
-    })
+    window.addEventListener('online', () => this.backgroundSync())
 
     // مزامنة عند focus على التطبيق
-    window.addEventListener('focus', () => {
-      Promise.resolve().then(() => this.sync())
-    })
+    window.addEventListener('focus', () => this.backgroundSync())
   }
 
   stop() {
@@ -66,9 +59,16 @@ class SyncService {
 
   private debouncedSync() {
     if (this.debounceTimer) clearTimeout(this.debounceTimer)
-    this.debounceTimer = setTimeout(() => {
-      Promise.resolve().then(() => this.sync())
-    }, 3000) // مزامنة بعد 3 ثواني من آخر تغيير
+    this.debounceTimer = setTimeout(() => this.backgroundSync(), 3000) // مزامنة بعد 3 ثواني من آخر تغيير
+  }
+
+  // مزامنة في الخلفية: لا ترمي أخطاء لكن تسجّل أي فشل
+  private backgroundSync() {
+    this.sync()
+      .then((res) => {
+        if (!res.success) console.warn('[sync] فشلت المزامنة التلقائية:', res.error)
+      })
+      .catch((e) => console.error('[sync] خطأ غير متوقع في المزامنة التلقائية:', e))
   }
 
   // مزامنة كاملة (push + pull)
@@ -80,15 +80,10 @@ class SyncService {
     try {
       // 1. Push - رفع البيانات المحلية للسيرفر
       const localData = await reportRepository.exportAll()
-      const pushRes = await fetch('/api/sync/push', {
+      const pushRes = await apiFetch<{ success: boolean; results?: Record<string, number> }>('/api/sync/push', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ data: localData.data }),
-      }).then((r) => r.json())
-
-      if (!pushRes.success) {
-        throw new Error(pushRes.error || 'فشل الرفع')
-      }
+      })
 
       let pushed = 0
       for (const count of Object.values(pushRes.results || {})) {
@@ -96,11 +91,7 @@ class SyncService {
       }
 
       // 2. Pull - تحميل البيانات من السيرفر
-      const pullRes = await fetch('/api/sync/pull').then((r) => r.json())
-
-      if (!pullRes.success) {
-        throw new Error(pullRes.error || 'فشل التحميل')
-      }
+      const pullRes = await apiFetch<{ success: boolean; data?: Record<string, any[]> }>('/api/sync/pull')
 
       let pulled = 0
       for (const records of Object.values(pullRes.data || {})) {
@@ -131,15 +122,10 @@ class SyncService {
 
     try {
       const localData = await reportRepository.exportAll()
-      const res = await fetch('/api/sync/push', {
+      const res = await apiFetch<{ results?: Record<string, number> }>('/api/sync/push', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ data: localData.data }),
-      }).then((r) => r.json())
-
-      if (!res.success) {
-        throw new Error(res.error)
-      }
+      })
 
       let count = 0
       for (const c of Object.values(res.results || {})) {
@@ -149,6 +135,7 @@ class SyncService {
       localStorage.setItem(SYNC_STATUS_KEY, String(Date.now()))
       return { success: true, count }
     } catch (e: any) {
+      console.error('[sync] فشل الرفع:', e)
       return { success: false, error: e.message }
     }
   }
@@ -160,11 +147,7 @@ class SyncService {
     }
 
     try {
-      const res = await fetch('/api/sync/pull').then((r) => r.json())
-
-      if (!res.success) {
-        throw new Error(res.error)
-      }
+      const res = await apiFetch<{ data?: Record<string, any[]> }>('/api/sync/pull')
 
       let count = 0
       for (const records of Object.values(res.data || {})) {
@@ -186,17 +169,19 @@ class SyncService {
       localStorage.setItem(SYNC_STATUS_KEY, String(Date.now()))
       return { success: true, count }
     } catch (e: any) {
+      console.error('[sync] فشل التحميل:', e)
       return { success: false, error: e.message }
     }
   }
 
   // حالة السيرفر
-  async checkStatus(): Promise<{ connected: boolean; counts?: Record<string, number> }> {
+  async checkStatus(): Promise<{ connected: boolean; counts?: Record<string, number>; error?: string }> {
     try {
-      const res = await fetch('/api/sync/status').then((r) => r.json())
+      const res = await apiFetch<{ connected: boolean; counts?: Record<string, number> }>('/api/sync/status')
       return { connected: res.connected, counts: res.counts }
-    } catch {
-      return { connected: false }
+    } catch (e: any) {
+      console.error('[sync] تعذر التحقق من حالة الخادم:', e)
+      return { connected: false, error: e.message }
     }
   }
 

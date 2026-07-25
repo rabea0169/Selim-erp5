@@ -1,4 +1,5 @@
 import { BaseRepository } from './base'
+import { apiFetch } from '../api-client'
 import type { User } from '../types'
 
 class UserRepository extends BaseRepository<User> {
@@ -8,13 +9,8 @@ class UserRepository extends BaseRepository<User> {
   }
 
   async hasAnyUser(): Promise<boolean> {
-    try {
-      const res = await fetch('/api/auth/register')
-      const data = await res.json()
-      return data.hasUsers === true
-    } catch {
-      return false
-    }
+    const data = await apiFetch<{ hasUsers?: boolean }>('/api/auth/register')
+    return data.hasUsers === true
   }
 
   async createWithPassword(_data: any): Promise<User> {

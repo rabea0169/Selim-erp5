@@ -1,4 +1,5 @@
 import type { DatabaseSchema } from '../types'
+import { ApiError, apiFetch } from '../api-client'
 
 // ====== خريطة: storeName → API path + response key ======
 const API_MAP: Record<string, { path: string; listKey: string; singleKey: string }> = {
@@ -18,17 +19,6 @@ const API_MAP: Record<string, { path: string; listKey: string; singleKey: string
   production:          { path: '/api/production',           listKey: 'productions',          singleKey: 'production' },
   productionOrders:    { path: '/api/production-orders',   listKey: 'orders',              singleKey: 'order' },
   expenseCategories:   { path: '/api/expense-categories',  listKey: 'categories',           singleKey: 'category' },
-}
-
-// ====== API helper ======
-async function apiFetch<T = any>(url: string, opts?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
-    headers: { 'Content-Type': 'application/json' },
-    ...opts,
-  })
-  const data = await res.json()
-  if (data.error) throw new Error(data.error)
-  return data
 }
 
 // ====== تحويل تاريخ ISO من/to string إلى صيغة التسلسل ======
@@ -70,14 +60,9 @@ export class BaseRepository<T extends { id?: string; createdAt?: any; updatedAt?
   }
 
   async getAll(): Promise<T[]> {
-    try {
-      const data = await apiFetch<Record<string, any>>(this.apiPath)
-      const list = data[this.listKey] || []
-      return list.map((r: any) => this.normalizeRecord(r))
-    } catch (e) {
-      console.error(`[API] getAll ${this.storeName} failed:`, e)
-      return []
-    }
+    const data = await apiFetch<Record<string, any>>(this.apiPath)
+    const list = data[this.listKey] || []
+    return list.map((r: any) => this.normalizeRecord(r))
   }
 
   async getById(id: string): Promise<T | undefined> {
@@ -85,27 +70,21 @@ export class BaseRepository<T extends { id?: string; createdAt?: any; updatedAt?
       const data = await apiFetch<Record<string, any>>(`${this.apiPath}/${id}`)
       const record = data[this.singleKey] || data
       return this.normalizeRecord(record)
-    } catch (e: any) {
-      if (e.message?.includes('غير موجود') || e.message?.includes('not found')) return undefined
-      console.error(`[API] getById ${this.storeName} failed:`, e)
-      return undefined
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) return undefined
+      throw e
     }
   }
 
   async search(query?: string, from?: string, to?: string): Promise<T[]> {
-    try {
-      const p = new URLSearchParams()
-      if (query) p.set('q', query)
-      if (from) p.set('from', from)
-      if (to) p.set('to', to)
-      const qs = p.toString()
-      const data = await apiFetch<Record<string, any>>(`${this.apiPath}${qs ? '?' + qs : ''}`)
-      const list = data[this.listKey] || []
-      return list.map((r: any) => this.normalizeRecord(r))
-    } catch (e) {
-      console.error(`[API] search ${this.storeName} failed:`, e)
-      return []
-    }
+    const p = new URLSearchParams()
+    if (query) p.set('q', query)
+    if (from) p.set('from', from)
+    if (to) p.set('to', to)
+    const qs = p.toString()
+    const data = await apiFetch<Record<string, any>>(`${this.apiPath}${qs ? '?' + qs : ''}`)
+    const list = data[this.listKey] || []
+    return list.map((r: any) => this.normalizeRecord(r))
   }
 
   async create(data: Partial<T>): Promise<T> {
@@ -126,7 +105,7 @@ export class BaseRepository<T extends { id?: string; createdAt?: any; updatedAt?
     return this.normalizeRecord(result[this.singleKey] || result)
   }
 
-  async update(id: string, data: Partial<T>): Promise<T | undefined> {
+  async update(id: string, data: Partial<T>): Promise<T> {
     const payload = { ...data }
     delete (payload as any).id
     delete (payload as any).createdAt
@@ -135,16 +114,11 @@ export class BaseRepository<T extends { id?: string; createdAt?: any; updatedAt?
       payload[key] = serializeDate(payload[key])
     }
 
-    try {
-      const result = await apiFetch<Record<string, any>>(`${this.apiPath}/${id}`, {
-        method: 'PUT',
-        body: JSON.stringify(payload),
-      })
-      return this.normalizeRecord(result[this.singleKey] || result)
-    } catch (e) {
-      console.error(`[API] update ${this.storeName} failed:`, e)
-      return undefined
-    }
+    const result = await apiFetch<Record<string, any>>(`${this.apiPath}/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    })
+    return this.normalizeRecord(result[this.singleKey] || result)
   }
 
   async delete(id: string): Promise<void> {

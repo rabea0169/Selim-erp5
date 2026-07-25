@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
 import { requireAuth } from '@/lib/require-auth'
+import { handleApiError } from '@/lib/api-error'
 
 // GET /api/backup
 export async function GET() {
@@ -75,7 +76,7 @@ export async function GET() {
         'Content-Disposition': `attachment; filename="selim-backup-${new Date().toISOString().split('T')[0]}.json"`,
       },
     })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    return handleApiError(e, 'GET /api/backup')
   }
 }

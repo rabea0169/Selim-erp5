@@ -109,7 +109,9 @@ export function Header({
     setMenuOpen(false)
     if (!confirm('هل تريد تسجيل الخروج؟')) return
     // Call server logout to clear cookie
-    fetch('/api/auth/logout', { method: 'POST' }).catch(() => {})
+    fetch('/api/auth/logout', { method: 'POST' }).catch((e) => {
+      console.error('تعذر تسجيل الخروج من الخادم:', e)
+    })
     onLogout()
   }
 

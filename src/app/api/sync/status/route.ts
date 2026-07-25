@@ -19,7 +19,8 @@ export async function GET() {
     for (const table of tables) {
       try {
         counts[table] = await (db as any)[table].count({ where: companyFilter })
-      } catch {
+      } catch (e) {
+        console.error(`[API] GET /api/sync/status failed for ${table}:`, e)
         counts[table] = 0
       }
     }
@@ -29,10 +30,11 @@ export async function GET() {
       counts,
       timestamp: new Date().toISOString(),
     })
-  } catch (e: any) {
+  } catch (e) {
+    console.error('[API] GET /api/sync/status failed:', e)
     return NextResponse.json({
       connected: false,
-      error: e.message,
+      error: 'تعذر الاتصال بالخادم',
     }, { status: 500 })
   }
 }

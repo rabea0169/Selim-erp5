@@ -33,7 +33,8 @@ export async function getCurrentUser(): Promise<ServerUser | null> {
     })
 
     return user
-  } catch {
+  } catch (e) {
+    console.error('[auth] تعذر قراءة جلسة المستخدم:', e)
     return null
   }
 }
