@@ -46,6 +46,8 @@ interface HeaderProps {
   onLogout: () => void
   onNavigate: (tab: TabKey) => void
   canManageUsers?: boolean
+  canManageSettings?: boolean
+  canBackup?: boolean
 }
 
 export function Header({
@@ -59,6 +61,8 @@ export function Header({
   onLogout,
   onNavigate,
   canManageUsers = false,
+  canManageSettings = false,
+  canBackup = false,
 }: HeaderProps) {
   const { theme, toggleTheme } = useTheme()
   const isOnline = useConnectionStatus()
@@ -175,13 +179,15 @@ export function Header({
                   {/* Backdrop for mobile */}
                   <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
                   <div className="absolute left-0 top-full mt-1 w-52 bg-white rounded-xl shadow-xl border border-slate-100 py-1 z-50 animate-in fade-in slide-in-from-top-2 duration-150">
-                    <button
-                      onClick={() => { setMenuOpen(false); onOpenFactory() }}
-                      className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
-                    >
-                      <Factory className="w-4 h-4 text-amber-600" />
-                      بيانات المصنع
-                    </button>
+                    {canManageSettings && (
+                      <button
+                        onClick={() => { setMenuOpen(false); onOpenFactory() }}
+                        className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                      >
+                        <Factory className="w-4 h-4 text-amber-600" />
+                        بيانات المصنع
+                      </button>
+                    )}
                     <button
                       onClick={() => { setMenuOpen(false); onOpenPrint() }}
                       className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
@@ -189,13 +195,15 @@ export function Header({
                       <Printer className="w-4 h-4 text-slate-600" />
                       إعدادات الطباعة
                     </button>
-                    <button
-                      onClick={() => { setMenuOpen(false); onOpenBackup() }}
-                      className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
-                    >
-                      <Database className="w-4 h-4 text-slate-600" />
-                      نسخ احتياطي
-                    </button>
+                    {canBackup && (
+                      <button
+                        onClick={() => { setMenuOpen(false); onOpenBackup() }}
+                        className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                      >
+                        <Database className="w-4 h-4 text-slate-600" />
+                        نسخ احتياطي
+                      </button>
+                    )}
                     {canManageUsers && (
                       <button
                         onClick={() => { setMenuOpen(false); onOpenUsers() }}

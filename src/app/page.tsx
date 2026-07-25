@@ -25,6 +25,8 @@ import { getCurrentUser, logout, factorySettingsRepository, expenseCategoryRepos
 
 export type { TabKey }
 
+const SETTINGS_ROLES = ['owner', 'admin']
+const BACKUP_ROLES = ['owner', 'admin', 'manager']
 const MANAGE_USERS_ROLES = ['owner', 'admin']
 
 export default function Home() {
@@ -39,6 +41,8 @@ export default function Home() {
   const [factorySettings, setFactorySettings] = useState<FactorySettings | null>(null)
 
   const canManageUsers = user ? MANAGE_USERS_ROLES.includes(user.role) : false
+  const canManageSettings = user ? SETTINGS_ROLES.includes(user.role) : false
+  const canBackup = user ? BACKUP_ROLES.includes(user.role) : false
 
   useEffect(() => {
     Promise.resolve().then(async () => {
@@ -106,6 +110,8 @@ export default function Home() {
         onLogout={handleLogout}
         onNavigate={setTab}
         canManageUsers={canManageUsers}
+        canManageSettings={canManageSettings}
+        canBackup={canBackup}
       />
 
       <main className="flex-1 max-w-2xl mx-auto w-full px-3 sm:px-4 pb-24 pt-4">
