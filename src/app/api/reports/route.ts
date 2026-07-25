@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
 import { requireAuth } from '@/lib/require-auth'
-import { withCompanyScope } from '@/lib/permissions'
+import { withCompanyScope, withWorkerCompanyScope } from '@/lib/permissions'
 
 // GET /api/reports?from=&to=
 export async function GET(req: NextRequest) {
@@ -23,6 +23,7 @@ export async function GET(req: NextRequest) {
 
     const dateFilter = from || to ? { date: dateRange } : {}
     const companyFilter = withCompanyScope({}, auth.companyId)
+    const workerCompanyFilter = withWorkerCompanyScope({}, auth.companyId)
 
     // Sales totals
     const sales = await db.sale.findMany({
@@ -46,7 +47,7 @@ export async function GET(req: NextRequest) {
 
     // Worker advances
     const advances = await db.workerAdvance.findMany({
-      where: { ...companyFilter, ...dateFilter },
+      where: { ...workerCompanyFilter, ...dateFilter },
       include: { worker: true },
       orderBy: { date: 'desc' },
     })
@@ -54,7 +55,7 @@ export async function GET(req: NextRequest) {
 
     // Worker receipts
     const receipts = await db.workerReceipt.findMany({
-      where: { ...companyFilter, ...dateFilter },
+      where: { ...workerCompanyFilter, ...dateFilter },
       include: { worker: true },
       orderBy: { date: 'desc' },
     })
@@ -62,7 +63,7 @@ export async function GET(req: NextRequest) {
 
     // Worker production
     const productions = await db.production.findMany({
-      where: { ...companyFilter, ...dateFilter },
+      where: { ...workerCompanyFilter, ...dateFilter },
       include: { worker: true },
       orderBy: { date: 'desc' },
     })
@@ -71,7 +72,7 @@ export async function GET(req: NextRequest) {
 
     // Worker attendance
     const attendance = await db.workerAttendance.findMany({
-      where: { ...companyFilter, ...dateFilter },
+      where: { ...workerCompanyFilter, ...dateFilter },
       include: { worker: true },
       orderBy: { date: 'desc' },
     })

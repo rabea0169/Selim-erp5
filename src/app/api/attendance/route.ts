@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
 import { requireAuth } from '@/lib/require-auth'
-import { withCompanyScope } from '@/lib/permissions'
+import { withWorkerCompanyScope } from '@/lib/permissions'
 
 export async function GET(req: NextRequest) {
   try {
@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
     const workerId = searchParams.get('workerId')
     const date = searchParams.get('date')
 
-    const where: any = withCompanyScope({}, auth.companyId)
+    const where: any = withWorkerCompanyScope({}, auth.companyId)
     if (workerId) where.workerId = workerId
 
     if (date) {

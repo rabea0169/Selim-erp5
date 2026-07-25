@@ -19,16 +19,16 @@ export async function POST(req: NextRequest) {
       // حذف البيانات القديمة للشركة فقط
       await tx.expense.deleteMany({ where: { companyId: auth.companyId } })
       await tx.expenseCategory.deleteMany({ where: { companyId: auth.companyId } })
-      await tx.purchaseItem.deleteMany()
+      await tx.purchaseItem.deleteMany({ where: { purchase: { companyId: auth.companyId } } })
       await tx.purchase.deleteMany({ where: { companyId: auth.companyId } })
-      await tx.saleItem.deleteMany()
+      await tx.saleItem.deleteMany({ where: { sale: { companyId: auth.companyId } } })
       await tx.sale.deleteMany({ where: { companyId: auth.companyId } })
       await tx.supplier.deleteMany({ where: { companyId: auth.companyId } })
       await tx.customer.deleteMany({ where: { companyId: auth.companyId } })
-      await tx.production.deleteMany()
-      await tx.workerAttendance.deleteMany()
-      await tx.workerReceipt.deleteMany()
-      await tx.workerAdvance.deleteMany()
+      await tx.production.deleteMany({ where: { worker: { companyId: auth.companyId } } })
+      await tx.workerAttendance.deleteMany({ where: { worker: { companyId: auth.companyId } } })
+      await tx.workerReceipt.deleteMany({ where: { worker: { companyId: auth.companyId } } })
+      await tx.workerAdvance.deleteMany({ where: { worker: { companyId: auth.companyId } } })
       await tx.worker.deleteMany({ where: { companyId: auth.companyId } })
 
       // إعادة إنشاء البيانات
@@ -65,8 +65,15 @@ export async function POST(req: NextRequest) {
           })
         }
       }
+      // الموظفون المسموح بربط السجلات بهم — بعد إعادة إنشائهم داخل نفس الشركة
+      const companyWorkerIds = new Set(
+        (await tx.worker.findMany({ where: { companyId: auth.companyId }, select: { id: true } }))
+          .map((w) => w.id),
+      )
+
       if (data.workerAdvances?.length) {
         for (const a of data.workerAdvances) {
+          if (!companyWorkerIds.has(a.workerId)) continue
           await tx.workerAdvance.create({
             data: { id: a.id, workerId: a.workerId, amount: Number(a.amount), date: new Date(a.date), notes: a.notes ?? null, createdAt: new Date(a.createdAt) },
           })
@@ -74,6 +81,7 @@ export async function POST(req: NextRequest) {
       }
       if (data.workerReceipts?.length) {
         for (const r of data.workerReceipts) {
+          if (!companyWorkerIds.has(r.workerId)) continue
           await tx.workerReceipt.create({
             data: { id: r.id, workerId: r.workerId, amount: Number(r.amount), date: new Date(r.date), notes: r.notes ?? null, createdAt: new Date(r.createdAt) },
           })
@@ -81,6 +89,7 @@ export async function POST(req: NextRequest) {
       }
       if (data.workerAttendance?.length) {
         for (const a of data.workerAttendance) {
+          if (!companyWorkerIds.has(a.workerId)) continue
           await tx.workerAttendance.create({
             data: { id: a.id, workerId: a.workerId, date: new Date(a.date), checkIn: a.checkIn ? new Date(a.checkIn) : null, checkOut: a.checkOut ? new Date(a.checkOut) : null, status: a.status || 'present', notes: a.notes ?? null, createdAt: new Date(a.createdAt) },
           })
@@ -88,6 +97,7 @@ export async function POST(req: NextRequest) {
       }
       if (data.production?.length) {
         for (const p of data.production) {
+          if (!companyWorkerIds.has(p.workerId)) continue
           await tx.production.create({
             data: { id: p.id, workerId: p.workerId, date: new Date(p.date), modelName: p.modelName, quantity: Number(p.quantity), unitPrice: Number(p.unitPrice), total: Number(p.total), notes: p.notes ?? null, createdAt: new Date(p.createdAt) },
           })
@@ -114,8 +124,13 @@ export async function POST(req: NextRequest) {
           })
         }
       }
+      const companySaleIds = new Set(
+        (await tx.sale.findMany({ where: { companyId: auth.companyId }, select: { id: true } }))
+          .map((s) => s.id),
+      )
       if (data.saleItems?.length) {
         for (const it of data.saleItems) {
+          if (!companySaleIds.has(it.saleId)) continue
           await tx.saleItem.create({
             data: { id: it.id, saleId: it.saleId, itemName: it.itemName, quantity: Number(it.quantity), unitPrice: Number(it.unitPrice), total: Number(it.total) },
           })
@@ -128,8 +143,13 @@ export async function POST(req: NextRequest) {
           })
         }
       }
+      const companyPurchaseIds = new Set(
+        (await tx.purchase.findMany({ where: { companyId: auth.companyId }, select: { id: true } }))
+          .map((p) => p.id),
+      )
       if (data.purchaseItems?.length) {
         for (const it of data.purchaseItems) {
+          if (!companyPurchaseIds.has(it.purchaseId)) continue
           await tx.purchaseItem.create({
             data: { id: it.id, purchaseId: it.purchaseId, itemName: it.itemName, quantity: Number(it.quantity), unitPrice: Number(it.unitPrice), total: Number(it.total) },
           })
