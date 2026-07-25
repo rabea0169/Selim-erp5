@@ -56,6 +56,10 @@ class PurchaseRepository extends BaseRepository<Purchase> {
       date: data.date,
       paid: data.paid,
       notes: data.notes,
+      discountType: data.discountType,
+      discountValue: data.discountValue,
+      taxRate: data.taxRate,
+      extraFees: data.extraFees,
       total,
       items: data.items.map((it) => ({
         itemName: it.itemName,

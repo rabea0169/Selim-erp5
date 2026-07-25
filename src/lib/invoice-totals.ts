@@ -2,7 +2,7 @@
 
 export interface InvoiceTotalsInput {
   subtotal: number
-  discountType?: string | null
+  discountType?: 'percentage' | 'fixed' | 'none' | null
   discountValue?: number | string | null
   taxRate?: number | string | null
   extraFees?: number | string | null
@@ -26,9 +26,9 @@ export function computeInvoiceTotals(input: InvoiceTotalsInput): InvoiceTotals {
   const discountValue = Math.max(0, num(input.discountValue))
 
   let discountAmount = 0
-  if (input.discountType === 'percent') {
+  if (input.discountType === 'percentage') {
     discountAmount = (subtotal * Math.min(discountValue, 100)) / 100
-  } else if (input.discountType === 'amount') {
+  } else if (input.discountType === 'fixed') {
     discountAmount = discountValue
   }
   discountAmount = Math.min(discountAmount, subtotal)
