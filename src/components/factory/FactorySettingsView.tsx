@@ -40,12 +40,6 @@ export function FactorySettingsView({ open, onOpenChange }: { open: boolean; onO
   const fileRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
 
-  useEffect(() => {
-    if (open) {
-      loadSettings()
-    }
-  }, [open])
-
   const loadSettings = async () => {
     setLoading(true)
     try {
@@ -58,6 +52,12 @@ export function FactorySettingsView({ open, onOpenChange }: { open: boolean; onO
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    if (open) {
+      loadSettings()
+    }
+  }, [open])
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]

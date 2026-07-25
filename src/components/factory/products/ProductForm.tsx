@@ -42,6 +42,19 @@ export function ProductForm({ open, onOpenChange, editProduct, onSaved }: Produc
   const [saving, setSaving] = useState(false)
   const { toast } = useToast()
 
+  const reset = () => {
+    setName('')
+    setCategory('')
+    setUnit('قطعة')
+    setWholesalePrice('')
+    setHalfWholesalePrice('')
+    setRetailPrice('')
+    setCost('')
+    setQuantity('0')
+    setReorderLevel('')
+    setNotes('')
+  }
+
   // تحميل بيانات التعديل
   useEffect(() => {
     if (open) {
@@ -61,19 +74,6 @@ export function ProductForm({ open, onOpenChange, editProduct, onSaved }: Produc
       }
     }
   }, [open, editProduct?.id])
-
-  const reset = () => {
-    setName('')
-    setCategory('')
-    setUnit('قطعة')
-    setWholesalePrice('')
-    setHalfWholesalePrice('')
-    setRetailPrice('')
-    setCost('')
-    setQuantity('0')
-    setReorderLevel('')
-    setNotes('')
-  }
 
   const save = async () => {
     if (!name.trim()) {
