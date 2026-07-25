@@ -2,6 +2,7 @@
 
 import { formatCurrency, formatDate } from '@/lib/format'
 import { getFactorySettings, buildFactoryHeader, buildFactoryFooter } from '@/lib/factory-header'
+import { escapeHtml } from '@/lib/utils'
 import type { Purchase } from '@/lib/db'
 
 /**
@@ -15,7 +16,7 @@ export async function buildPurchasePrintHtml(purchase: Purchase): Promise<string
   const itemsRows = purchase.items
     .map(
       (it, i) =>
-        `<tr><td style="padding: 4px 6px; border: 1px solid #000; text-align: center;">${i + 1}</td><td style="padding: 4px 6px; border: 1px solid #000;">${it.itemName}</td><td style="padding: 4px 6px; border: 1px solid #000; text-align: center;">${it.quantity}</td><td style="padding: 4px 6px; border: 1px solid #000; text-align: left;">${formatCurrency(it.unitPrice)}</td><td style="padding: 4px 6px; border: 1px solid #000; text-align: left; font-weight: bold;">${formatCurrency(it.total)}</td></tr>`
+        `<tr><td style="padding: 4px 6px; border: 1px solid #000; text-align: center;">${i + 1}</td><td style="padding: 4px 6px; border: 1px solid #000;">${escapeHtml(it.itemName)}</td><td style="padding: 4px 6px; border: 1px solid #000; text-align: center;">${it.quantity}</td><td style="padding: 4px 6px; border: 1px solid #000; text-align: left;">${formatCurrency(it.unitPrice)}</td><td style="padding: 4px 6px; border: 1px solid #000; text-align: left; font-weight: bold;">${formatCurrency(it.total)}</td></tr>`
     )
     .join('')
 
@@ -25,8 +26,8 @@ export async function buildPurchasePrintHtml(purchase: Purchase): Promise<string
       <h1 style="margin: 0; font-size: 18px;">فاتورة مشتريات</h1>
     </div>
     <table style="width: 100%; font-size: 12px; margin-bottom: 12px;">
-      <tr><td style="padding: 2px 0;">المورد:</td><td style="font-weight: bold;">${purchase.supplierName}</td></tr>
-      ${purchase.invoiceNo ? `<tr><td style="padding: 2px 0;">رقم الفاتورة:</td><td>${purchase.invoiceNo}</td></tr>` : ''}
+      <tr><td style="padding: 2px 0;">المورد:</td><td style="font-weight: bold;">${escapeHtml(purchase.supplierName)}</td></tr>
+      ${purchase.invoiceNo ? `<tr><td style="padding: 2px 0;">رقم الفاتورة:</td><td>${escapeHtml(purchase.invoiceNo)}</td></tr>` : ''}
       <tr><td style="padding: 2px 0;">التاريخ:</td><td>${formatDate(purchase.date)}</td></tr>
     </table>
     <table style="width: 100%; border-collapse: collapse; margin-bottom: 12px;">
@@ -38,7 +39,7 @@ export async function buildPurchasePrintHtml(purchase: Purchase): Promise<string
         <tr><td colspan="4" style="padding: 4px 6px; border: 1px solid #000; text-align: left; font-weight: bold;">المتبقي:</td><td style="padding: 4px 6px; border: 1px solid #000; text-align: left; font-weight: bold; color: #dc2626;">${formatCurrency(purchase.total - purchase.paid)}</td></tr>
       </tfoot>
     </table>
-    ${purchase.notes ? `<p style="font-size: 11px; color: #475569; margin: 8px 0;"><strong>ملاحظات:</strong> ${purchase.notes}</p>` : ''}
+    ${purchase.notes ? `<p style="font-size: 11px; color: #475569; margin: 8px 0;"><strong>ملاحظات:</strong> ${escapeHtml(purchase.notes)}</p>` : ''}
     ${footer}
   `
 }

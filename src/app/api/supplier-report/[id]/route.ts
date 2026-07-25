@@ -1,15 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { requireAuth } from '@/lib/require-auth'
 
 // GET /api/supplier-report/[id]?from=&to=
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const auth = await requireAuth('read')
+    if (!auth.authorized) return auth.response
+
     const { id } = await params
     const { searchParams } = new URL(req.url)
     const from = searchParams.get('from')
     const to = searchParams.get('to')
 
-    const supplier = await db.supplier.findUnique({ where: { id } })
+    const supplier = await db.supplier.findFirst({ where: { id, companyId: auth.companyId } })
     if (!supplier) return NextResponse.json({ error: 'المورد غير موجود' }, { status: 404 })
 
     const dateRange: any = {}
@@ -22,7 +26,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const filter = from || to ? { date: dateRange } : {}
 
     const purchases = await db.purchase.findMany({
-      where: { supplierId_ref: id, ...filter },
+      where: { supplierId_ref: id, companyId: auth.companyId, ...filter },
       include: { items: true },
       orderBy: { date: 'desc' },
     })

@@ -4,6 +4,7 @@
  */
 
 import type { FactorySettings } from '@/lib/db/types'
+import { escapeHtml, safeImageSrc } from '@/lib/utils'
 
 interface ExportOptions {
   title: string
@@ -23,13 +24,13 @@ export function exportToWord({ title, factorySettings, content, fileName }: Expo
   const factoryHeader = factorySettings?.factoryName
     ? `
       <div style="text-align: center; margin-bottom: 20px; border-bottom: 2px solid #0f172a; padding-bottom: 10px;">
-        ${factorySettings.logo ? `<img src="${factorySettings.logo}" style="max-height: 80px; max-width: 200px; margin-bottom: 8px;" />` : ''}
-        <h1 style="margin: 0; color: #0f172a; font-size: 22px;">${factorySettings.factoryName}</h1>
-        ${factorySettings.slogan ? `<p style="margin: 4px 0; color: #64748b; font-size: 12px;">${factorySettings.slogan}</p>` : ''}
+        ${safeImageSrc(factorySettings.logo) ? `<img src="${safeImageSrc(factorySettings.logo)}" style="max-height: 80px; max-width: 200px; margin-bottom: 8px;" />` : ''}
+        <h1 style="margin: 0; color: #0f172a; font-size: 22px;">${escapeHtml(factorySettings.factoryName)}</h1>
+        ${factorySettings.slogan ? `<p style="margin: 4px 0; color: #64748b; font-size: 12px;">${escapeHtml(factorySettings.slogan)}</p>` : ''}
         <div style="margin-top: 6px; font-size: 11px; color: #475569;">
-          ${factorySettings.phone ? `📞 ${factorySettings.phone}` : ''}
-          ${factorySettings.address ? ` • 📍 ${factorySettings.address}` : ''}
-          ${factorySettings.taxNumber ? ` • سجل ضريبي: ${factorySettings.taxNumber}` : ''}
+          ${factorySettings.phone ? `📞 ${escapeHtml(factorySettings.phone)}` : ''}
+          ${factorySettings.address ? ` • 📍 ${escapeHtml(factorySettings.address)}` : ''}
+          ${factorySettings.taxNumber ? ` • سجل ضريبي: ${escapeHtml(factorySettings.taxNumber)}` : ''}
         </div>
       </div>
     `
@@ -42,7 +43,7 @@ export function exportToWord({ title, factorySettings, content, fileName }: Expo
           xmlns="http://www.w3.org/TR/REC-html40">
     <head>
       <meta charset="UTF-8">
-      <title>${title}</title>
+      <title>${escapeHtml(title)}</title>
       <!--[if gte mso 9]>
       <xml>
         <w:WordDocument>
@@ -131,7 +132,7 @@ export function exportToWord({ title, factorySettings, content, fileName }: Expo
       ${factoryHeader}
 
       <div style="text-align: center; margin-bottom: 15pt;">
-        <h1 style="font-size: 20pt; color: #0f172a;">${title}</h1>
+        <h1 style="font-size: 20pt; color: #0f172a;">${escapeHtml(title)}</h1>
         <p style="color: #64748b; font-size: 10pt;">تاريخ التقرير: ${now}</p>
       </div>
 
@@ -139,7 +140,7 @@ export function exportToWord({ title, factorySettings, content, fileName }: Expo
 
       <div class="footer">
         <p>تم إنشاء هذا التقرير بواسطة Selim ERP - ${now}</p>
-        ${factorySettings?.factoryName ? `<p>${factorySettings.factoryName}</p>` : ''}
+        ${factorySettings?.factoryName ? `<p>${escapeHtml(factorySettings.factoryName)}</p>` : ''}
       </div>
     </body>
     </html>
@@ -172,7 +173,7 @@ export function exportTableToWord(
     <table>
       <thead>
         <tr>
-          ${headers.map((h) => `<th>${h}</th>`).join('')}
+          ${headers.map((h) => `<th>${escapeHtml(h)}</th>`).join('')}
         </tr>
       </thead>
       <tbody>
@@ -180,7 +181,7 @@ export function exportTableToWord(
           .map(
             (row, i) =>
               `<tr${i === rows.length - 1 && row[0]?.toString().includes('الإجمالي') ? ' class="total-row"' : ''}>
-                ${row.map((cell) => `<td>${cell}</td>`).join('')}
+                ${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join('')}
               </tr>`
           )
           .join('')}

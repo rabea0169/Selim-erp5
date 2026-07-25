@@ -17,8 +17,8 @@ export async function POST(req: NextRequest) {
 
     const results: Record<string, number> = {}
 
+    // ملاحظة: جدول المستخدمين غير مسموح بمزامنته — يمنع رفع الصلاحيات وتغيير كلمات المرور
     const tableMap: Record<string, any> = {
-      users: 'user',
       factorySettings: 'factorySettings',
       workers: 'worker',
       workerAdvances: 'workerAdvance',
@@ -44,6 +44,13 @@ export async function POST(req: NextRequest) {
       purchaseReturns: 'purchaseReturn',
       auditLogs: 'auditLog',
     }
+
+    // الجداول المرتبطة بالموظف — يجب التحقق من أن الموظف يخص نفس الشركة
+    const workerScopedModels = ['workerAdvance', 'workerReceipt', 'workerAttendance', 'production']
+    const companyWorkerIds = new Set(
+      (await db.worker.findMany({ where: { companyId: auth.companyId }, select: { id: true } }))
+        .map((w) => w.id),
+    )
 
     for (const [localTable, modelName] of Object.entries(tableMap)) {
       const records = data[localTable]
@@ -78,11 +85,16 @@ export async function POST(req: NextRequest) {
 
           if (!processed.id) continue
 
+          if (workerScopedModels.includes(modelName) && !companyWorkerIds.has(processed.workerId)) {
+            continue
+          }
+
           await (db as any)[modelName].upsert({
             where: { id: processed.id },
             create: processed,
             update: processed,
           })
+          if (modelName === 'worker') companyWorkerIds.add(processed.id)
           count++
         } catch (e: any) {
           console.error(`Error in ${modelName}:`, e.message)

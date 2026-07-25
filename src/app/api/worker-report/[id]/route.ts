@@ -1,15 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { requireAuth } from '@/lib/require-auth'
 
 // GET /api/worker-report/[id]?from=&to=
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const auth = await requireAuth('read')
+    if (!auth.authorized) return auth.response
+
     const { id } = await params
     const { searchParams } = new URL(req.url)
     const from = searchParams.get('from')
     const to = searchParams.get('to')
 
-    const worker = await db.worker.findUnique({ where: { id } })
+    const worker = await db.worker.findFirst({ where: { id, companyId: auth.companyId } })
     if (!worker) return NextResponse.json({ error: 'الموظف غير موجود' }, { status: 404 })
 
     const dateRange: any = {}

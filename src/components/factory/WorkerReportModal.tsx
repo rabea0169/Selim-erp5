@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/dialog'
 import { useToast } from '@/hooks/use-toast'
 import { formatCurrency, formatDate, todayStr, startOfMonth } from '@/lib/format'
+import { escapeHtml } from '@/lib/utils'
 import {
   workerRepository,
   workerAttendanceRepository,
@@ -183,21 +184,21 @@ export function WorkerReportModal({ worker, onClose }: WorkerReportModalProps) {
       const advanceRows = (data.advances || [])
         .map(
           (a: any) =>
-            `<tr><td style="padding:5px;border:1px solid #e2e8f0;text-align:center;">${formatDate(a.date)}</td><td style="padding:5px;border:1px solid #e2e8f0;text-align:center;color:#dc2626;font-weight:bold;">${formatCurrency(a.amount)}</td><td style="padding:5px;border:1px solid #e2e8f0;text-align:center;font-size:11px;">${a.notes || '-'}</td></tr>`
+            `<tr><td style="padding:5px;border:1px solid #e2e8f0;text-align:center;">${formatDate(a.date)}</td><td style="padding:5px;border:1px solid #e2e8f0;text-align:center;color:#dc2626;font-weight:bold;">${formatCurrency(a.amount)}</td><td style="padding:5px;border:1px solid #e2e8f0;text-align:center;font-size:11px;">${escapeHtml(a.notes || '-')}</td></tr>`
         )
         .join('')
 
       const receiptRows = (data.receipts || [])
         .map(
           (r: any) =>
-            `<tr><td style="padding:5px;border:1px solid #e2e8f0;text-align:center;">${formatDate(r.date)}</td><td style="padding:5px;border:1px solid #e2e8f0;text-align:center;color:#059669;font-weight:bold;">${formatCurrency(r.amount)}</td><td style="padding:5px;border:1px solid #e2e8f0;text-align:center;font-size:11px;">${r.notes || '-'}</td></tr>`
+            `<tr><td style="padding:5px;border:1px solid #e2e8f0;text-align:center;">${formatDate(r.date)}</td><td style="padding:5px;border:1px solid #e2e8f0;text-align:center;color:#059669;font-weight:bold;">${formatCurrency(r.amount)}</td><td style="padding:5px;border:1px solid #e2e8f0;text-align:center;font-size:11px;">${escapeHtml(r.notes || '-')}</td></tr>`
         )
         .join('')
 
       const productionRows = (data.productions || [])
         .map(
           (p: any) =>
-            `<tr><td style="padding:5px;border:1px solid #e2e8f0;text-align:center;">${formatDate(p.date)}</td><td style="padding:5px;border:1px solid #e2e8f0;text-align:center;">${p.modelName}</td><td style="padding:5px;border:1px solid #e2e8f0;text-align:center;">${p.quantity}</td><td style="padding:5px;border:1px solid #e2e8f0;text-align:center;">${formatCurrency(p.unitPrice)}</td><td style="padding:5px;border:1px solid #e2e8f0;text-align:center;color:#059669;font-weight:bold;">${formatCurrency(p.total)}</td></tr>`
+            `<tr><td style="padding:5px;border:1px solid #e2e8f0;text-align:center;">${formatDate(p.date)}</td><td style="padding:5px;border:1px solid #e2e8f0;text-align:center;">${escapeHtml(p.modelName)}</td><td style="padding:5px;border:1px solid #e2e8f0;text-align:center;">${p.quantity}</td><td style="padding:5px;border:1px solid #e2e8f0;text-align:center;">${formatCurrency(p.unitPrice)}</td><td style="padding:5px;border:1px solid #e2e8f0;text-align:center;color:#059669;font-weight:bold;">${formatCurrency(p.total)}</td></tr>`
         )
         .join('')
 
@@ -252,9 +253,9 @@ export function WorkerReportModal({ worker, onClose }: WorkerReportModalProps) {
         <div style="margin-bottom: 20px; padding: 16px; background: #faf5ff; border-radius: 8px;">
           <h2 style="margin: 0 0 8px; color: #1e293b;">بيانات الموظف</h2>
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 13px;">
-            <p><strong>الاسم:</strong> ${worker.name}</p>
-            <p><strong>الوظيفة:</strong> ${worker.job || '-'}</p>
-            <p><strong>الهاتف:</strong> ${worker.phone || '-'}</p>
+            <p><strong>الاسم:</strong> ${escapeHtml(worker.name)}</p>
+            <p><strong>الوظيفة:</strong> ${escapeHtml(worker.job || '-')}</p>
+            <p><strong>الهاتف:</strong> ${escapeHtml(worker.phone || '-')}</p>
             <p><strong>النوع:</strong> ${typeLabel}</p>
             <p><strong>الفترة:</strong> ${formatDate(from)} إلى ${formatDate(to)}</p>
             ${data.fullWorker?.hourlyRate ? `<p><strong>سعر الساعة:</strong> ${formatCurrency(data.fullWorker.hourlyRate)}</p>` : ''}

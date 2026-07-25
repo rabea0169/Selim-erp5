@@ -69,3 +69,8 @@ export function hasPermission(role: string, action: 'create' | 'read' | 'update'
 export function withCompanyScope(where: Record<string, any>, companyId: string): Record<string, any> {
   return { ...where, companyId }
 }
+
+// ====== Helper: فلترة الجداول المرتبطة بالموظف (لا تملك companyId مباشرة) ======
+export function withWorkerCompanyScope(where: Record<string, any>, companyId: string): Record<string, any> {
+  return { ...where, worker: { companyId } }
+}

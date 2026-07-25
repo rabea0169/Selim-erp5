@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { registerUser, addUserToCompany, hasAnyUser, getCurrentUser } from '@/lib/auth'
 import { requireAuth } from '@/lib/require-auth'
+import { hasPermission } from '@/lib/permissions'
 
 export async function POST(req: NextRequest) {
   try {

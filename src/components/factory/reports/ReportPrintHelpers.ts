@@ -3,6 +3,7 @@
 import { formatCurrency, formatDate } from '@/lib/format'
 import type { FactorySettings, ReportData } from '@/lib/db'
 import { buildFactoryHeader, buildFactoryFooter } from '@/lib/factory-header'
+import { escapeHtml } from '@/lib/utils'
 
 /**
  * محتوى التقرير (بدون ترويسة/تذييل المصنع)
@@ -15,14 +16,14 @@ export function buildReportContentHtml(data: ReportData, from: string, to: strin
     .sort((a, b) => b[1] - a[1])
     .map(
       ([name, amount]) =>
-        `<tr><td style="padding:5px;border:1px solid #e2e8f0;">${name}</td><td style="padding:5px;border:1px solid #e2e8f0;text-align:left;font-weight:bold;color:#dc2626;">${formatCurrency(amount)}</td></tr>`
+        `<tr><td style="padding:5px;border:1px solid #e2e8f0;">${escapeHtml(name)}</td><td style="padding:5px;border:1px solid #e2e8f0;text-align:left;font-weight:bold;color:#dc2626;">${formatCurrency(amount)}</td></tr>`
     )
     .join('')
 
   const topItemRows = (data.topItems || [])
     .map(
       (it, i) =>
-        `<tr><td style="padding:5px;border:1px solid #e2e8f0;text-align:center;">${i + 1}</td><td style="padding:5px;border:1px solid #e2e8f0;">${it.name}</td><td style="padding:5px;border:1px solid #e2e8f0;text-align:center;">${it.qty}</td><td style="padding:5px;border:1px solid #e2e8f0;text-align:left;font-weight:bold;color:#059669;">${formatCurrency(it.total)}</td></tr>`
+        `<tr><td style="padding:5px;border:1px solid #e2e8f0;text-align:center;">${i + 1}</td><td style="padding:5px;border:1px solid #e2e8f0;">${escapeHtml(it.name)}</td><td style="padding:5px;border:1px solid #e2e8f0;text-align:center;">${it.qty}</td><td style="padding:5px;border:1px solid #e2e8f0;text-align:left;font-weight:bold;color:#059669;">${formatCurrency(it.total)}</td></tr>`
     )
     .join('')
 
@@ -82,7 +83,7 @@ export function buildPrintHtml(
     .sort((a, b) => b[1] - a[1])
     .map(
       ([name, amount]) =>
-        `<tr><td style="padding: 4px 8px; border: 1px solid #000;">${name}</td><td style="padding: 4px 8px; border: 1px solid #000; text-align: left; font-weight: bold;">${formatCurrency(amount)}</td></tr>`
+        `<tr><td style="padding: 4px 8px; border: 1px solid #000;">${escapeHtml(name)}</td><td style="padding: 4px 8px; border: 1px solid #000; text-align: left; font-weight: bold;">${formatCurrency(amount)}</td></tr>`
     )
     .join('')
 
