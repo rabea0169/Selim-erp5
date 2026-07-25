@@ -1,18 +1,14 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
-import { requireAuth } from '@/lib/require-auth'
+import { withAuth, jsonError } from '@/lib/api'
 
 // POST /api/restore
-export async function POST(req: NextRequest) {
-  try {
-    const auth = await requireAuth('backup')
-    if (!auth.authorized) return auth.response
-
+export const POST = withAuth('backup', async ({ auth, req }) => {
     const body = await req.json()
     const { data } = body
 
     if (!data) {
-      return NextResponse.json({ error: 'بيانات النسخة الاحتياطية غير صحيحة' }, { status: 400 })
+      return jsonError('بيانات النسخة الاحتياطية غير صحيحة')
     }
 
     await db.$transaction(async (tx) => {
@@ -149,7 +145,4 @@ export async function POST(req: NextRequest) {
         expenses: data.expenses?.length || 0,
       },
     })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
-  }
-}
+})

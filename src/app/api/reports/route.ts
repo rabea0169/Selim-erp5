@@ -1,14 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
-import { requireAuth } from '@/lib/require-auth'
 import { withCompanyScope } from '@/lib/permissions'
+import { withAuth } from '@/lib/api'
 
 // GET /api/reports?from=&to=
-export async function GET(req: NextRequest) {
-  try {
-    const auth = await requireAuth('read')
-    if (!auth.authorized) return auth.response
-
+export const GET = withAuth('read', async ({ auth, req }) => {
     const { searchParams } = new URL(req.url)
     const from = searchParams.get('from')
     const to = searchParams.get('to')
@@ -129,7 +125,4 @@ export async function GET(req: NextRequest) {
       sales, purchases, advances, receipts, productions, attendance, expenses,
       expensesByCategory, topItems, topModels,
     })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
-  }
-}
+})

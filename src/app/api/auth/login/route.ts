@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { loginUser } from '@/lib/auth'
+import { jsonError, serverError } from '@/lib/api'
 
 export async function POST(req: NextRequest) {
   try {
@@ -7,19 +8,16 @@ export async function POST(req: NextRequest) {
     const { username, password } = body
 
     if (!username || !password) {
-      return NextResponse.json(
-        { error: 'اسم المستخدم وكلمة المرور مطلوبان' },
-        { status: 400 }
-      )
+      return jsonError('اسم المستخدم وكلمة المرور مطلوبان')
     }
 
     const result = await loginUser(username, password)
     if (!result.success) {
-      return NextResponse.json({ error: result.error }, { status: 401 })
+      return jsonError(result.error || '', 401)
     }
 
     return NextResponse.json({ user: result.user })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    return serverError(e)
   }
 }

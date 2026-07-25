@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { notFound, serverError } from '@/lib/api'
 
 // GET /api/supplier-report/[id]?from=&to=
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -10,7 +11,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const to = searchParams.get('to')
 
     const supplier = await db.supplier.findUnique({ where: { id } })
-    if (!supplier) return NextResponse.json({ error: 'المورد غير موجود' }, { status: 404 })
+    if (!supplier) return notFound('المورد غير موجود')
 
     const dateRange: any = {}
     if (from) dateRange.gte = new Date(from)
@@ -42,7 +43,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       },
       purchases,
     })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    return serverError(e)
   }
 }

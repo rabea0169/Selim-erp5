@@ -59,7 +59,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, {
 }
 
 // ====== التحقق من الصلاحية (pure function - safe for client) ======
-export function hasPermission(role: string, action: 'create' | 'read' | 'update' | 'delete' | 'manageUsers' | 'manageSettings' | 'backup'): boolean {
+export type PermissionAction = 'create' | 'read' | 'update' | 'delete' | 'manageUsers' | 'manageSettings' | 'backup'
+
+export function hasPermission(role: string, action: PermissionAction): boolean {
   const perms = ROLE_PERMISSIONS[role as UserRole]
   if (!perms) return false
   return perms[action]

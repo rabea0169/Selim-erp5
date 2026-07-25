@@ -1,56 +1,42 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
-import { requireAuth } from '@/lib/require-auth'
 import { withCompanyScope } from '@/lib/permissions'
+import { withAuth, jsonError } from '@/lib/api'
 
 // GET /api/warehouses
-export async function GET(req: NextRequest) {
-  try {
-    const auth = await requireAuth('read')
-    if (!auth.authorized) return auth.response
+export const GET = withAuth('read', async ({ auth }) => {
+  const warehouses = await db.warehouse.findMany({
+    where: withCompanyScope({}, auth.companyId),
+    include: {
+      _count: { select: { materials: true, products: true } },
+    },
+    orderBy: { createdAt: 'asc' },
+  })
 
-    const warehouses = await db.warehouse.findMany({
-      where: withCompanyScope({}, auth.companyId),
-      include: {
-        _count: { select: { materials: true, products: true } },
-      },
-      orderBy: { createdAt: 'asc' },
-    })
-
-    return NextResponse.json({ warehouses })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
-  }
-}
+  return NextResponse.json({ warehouses })
+})
 
 // POST /api/warehouses
-export async function POST(req: NextRequest) {
-  try {
-    const auth = await requireAuth('create')
-    if (!auth.authorized) return auth.response
+export const POST = withAuth('create', async ({ auth, req }) => {
+  const body = await req.json()
+  const { name, type, location, notes } = body
 
-    const body = await req.json()
-    const { name, type, location, notes } = body
-
-    if (!name?.trim()) {
-      return NextResponse.json({ error: 'اسم المخزن مطلوب' }, { status: 400 })
-    }
-    if (!type?.trim()) {
-      return NextResponse.json({ error: 'نوع المخزن مطلوب' }, { status: 400 })
-    }
-
-    const warehouse = await db.warehouse.create({
-      data: {
-        name: name.trim(),
-        type: type.trim(),
-        location: location?.trim() || null,
-        notes: notes?.trim() || null,
-        companyId: auth.companyId,
-      },
-    })
-
-    return NextResponse.json({ warehouse })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  if (!name?.trim()) {
+    return jsonError('اسم المخزن مطلوب')
   }
-}
+  if (!type?.trim()) {
+    return jsonError('نوع المخزن مطلوب')
+  }
+
+  const warehouse = await db.warehouse.create({
+    data: {
+      name: name.trim(),
+      type: type.trim(),
+      location: location?.trim() || null,
+      notes: notes?.trim() || null,
+      companyId: auth.companyId,
+    },
+  })
+
+  return NextResponse.json({ warehouse })
+})
