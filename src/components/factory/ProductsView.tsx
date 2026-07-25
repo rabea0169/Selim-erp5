@@ -1,6 +1,10 @@
 'use client'
 
+import { usePermissions } from '@/hooks/usePermissions'
+  const currentUser = getCurrentUser()
+  const perms = usePermissions(currentUser?.role)
 import { useState, useEffect } from 'react'
+import { usePermissions } from '@/hooks/usePermissions'
 import {
   Plus,
   Search,
@@ -8,18 +12,26 @@ import {
   AlertTriangle,
   Boxes,
 } from 'lucide-react'
+import { usePermissions } from '@/hooks/usePermissions'
 import { Button } from '@/components/ui/button'
+import { usePermissions } from '@/hooks/usePermissions'
 import { Input } from '@/components/ui/input'
+import { usePermissions } from '@/hooks/usePermissions'
 import { Badge } from '@/components/ui/badge'
+import { usePermissions } from '@/hooks/usePermissions'
 import { useToast } from '@/hooks/use-toast'
+import { usePermissions } from '@/hooks/usePermissions'
 import { formatCurrency } from '@/lib/format'
+import { usePermissions } from '@/hooks/usePermissions'
 import {
   productRepository,
   dataChangeEmitter,
   useLiveData,
   type Product,
-} from '@/lib/db'
+} { getCurrentUser } from '@/lib/db'
+import { usePermissions } from '@/hooks/usePermissions'
 import { ProductCard } from './products/ProductCard'
+import { usePermissions } from '@/hooks/usePermissions'
 import { ProductForm } from './products/ProductForm'
 
 async function fetchProducts(search: string): Promise<Product[]> {
@@ -51,6 +63,7 @@ export function ProductsView() {
   const totalUnits = productsList.reduce((s, p) => s + p.quantity, 0)
 
   const handleDelete = async (id: string) => {
+    if (!perms.canDelete) { alert("ليس لديك صلاحية الحذف"); return }
     if (!confirm('حذف هذا المنتج؟')) return
     try {
       await productRepository.delete(id)

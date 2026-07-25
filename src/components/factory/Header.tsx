@@ -188,13 +188,15 @@ export function Header({
                         بيانات المصنع
                       </button>
                     )}
-                    <button
-                      onClick={() => { setMenuOpen(false); onOpenPrint() }}
-                      className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
-                    >
-                      <Printer className="w-4 h-4 text-slate-600" />
-                      إعدادات الطباعة
-                    </button>
+                    {canManageSettings && (
+                      <button
+                        onClick={() => { setMenuOpen(false); onOpenPrint() }}
+                        className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                      >
+                        <Printer className="w-4 h-4 text-slate-600" />
+                        إعدادات الطباعة
+                      </button>
+                    )}
                     {canBackup && (
                       <button
                         onClick={() => { setMenuOpen(false); onOpenBackup() }}

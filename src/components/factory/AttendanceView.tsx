@@ -1,6 +1,10 @@
 'use client'
 
+import { usePermissions } from '@/hooks/usePermissions'
+  const currentUser = getCurrentUser()
+  const perms = usePermissions(currentUser?.role)
 import { useState, useEffect } from 'react'
+import { usePermissions } from '@/hooks/usePermissions'
 import {
   Calendar,
   Users,
@@ -9,20 +13,29 @@ import {
   XCircle,
   CalendarOff,
 } from 'lucide-react'
+import { usePermissions } from '@/hooks/usePermissions'
 import { Button } from '@/components/ui/button'
+import { usePermissions } from '@/hooks/usePermissions'
 import { Input } from '@/components/ui/input'
+import { usePermissions } from '@/hooks/usePermissions'
 import { useToast } from '@/hooks/use-toast'
+import { usePermissions } from '@/hooks/usePermissions'
 import { todayStr } from '@/lib/format'
+import { usePermissions } from '@/hooks/usePermissions'
 import {
   workerRepository,
   workerAttendanceRepository,
   dataChangeEmitter,
   useLiveData,
   type WorkerAttendance,
-} from '@/lib/db'
+} { getCurrentUser } from '@/lib/db'
+import { usePermissions } from '@/hooks/usePermissions'
 import { TimePickerDialog, type TimeDialogState } from './attendance/TimePickerDialog'
+import { usePermissions } from '@/hooks/usePermissions'
 import { StatusDialog, type StatusDialogState } from './attendance/StatusDialog'
+import { usePermissions } from '@/hooks/usePermissions'
 import { AttendanceCard } from './attendance/AttendanceCard'
+import { usePermissions } from '@/hooks/usePermissions'
 import {
   currentTimeStr,
   timeFromISO,
@@ -201,6 +214,7 @@ export function AttendanceView({ onBack }: { onBack: () => void }) {
   }
 
   const handleDelete = async (id: string) => {
+    if (!perms.canDelete) { alert("ليس لديك صلاحية الحذف"); return }
     if (!confirm('حذف هذا السجل؟')) return
     try {
       await workerAttendanceRepository.delete(id)

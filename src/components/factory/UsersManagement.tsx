@@ -223,13 +223,19 @@ export function UsersManagement({ open, onOpenChange }: UsersManagementProps) {
                       </div>
                       <p className="text-[11px] text-slate-500">@{u.username}</p>
                     </div>
-                    <button
-                      onClick={() => handleDeleteUser(u.id, u.name)}
-                      className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors shrink-0"
-                      title="حذف"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    {u.role !== 'owner' ? (
+                      <button
+                        onClick={() => handleDeleteUser(u.id, u.name)}
+                        className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors shrink-0"
+                        title="حذف"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    ) : (
+                      <div className="w-8 h-8 rounded-lg flex items-center justify-center text-amber-500 shrink-0" title="حساب محمي">
+                        <Shield className="w-3.5 h-3.5" />
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

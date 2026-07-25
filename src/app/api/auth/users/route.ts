@@ -54,7 +54,13 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: 'المستخدم غير موجود' }, { status: 404 })
     }
 
-    if ((targetUser.role === 'owner' || targetUser.role === 'admin') && auth.user.role !== 'owner') {
+    // Protect the company owner from being deleted by non-owners
+    if (targetUser.role === 'owner') {
+      return NextResponse.json({ error: 'لا يمكن حذف حساب المالك' }, { status: 403 })
+    }
+
+    // Only owner can delete admins
+    if (targetUser.role === 'admin' && auth.user.role !== 'owner') {
       return NextResponse.json({ error: 'فقط المالك يمكنه حذف المديرين' }, { status: 403 })
     }
 

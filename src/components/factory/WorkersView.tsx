@@ -1,6 +1,10 @@
 'use client'
 
+import { usePermissions } from '@/hooks/usePermissions'
+  const currentUser = getCurrentUser()
+  const perms = usePermissions(currentUser?.role)
 import { useState, useEffect } from 'react'
+import { usePermissions } from '@/hooks/usePermissions'
 import {
   Plus,
   Search,
@@ -8,18 +12,27 @@ import {
   Clock,
   Scissors,
 } from 'lucide-react'
+import { usePermissions } from '@/hooks/usePermissions'
 import { Button } from '@/components/ui/button'
+import { usePermissions } from '@/hooks/usePermissions'
 import { Input } from '@/components/ui/input'
+import { usePermissions } from '@/hooks/usePermissions'
 import { useToast } from '@/hooks/use-toast'
+import { usePermissions } from '@/hooks/usePermissions'
 import { formatCurrency } from '@/lib/format'
+import { usePermissions } from '@/hooks/usePermissions'
 import {
   workerRepository,
   useLiveData,
   type Worker as WorkerType,
-} from '@/lib/db'
+} { getCurrentUser } from '@/lib/db'
+import { usePermissions } from '@/hooks/usePermissions'
 import { AttendanceView } from './AttendanceView'
+import { usePermissions } from '@/hooks/usePermissions'
 import { ProductionView } from './ProductionView'
+import { usePermissions } from '@/hooks/usePermissions'
 import { WorkerCard } from './workers/WorkerCard'
+import { usePermissions } from '@/hooks/usePermissions'
 import { WorkerForm } from './workers/WorkerForm'
 import type { WorkerWithStats } from './workers/types'
 

@@ -1,6 +1,10 @@
 'use client'
 
+import { usePermissions } from '@/hooks/usePermissions'
+  const currentUser = getCurrentUser()
+  const perms = usePermissions(currentUser?.role)
 import { useState, useEffect } from 'react'
+import { usePermissions } from '@/hooks/usePermissions'
 import {
   Plus,
   Trash2,
@@ -8,16 +12,23 @@ import {
   Truck,
   X,
 } from 'lucide-react'
+import { usePermissions } from '@/hooks/usePermissions'
 import { Button } from '@/components/ui/button'
+import { usePermissions } from '@/hooks/usePermissions'
 import { Input } from '@/components/ui/input'
+import { usePermissions } from '@/hooks/usePermissions'
 import { useToast } from '@/hooks/use-toast'
+import { usePermissions } from '@/hooks/usePermissions'
 import {
   supplierRepository,
   dataChangeEmitter,
   useLiveData,
-} from '@/lib/db'
+} { getCurrentUser } from '@/lib/db'
+import { usePermissions } from '@/hooks/usePermissions'
 import { SupplierCard, type SupplierWithStats } from './suppliers/SupplierCard'
+import { usePermissions } from '@/hooks/usePermissions'
 import { SupplierForm } from './suppliers/SupplierForm'
+import { usePermissions } from '@/hooks/usePermissions'
 import { SupplierReport } from './suppliers/SupplierReport'
 
 // جلب الموردين مع الإحصائيات (يدعم البحث)
@@ -47,6 +58,7 @@ export function SuppliersView({ onBack }: { onBack: () => void }) {
   }, [search, reload])
 
   const handleDelete = async (id: string) => {
+    if (!perms.canDelete) { alert("ليس لديك صلاحية الحذف"); return }
     if (!confirm('حذف هذا المورد؟')) return
     try {
       await supplierRepository.delete(id)

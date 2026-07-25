@@ -1,6 +1,10 @@
 'use client'
 
+import { usePermissions } from '@/hooks/usePermissions'
+  const currentUser = getCurrentUser()
+  const perms = usePermissions(currentUser?.role)
 import { useState, useEffect } from 'react'
+import { usePermissions } from '@/hooks/usePermissions'
 import {
   Plus,
   Trash2,
@@ -8,16 +12,23 @@ import {
   Users,
   X,
 } from 'lucide-react'
+import { usePermissions } from '@/hooks/usePermissions'
 import { Button } from '@/components/ui/button'
+import { usePermissions } from '@/hooks/usePermissions'
 import { Input } from '@/components/ui/input'
+import { usePermissions } from '@/hooks/usePermissions'
 import { useToast } from '@/hooks/use-toast'
+import { usePermissions } from '@/hooks/usePermissions'
 import {
   customerRepository,
   dataChangeEmitter,
   useLiveData,
-} from '@/lib/db'
+} { getCurrentUser } from '@/lib/db'
+import { usePermissions } from '@/hooks/usePermissions'
 import { CustomerCard, type CustomerWithStats } from './customers/CustomerCard'
+import { usePermissions } from '@/hooks/usePermissions'
 import { CustomerForm } from './customers/CustomerForm'
+import { usePermissions } from '@/hooks/usePermissions'
 import { CustomerReport } from './customers/CustomerReport'
 
 // جلب العملاء مع الإحصائيات (يدعم البحث)
@@ -47,6 +58,7 @@ export function CustomersView({ onBack }: { onBack: () => void }) {
   }, [search, reload])
 
   const handleDelete = async (id: string) => {
+    if (!perms.canDelete) { alert("ليس لديك صلاحية الحذف"); return }
     if (!confirm('حذف هذا العميل؟')) return
     try {
       await customerRepository.delete(id)

@@ -1,6 +1,10 @@
 'use client'
 
+import { usePermissions } from '@/hooks/usePermissions'
+  const currentUser = getCurrentUser()
+  const perms = usePermissions(currentUser?.role)
 import { useState } from 'react'
+import { usePermissions } from '@/hooks/usePermissions'
 import {
   Plus,
   Sparkles,
@@ -8,10 +12,15 @@ import {
   History,
   Warehouse as WarehouseIcon,
 } from 'lucide-react'
+import { usePermissions } from '@/hooks/usePermissions'
 import { Button } from '@/components/ui/button'
+import { usePermissions } from '@/hooks/usePermissions'
 import { Input } from '@/components/ui/input'
+import { usePermissions } from '@/hooks/usePermissions'
 import { Label } from '@/components/ui/label'
+import { usePermissions } from '@/hooks/usePermissions'
 import { Textarea } from '@/components/ui/textarea'
+import { usePermissions } from '@/hooks/usePermissions'
 import {
   Dialog,
   DialogContent,
@@ -20,6 +29,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
+import { usePermissions } from '@/hooks/usePermissions'
 import {
   Select,
   SelectContent,
@@ -27,8 +37,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { usePermissions } from '@/hooks/usePermissions'
 import { useToast } from '@/hooks/use-toast'
+import { usePermissions } from '@/hooks/usePermissions'
 import { formatCurrency } from '@/lib/format'
+import { usePermissions } from '@/hooks/usePermissions'
 import {
   warehouseRepository,
   materialRepository,
@@ -38,10 +51,14 @@ import {
   type Warehouse,
   type Material,
   type MaterialTransaction,
-} from '@/lib/db'
+} { getCurrentUser } from '@/lib/db'
+import { usePermissions } from '@/hooks/usePermissions'
 import { WarehouseCard } from './warehouses/WarehouseCard'
+import { usePermissions } from '@/hooks/usePermissions'
 import { MaterialList } from './warehouses/MaterialList'
+import { usePermissions } from '@/hooks/usePermissions'
 import { MaterialForm } from './warehouses/MaterialForm'
+import { usePermissions } from '@/hooks/usePermissions'
 import { TransactionList } from './warehouses/TransactionList'
 
 interface WarehousesData {
