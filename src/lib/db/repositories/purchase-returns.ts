@@ -13,6 +13,10 @@ class PurchaseReturnRepository extends BaseRepository<PurchaseReturn> {
   async createWithItems(data: any): Promise<PurchaseReturn> {
     return this.create(data)
   }
+
+  async createReturn(data: any): Promise<PurchaseReturn> {
+    return this.create(data)
+  }
 }
 
 export const purchaseReturnRepository = new PurchaseReturnRepository()

@@ -13,6 +13,10 @@ class SaleReturnRepository extends BaseRepository<SaleReturn> {
   async createWithItems(data: any): Promise<SaleReturn> {
     return this.create(data)
   }
+
+  async createReturn(data: any): Promise<SaleReturn> {
+    return this.create(data)
+  }
 }
 
 export const saleReturnRepository = new SaleReturnRepository()
