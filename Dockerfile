@@ -6,8 +6,8 @@ RUN apk add --no-cache vips-dev
 # ===== التثبيت =====
 FROM base AS deps
 WORKDIR /app
-COPY package.json ./
-RUN npm install --legacy-peer-deps
+COPY package.json package-lock.json ./
+RUN npm ci --legacy-peer-deps
 
 # ===== توليد Prisma =====
 FROM base AS prisma
@@ -28,8 +28,8 @@ FROM base AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 
-# تثبيت Prisma لتشغيل db push عند البدء
-RUN npm install prisma@6.11.1 @prisma/client@6.11.1 --no-save --legacy-peer-deps
+# تثبيت Prisma لتشغيل db push عند البدء (نفس نسخة المشروع)
+RUN npm install prisma@6.19.3 @prisma/client@6.19.3 --no-save --legacy-peer-deps
 
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
@@ -38,5 +38,5 @@ COPY --from=builder /app/prisma ./prisma/
 
 EXPOSE 3000
 
-# إنشاء الجداول ثم تشغيل السيرفر
-CMD ["sh", "-c", "npx prisma generate && echo 'y' | npx prisma db push --force-reset && node server.js"]
+# مزامنة الجداول بدون حذف البيانات ثم تشغيل السيرفر
+CMD ["sh", "-c", "npx prisma generate && npx prisma db push --skip-generate && node server.js"]

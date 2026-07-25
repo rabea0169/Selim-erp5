@@ -1,0 +1,15 @@
+node_modules
+.next
+.git
+.github
+coverage
+public/uploads
+*.log
+dev.log
+server.log
+.env
+.env.*
+!.env.example
+.zscripts/dev.pid
+Dockerfile
+.dockerignore
