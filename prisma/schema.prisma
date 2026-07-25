@@ -180,6 +180,7 @@ model WorkerAttendance {
 
   worker Worker @relation(fields: [workerId], references: [id], onDelete: Cascade)
 
+  @@unique([workerId, date])
   @@index([workerId])
   @@index([date])
 }
@@ -270,6 +271,7 @@ model Sale {
   items    SaleItem[]
   returns  SaleReturn[]
 
+  @@unique([companyId, invoiceNo])
   @@index([date])
   @@index([customerId_ref])
   @@index([companyId])
@@ -317,6 +319,7 @@ model Purchase {
   items    PurchaseItem[]
   returns  PurchaseReturn[]
 
+  @@unique([companyId, invoiceNo])
   @@index([date])
   @@index([supplierId_ref])
   @@index([companyId])
@@ -347,6 +350,9 @@ model ExpenseCategory {
   company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   expenses Expense[]
+
+  @@unique([companyId, name])
+  @@index([companyId])
 }
 
 model Expense {
@@ -403,6 +409,9 @@ model Warehouse {
 
   materials Material[]
   products  Product[]
+
+  @@unique([companyId, name])
+  @@index([companyId])
 }
 
 // ====== المواد الخام ======
@@ -512,7 +521,8 @@ model ProductionOrder {
 model Payment {
   id         String   @id @default(cuid())
   type       String
-  partyId    String
+  customerId String?
+  supplierId String?
   partyName  String
   invoiceId  String?
   invoiceNo  String?
@@ -525,11 +535,12 @@ model Payment {
   companyId       String
   company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
-  customer Customer? @relation("PaymentCustomer", fields: [partyId], references: [id], onDelete: SetNull, map: "payment_customer_fk")
-  supplier Supplier? @relation("PaymentSupplier", fields: [partyId], references: [id], onDelete: SetNull, map: "payment_supplier_fk")
+  customer Customer? @relation("PaymentCustomer", fields: [customerId], references: [id], onDelete: SetNull, map: "payment_customer_fk")
+  supplier Supplier? @relation("PaymentSupplier", fields: [supplierId], references: [id], onDelete: SetNull, map: "payment_supplier_fk")
 
   @@index([date])
-  @@index([partyId])
+  @@index([customerId])
+  @@index([supplierId])
   @@index([type])
   @@index([companyId])
 }
