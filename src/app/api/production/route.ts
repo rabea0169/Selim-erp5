@@ -76,6 +76,7 @@ export async function POST(req: NextRequest) {
         unitPrice: price,
         total: qty * price,
         notes: notes?.trim() || null,
+        companyId: auth.companyId,
       },
       include: { worker: true },
     })

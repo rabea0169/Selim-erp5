@@ -12,9 +12,9 @@ export async function GET(req: NextRequest) {
     const where: any = withCompanyScope({}, auth.companyId)
     if (q) {
       where.OR = [
-        { name: { contains: q } },
-        { phone: { contains: q } },
-        { address: { contains: q } },
+        { name: { contains: q, mode: 'insensitive' } },
+        { phone: { contains: q, mode: 'insensitive' } },
+        { address: { contains: q, mode: 'insensitive' } },
       ]
     }
     const suppliers = await db.supplier.findMany({

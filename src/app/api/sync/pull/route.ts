@@ -28,6 +28,7 @@ export async function GET() {
         const companyTables = [
           'worker', 'customer', 'supplier', 'sale', 'purchase',
           'expenseCategory', 'expense', 'treasuryTransaction',
+          'warehouse', 'material', 'materialTransaction',
           'product', 'productionOrder', 'payment',
           'saleReturn', 'purchaseReturn', 'auditLog',
         ]

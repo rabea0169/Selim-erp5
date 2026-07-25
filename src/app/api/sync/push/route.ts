@@ -49,24 +49,37 @@ export async function POST(req: NextRequest) {
       const records = data[localTable]
       if (!records || !Array.isArray(records) || records.length === 0) continue
 
+      // حقول العلاقات التي يجب حذفها قبل الحفظ
+      const relationFields = ['worker', 'customer', 'supplier', 'sale', 'purchase',
+        'category', 'warehouse', 'material', 'company', 'items', 'returns',
+        'advances', 'receipts', 'attendance', 'productions', 'auditLogs',
+        'payments', 'saleReturns', 'purchaseReturns', '_count']
+
       let count = 0
       for (const record of records) {
         try {
           const processed: any = {}
           for (const [key, value] of Object.entries(record)) {
+            // تخطي حقول العلاقات والحقول الفارغة
+            if (relationFields.includes(key)) continue
+            if (value === undefined || value === null) continue
+
             if (typeof value === 'string' && (key.includes('date') || key.includes('At') || key.includes('timestamp'))) {
-              processed[key] = new Date(value)
-            } else if (value !== undefined && value !== null) {
+              processed[key] = new Date(value as string)
+            } else {
               processed[key] = value
             }
           }
-          // إضافة companyId للجداول التي تدعمه
-          if (record.companyId === undefined || record.companyId === null) {
+
+          // ضمان companyId الصحيح — لا يسمح للعميل بتحديد companyId مختلف
+          if ('companyId' in processed) {
             processed.companyId = auth.companyId
           }
 
+          if (!processed.id) continue
+
           await (db as any)[modelName].upsert({
-            where: { id: record.id },
+            where: { id: processed.id },
             create: processed,
             update: processed,
           })

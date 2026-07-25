@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { registerUser, addUserToCompany, hasAnyUser, getCurrentUser } from '@/lib/auth'
-import { requireAuth, hasPermission } from '@/lib/permissions'
+import { registerUser, addUserToCompany, hasAnyUser } from '@/lib/auth'
+import { requireAuth } from '@/lib/permissions'
 
 export async function POST(req: NextRequest) {
   try {
@@ -10,7 +10,6 @@ export async function POST(req: NextRequest) {
     // إذا لم يكن هناك مستخدمين، أنشئ شركة جديدة
     const anyUser = await hasAnyUser()
     if (!anyUser) {
-      // التسجيل الأول: إنشاء شركة + مستخدم owner
       if (!companyName?.trim()) {
         return NextResponse.json({ error: 'اسم الشركة مطلوب للتسجيل الأول' }, { status: 400 })
       }
@@ -21,16 +20,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ user: result.user })
     }
 
-    // إذا يوجد مستخدمين، يجب أن يكون مسجلاً الدخول بـ owner/admin
+    // يوجد مستخدمون — يجب أن يكون مسجلاً الدخول بصلاحية manageUsers
     const auth = await requireAuth('manageUsers')
-    if (!auth.authorized) {
-      return auth.response
-    }
-
-    // التحقق من أن المستخدم لديه صلاحية إدارة المستخدمين
-    if (!hasPermission(auth.user.role, 'manageUsers')) {
-      return NextResponse.json({ error: 'ليس لديك صلاحية لإضافة مستخدمين' }, { status: 403 })
-    }
+    if (!auth.authorized) return auth.response
 
     const result = await addUserToCompany(
       username,

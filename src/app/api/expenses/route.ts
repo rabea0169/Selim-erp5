@@ -24,7 +24,12 @@ export async function GET(req: NextRequest) {
       }
     }
     if (categoryId) where.categoryId = categoryId
-    if (q) where.notes = { contains: q }
+    if (q) {
+      where.OR = [
+        { notes: { contains: q, mode: 'insensitive' } },
+        { categoryName: { contains: q, mode: 'insensitive' } },
+      ]
+    }
 
     const expenses = await db.expense.findMany({
       where,

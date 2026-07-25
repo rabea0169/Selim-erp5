@@ -25,9 +25,9 @@ export async function GET(req: NextRequest) {
     }
     if (q) {
       where.OR = [
-        { customerName: { contains: q } },
-        { invoiceNo: { contains: q } },
-        { notes: { contains: q } },
+        { customerName: { contains: q, mode: 'insensitive' } },
+        { invoiceNo: { contains: q, mode: 'insensitive' } },
+        { notes: { contains: q, mode: 'insensitive' } },
       ]
     }
 

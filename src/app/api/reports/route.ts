@@ -113,8 +113,9 @@ export async function GET(req: NextRequest) {
       .sort((a, b) => b.total - a.total)
       .slice(0, 10)
 
+    // صافي الربح = إجمالي المبيعات - إجمالي المشتريات - إجمالي المصروفات - تكلفة الإنتاج (أجور القطعة)
     const netProfit =
-      salesTotal - purchasesTotal - expensesTotal - advancesTotal + receiptsTotal - productionTotal
+      salesTotal - purchasesTotal - expensesTotal - productionTotal
 
     return NextResponse.json({
       range: { from, to },
