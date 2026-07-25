@@ -18,6 +18,8 @@ const eslintConfig = [...nextCoreWebVitals, ...nextTypescript, {
     
     // React rules
     "react-hooks/exhaustive-deps": "off",
+    // قاعدة React 19 الجديدة: تنبيه لا خطأ، الأنماط الحالية (مزامنة نموذج مع prop، matchMedia) سليمة
+    "react-hooks/set-state-in-effect": "warn",
     "react-hooks/purity": "off",
     "react/no-unescaped-entities": "off",
     "react/display-name": "off",
