@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { formatCurrency, formatDate } from '@/lib/format'
 import { PrintButton } from '../PrintButton'
 import type { Sale } from '@/lib/db'
+import { useToast } from '@/hooks/use-toast'
 import { buildSalePrintHtml } from './SalePrintHelpers'
 
 interface SaleCardProps {
@@ -16,11 +17,17 @@ interface SaleCardProps {
 export function SaleCard({ sale, onDelete }: SaleCardProps) {
   const [expanded, setExpanded] = useState(false)
   const [printHtml, setPrintHtml] = useState('')
+  const { toast } = useToast()
   const remaining = sale.total - sale.paid
 
   const handlePrintClick = async () => {
-    const html = await buildSalePrintHtml(sale)
-    setPrintHtml(html)
+    try {
+      const html = await buildSalePrintHtml(sale)
+      setPrintHtml(html)
+    } catch (e: any) {
+      console.error('[SaleCard] تعذر تجهيز الفاتورة للطباعة:', e)
+      toast({ title: 'تعذر تجهيز الفاتورة للطباعة', description: e.message, variant: 'destructive' })
+    }
   }
 
   return (

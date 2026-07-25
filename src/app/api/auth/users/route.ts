@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/require-auth'
 import { db } from '@/lib/db-server'
+import { handleApiError } from '@/lib/api-error'
 
 // GET /api/auth/users - list users in company
 export async function GET() {
@@ -22,8 +23,8 @@ export async function GET() {
     })
 
     return NextResponse.json({ users })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    return handleApiError(e, 'GET /api/auth/users')
   }
 }
 
@@ -66,7 +67,7 @@ export async function DELETE(req: NextRequest) {
 
     await db.user.delete({ where: { id: userId } })
     return NextResponse.json({ success: true })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    return handleApiError(e, 'DELETE /api/auth/users')
   }
 }

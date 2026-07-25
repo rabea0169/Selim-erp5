@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
 import { requireAuth } from '@/lib/require-auth'
+import { handleApiError } from '@/lib/api-error'
 
 // GET /api/warehouses/[id]
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -17,8 +18,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: 'المخزن غير موجود' }, { status: 404 })
     }
     return NextResponse.json({ warehouse })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    return handleApiError(e, 'GET /api/warehouses/[id]')
   }
 }
 
@@ -45,8 +46,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       },
     })
     return NextResponse.json({ warehouse })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    return handleApiError(e, 'PUT /api/warehouses/[id]')
   }
 }
 
@@ -63,7 +64,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     }
     await db.warehouse.delete({ where: { id } })
     return NextResponse.json({ success: true })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    return handleApiError(e, 'DELETE /api/warehouses/[id]')
   }
 }

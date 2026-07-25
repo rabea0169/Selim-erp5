@@ -127,8 +127,9 @@ export function TreasuryView() {
       await treasuryRepository.delete(id)
       dataChangeEmitter.notifyDelete('treasuryTransactions')
       toast({ title: 'تم الحذف' })
-    } catch {
-      toast({ title: 'خطأ', variant: 'destructive' })
+    } catch (e: any) {
+      console.error('[TreasuryView] تعذر حذف المعاملة:', e)
+      toast({ title: 'تعذر حذف المعاملة', description: e.message, variant: 'destructive' })
     }
   }
 

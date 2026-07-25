@@ -55,7 +55,14 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void })
   useEffect(() => {
     hasAnyUser()
       .then(setHasUsers)
-      .catch((e) => console.error('Failed to check users:', e))
+      .catch((e: any) => {
+        console.error('Failed to check users:', e)
+        toast({
+          title: 'تعذر الاتصال بالخادم',
+          description: e.message,
+          variant: 'destructive',
+        })
+      })
       .finally(() => setChecking(false))
   }, [])
 

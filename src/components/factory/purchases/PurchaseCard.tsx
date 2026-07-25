@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { formatCurrency, formatDate } from '@/lib/format'
 import { PrintButton } from '../PrintButton'
 import type { Purchase } from '@/lib/db'
+import { useToast } from '@/hooks/use-toast'
 import { buildPurchasePrintHtml } from './PurchasePrintHelpers'
 
 interface PurchaseCardProps {
@@ -16,11 +17,17 @@ interface PurchaseCardProps {
 export function PurchaseCard({ purchase, onDelete }: PurchaseCardProps) {
   const [expanded, setExpanded] = useState(false)
   const [printHtml, setPrintHtml] = useState('')
+  const { toast } = useToast()
   const remaining = purchase.total - purchase.paid
 
   const handlePrintClick = async () => {
-    const html = await buildPurchasePrintHtml(purchase)
-    setPrintHtml(html)
+    try {
+      const html = await buildPurchasePrintHtml(purchase)
+      setPrintHtml(html)
+    } catch (e: any) {
+      console.error('[PurchaseCard] تعذر تجهيز الفاتورة للطباعة:', e)
+      toast({ title: 'تعذر تجهيز الفاتورة للطباعة', description: e.message, variant: 'destructive' })
+    }
   }
 
   return (

@@ -41,8 +41,9 @@ export function WorkerCard({ worker, onChanged }: WorkerCardProps) {
       await workerAdvanceRepository.delete(id)
       dataChangeEmitter.notifyDelete('workerAdvances')
       toast({ title: 'تم الحذف' })
-    } catch {
-      toast({ title: 'خطأ', variant: 'destructive' })
+    } catch (e: any) {
+      console.error('[WorkerCard] تعذر حذف السلفة:', e)
+      toast({ title: 'تعذر حذف السلفة', description: e.message, variant: 'destructive' })
     }
   }
 
@@ -52,8 +53,9 @@ export function WorkerCard({ worker, onChanged }: WorkerCardProps) {
       await workerReceiptRepository.delete(id)
       dataChangeEmitter.notifyDelete('workerReceipts')
       toast({ title: 'تم الحذف' })
-    } catch {
-      toast({ title: 'خطأ', variant: 'destructive' })
+    } catch (e: any) {
+      console.error('[WorkerCard] تعذر حذف القبض:', e)
+      toast({ title: 'تعذر حذف القبض', description: e.message, variant: 'destructive' })
     }
   }
 
@@ -63,8 +65,9 @@ export function WorkerCard({ worker, onChanged }: WorkerCardProps) {
       await workerRepository.deleteWithRelations(worker.id)
       dataChangeEmitter.notifyDelete('workers')
       toast({ title: 'تم حذف الموظف' })
-    } catch {
-      toast({ title: 'خطأ', variant: 'destructive' })
+    } catch (e: any) {
+      console.error('[WorkerCard] تعذر حذف الموظف:', e)
+      toast({ title: 'تعذر حذف الموظف', description: e.message, variant: 'destructive' })
     }
   }
 

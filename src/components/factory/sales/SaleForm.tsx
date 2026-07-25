@@ -64,7 +64,13 @@ export function SaleForm({ open, onOpenChange, onSaved, customers }: SaleFormPro
   // تحميل المنتجات
   useEffect(() => {
     if (open) {
-      productRepository.getAll().then(setProducts).catch(() => {})
+      productRepository
+        .getAll()
+        .then(setProducts)
+        .catch((e: any) => {
+          console.error('[SaleForm] تعذر تحميل المنتجات:', e)
+          toast({ title: 'تعذر تحميل المنتجات', description: e.message, variant: 'destructive' })
+        })
     }
   }, [open])
 

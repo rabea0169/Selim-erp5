@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
 import { requireAuth } from '@/lib/require-auth'
 import { withCompanyScope } from '@/lib/permissions'
+import { handleApiError } from '@/lib/api-error'
 
 export async function GET(req: NextRequest) {
   try {
@@ -32,8 +33,8 @@ export async function GET(req: NextRequest) {
     })
 
     return NextResponse.json({ receipts })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    return handleApiError(e, 'GET /api/worker-receipts')
   }
 }
 
@@ -66,7 +67,7 @@ export async function POST(req: NextRequest) {
       include: { worker: true },
     })
     return NextResponse.json({ receipt })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    return handleApiError(e, 'POST /api/worker-receipts')
   }
 }

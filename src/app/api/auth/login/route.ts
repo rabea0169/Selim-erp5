@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { loginUser } from '@/lib/auth'
+import { handleApiError } from '@/lib/api-error'
 
 export async function POST(req: NextRequest) {
   try {
@@ -19,7 +20,7 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ user: result.user })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    return handleApiError(e, 'POST /api/auth/login')
   }
 }

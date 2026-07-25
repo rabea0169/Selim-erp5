@@ -16,6 +16,7 @@ import {
   type Supplier,
   getCurrentUser,
 } from '@/lib/db'
+import { useToast } from '@/hooks/use-toast'
 import { SuppliersView } from './SuppliersView'
 import { PurchaseCard } from './purchases/PurchaseCard'
 import { PurchaseForm } from './purchases/PurchaseForm'
@@ -23,6 +24,7 @@ import { PurchaseForm } from './purchases/PurchaseForm'
 export function PurchasesView() {
   const currentUser = getCurrentUser()
   const perms = usePermissions(currentUser?.role)
+  const { toast } = useToast()
 
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
@@ -53,8 +55,10 @@ export function PurchasesView() {
     try {
       await purchaseRepository.delete(id)
       dataChangeEmitter.notifyDelete('purchases')
+      toast({ title: 'تم الحذف' })
     } catch (e: any) {
-      console.error(e)
+      console.error('[PurchasesView] فشل حذف الفاتورة:', e)
+      toast({ title: 'تعذر حذف الفاتورة', description: e.message, variant: 'destructive' })
     }
   }
 

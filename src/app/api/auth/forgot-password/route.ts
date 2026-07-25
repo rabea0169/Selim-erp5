@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSecurityQuestion, verifySecurityAnswer } from '@/lib/auth'
+import { handleApiError } from '@/lib/api-error'
 
 // GET /api/auth/forgot-password?username=xxx - الحصول على سؤال الأمان
 export async function GET(req: NextRequest) {
@@ -16,8 +17,8 @@ export async function GET(req: NextRequest) {
     }
 
     return NextResponse.json({ question: result.question })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    return handleApiError(e, 'GET /api/auth/forgot-password')
   }
 }
 
@@ -40,7 +41,7 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ success: true, message: 'تم تغيير كلمة المرور بنجاح' })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    return handleApiError(e, 'POST /api/auth/forgot-password')
   }
 }

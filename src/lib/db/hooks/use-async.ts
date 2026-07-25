@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { toast } from '@/hooks/use-toast'
 
 // Hook عام للتعامل مع async operations
 export function useAsync<T>(
@@ -23,7 +24,11 @@ export function useAsync<T>(
         if (mounted) setData(result)
       })
       .catch((err) => {
-        if (mounted) setError(err.message)
+        console.error('[useAsync] فشل تنفيذ العملية:', err)
+        if (mounted) {
+          setError(err.message)
+          toast({ title: 'تعذر تحميل البيانات', description: err.message, variant: 'destructive' })
+        }
       })
       .finally(() => {
         if (mounted) setLoading(false)

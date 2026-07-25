@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
 import { requireAuth } from '@/lib/require-auth'
+import { handleApiError } from '@/lib/api-error'
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -30,8 +31,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       },
     })
     return NextResponse.json({ customer })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    return handleApiError(e, 'PUT /api/customers/[id]')
   }
 }
 
@@ -53,7 +54,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     })
     await db.customer.delete({ where: { id } })
     return NextResponse.json({ success: true })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    return handleApiError(e, 'DELETE /api/customers/[id]')
   }
 }

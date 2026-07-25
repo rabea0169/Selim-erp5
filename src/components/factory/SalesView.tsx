@@ -16,6 +16,7 @@ import {
   type Customer,
   getCurrentUser,
 } from '@/lib/db'
+import { useToast } from '@/hooks/use-toast'
 import { CustomersView } from './CustomersView'
 import { SaleCard } from './sales/SaleCard'
 import { SaleForm } from './sales/SaleForm'
@@ -23,6 +24,7 @@ import { SaleForm } from './sales/SaleForm'
 export function SalesView() {
   const currentUser = getCurrentUser()
   const perms = usePermissions(currentUser?.role)
+  const { toast } = useToast()
 
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
@@ -53,8 +55,10 @@ export function SalesView() {
     try {
       await saleRepository.delete(id)
       dataChangeEmitter.notifyDelete('sales')
+      toast({ title: 'تم الحذف' })
     } catch (e: any) {
-      console.error(e)
+      console.error('[SalesView] فشل حذف الفاتورة:', e)
+      toast({ title: 'تعذر حذف الفاتورة', description: e.message, variant: 'destructive' })
     }
   }
 

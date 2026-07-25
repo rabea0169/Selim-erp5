@@ -7,8 +7,10 @@ let cachedSettings: FactorySettings | null = null
 
 export async function getFactorySettings(): Promise<FactorySettings> {
   if (cachedSettings) return cachedSettings
-  cachedSettings = await factorySettingsRepository.get()
-  return cachedSettings
+  const settings = await factorySettingsRepository.get()
+  if (!settings) throw new Error('تعذر تحميل بيانات المصنع')
+  cachedSettings = settings
+  return settings
 }
 
 export function clearSettingsCache() {

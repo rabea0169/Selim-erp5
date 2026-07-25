@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
 import { requireAuth } from '@/lib/require-auth'
+import { handleApiError } from '@/lib/api-error'
 
 // POST /api/sync/push
 export async function POST(req: NextRequest) {
@@ -16,6 +17,7 @@ export async function POST(req: NextRequest) {
     }
 
     const results: Record<string, number> = {}
+    const failures: Array<{ table: string; id?: string; error: string }> = []
 
     const tableMap: Record<string, any> = {
       users: 'user',
@@ -84,11 +86,27 @@ export async function POST(req: NextRequest) {
             update: processed,
           })
           count++
-        } catch (e: any) {
-          console.error(`Error in ${modelName}:`, e.message)
+        } catch (e) {
+          console.error(`[API] POST /api/sync/push failed for ${modelName}:`, e)
+          failures.push({
+            table: localTable,
+            id: record?.id,
+            error: e instanceof Error ? e.message : String(e),
+          })
         }
       }
       results[localTable] = count
+    }
+
+    if (failures.length > 0) {
+      return NextResponse.json({
+        success: false,
+        error: `تعذر رفع ${failures.length} سجل`,
+        results,
+        failures: failures.slice(0, 20),
+        failedCount: failures.length,
+        syncedAt: new Date().toISOString(),
+      }, { status: 207 })
     }
 
     return NextResponse.json({
@@ -97,8 +115,7 @@ export async function POST(req: NextRequest) {
       results,
       syncedAt: new Date().toISOString(),
     })
-  } catch (e: any) {
-    console.error('Sync push error:', e)
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    return handleApiError(e, 'POST /api/sync/push')
   }
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
 import { requireAuth } from '@/lib/require-auth'
+import { handleApiError } from '@/lib/api-error'
 
 // POST /api/restore
 export async function POST(req: NextRequest) {
@@ -149,7 +150,7 @@ export async function POST(req: NextRequest) {
         expenses: data.expenses?.length || 0,
       },
     })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    return handleApiError(e, 'POST /api/restore')
   }
 }

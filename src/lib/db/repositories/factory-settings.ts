@@ -1,20 +1,10 @@
 import type { FactorySettings } from '../types'
-
-async function apiFetch<T = any>(url: string, opts?: RequestInit): Promise<T> {
-  const res = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...opts })
-  const data = await res.json()
-  if (data.error) throw new Error(data.error)
-  return data
-}
+import { apiFetch } from '../api-client'
 
 class FactorySettingsRepository {
   async get(): Promise<FactorySettings | null> {
-    try {
-      const data = await apiFetch<{ settings?: FactorySettings }>('/api/seed')
-      return data.settings || null
-    } catch {
-      return null
-    }
+    const data = await apiFetch<{ settings?: FactorySettings }>('/api/seed')
+    return data.settings || null
   }
 
   async update(data: Partial<FactorySettings>): Promise<FactorySettings> {

@@ -7,6 +7,7 @@ import {
   productionRepository,
   workerAttendanceRepository,
 } from './index'
+import { apiFetch } from '../api-client'
 import type {
   Sale,
   Purchase,
@@ -121,20 +122,15 @@ class ReportRepository {
 
   // النسخ الاحتياطي يتم عبر API
   async exportAll(): Promise<any> {
-    const res = await fetch('/api/backup', { method: 'POST' })
-    return res.json()
+    return apiFetch('/api/backup')
   }
 
   // الاسترجاع يتم عبر API
   async importAll(backupData: any): Promise<{ success: boolean; counts: any }> {
-    const res = await fetch('/api/restore', {
+    return apiFetch<{ success: boolean; counts: any }>('/api/restore', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(backupData),
     })
-    const data = await res.json()
-    if (data.error) throw new Error(data.error)
-    return data
   }
 }
 
