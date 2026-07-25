@@ -1,47 +1,69 @@
 -- يُشغَّل مرة واحدة على قاعدة بيانات موجودة قبل تطبيق القيود الفريدة الجديدة.
 -- يحذف/يعدّل التكرارات التي كانت مسموحة قبل إضافة @@unique.
+-- الترتيب دائمًا (createdAt, id) حتى لا تفلت الصفوف المتساوية في createdAt.
 
 -- 1) حضور مكرر لنفس الموظف في نفس اليوم: نُبقي الأحدث
-DELETE FROM "WorkerAttendance" a
-USING "WorkerAttendance" b
-WHERE a."workerId" = b."workerId"
-  AND a."date" = b."date"
-  AND a."createdAt" < b."createdAt";
+DELETE FROM "WorkerAttendance"
+WHERE id IN (
+  SELECT id FROM (
+    SELECT id, row_number() OVER (
+      PARTITION BY "workerId", "date" ORDER BY "createdAt" DESC, id DESC
+    ) AS rn
+    FROM "WorkerAttendance"
+  ) ranked WHERE rn > 1
+);
 
--- 2) بنود مصروفات مكررة بنفس الاسم داخل الشركة: نُبقي الأقدم ونحوّل مصروفاتها
+-- 2) بنود مصروفات مكررة بنفس الاسم داخل الشركة: نُبقي الأقدم ونحوّل مصروفاتها إليه
+WITH ranked AS (
+  SELECT id, "companyId", "name", first_value(id) OVER (
+    PARTITION BY "companyId", "name" ORDER BY "createdAt" ASC, id ASC
+  ) AS keep_id
+  FROM "ExpenseCategory"
+)
 UPDATE "Expense" e
-SET "categoryId" = keep.id
-FROM "ExpenseCategory" dup
-JOIN LATERAL (
-  SELECT c.id FROM "ExpenseCategory" c
-  WHERE c."companyId" = dup."companyId" AND c."name" = dup."name"
-  ORDER BY c."createdAt" ASC LIMIT 1
-) keep ON TRUE
-WHERE e."categoryId" = dup.id AND dup.id <> keep.id;
+SET "categoryId" = r.keep_id
+FROM ranked r
+WHERE e."categoryId" = r.id AND r.id <> r.keep_id;
 
-DELETE FROM "ExpenseCategory" c
-USING "ExpenseCategory" k
-WHERE c."companyId" = k."companyId" AND c."name" = k."name" AND c."createdAt" > k."createdAt";
+WITH ranked AS (
+  SELECT id, row_number() OVER (
+    PARTITION BY "companyId", "name" ORDER BY "createdAt" ASC, id ASC
+  ) AS rn
+  FROM "ExpenseCategory"
+)
+DELETE FROM "ExpenseCategory" WHERE id IN (SELECT id FROM ranked WHERE rn > 1);
 
--- 3) مخازن مكررة بنفس الاسم داخل الشركة: نعيد تسمية الأحدث بدل حذفه (لأنه قد يحوي مخزونًا)
+-- 3) مخازن مكررة بنفس الاسم داخل الشركة: نعيد التسمية بدل الحذف (قد تحوي مخزونًا)
+WITH ranked AS (
+  SELECT id, row_number() OVER (
+    PARTITION BY "companyId", "name" ORDER BY "createdAt" ASC, id ASC
+  ) AS rn
+  FROM "Warehouse"
+)
 UPDATE "Warehouse" w
-SET "name" = w."name" || ' (' || left(w.id, 4) || ')'
-WHERE EXISTS (
-  SELECT 1 FROM "Warehouse" o
-  WHERE o."companyId" = w."companyId" AND o."name" = w."name" AND o."createdAt" < w."createdAt"
-);
+SET "name" = w."name" || ' (' || r.rn || ')'
+FROM ranked r
+WHERE w.id = r.id AND r.rn > 1;
 
--- 4) أرقام فواتير مكررة داخل الشركة: نُلحق لاحقة بالأحدث
+-- 4) أرقام فواتير مكررة داخل الشركة: نُلحق ترقيمًا بالأحدث
+WITH ranked AS (
+  SELECT id, row_number() OVER (
+    PARTITION BY "companyId", "invoiceNo" ORDER BY "createdAt" ASC, id ASC
+  ) AS rn
+  FROM "Sale" WHERE "invoiceNo" IS NOT NULL
+)
 UPDATE "Sale" s
-SET "invoiceNo" = s."invoiceNo" || '-' || left(s.id, 4)
-WHERE s."invoiceNo" IS NOT NULL AND EXISTS (
-  SELECT 1 FROM "Sale" o
-  WHERE o."companyId" = s."companyId" AND o."invoiceNo" = s."invoiceNo" AND o."createdAt" < s."createdAt"
-);
+SET "invoiceNo" = s."invoiceNo" || '-' || r.rn
+FROM ranked r
+WHERE s.id = r.id AND r.rn > 1;
 
+WITH ranked AS (
+  SELECT id, row_number() OVER (
+    PARTITION BY "companyId", "invoiceNo" ORDER BY "createdAt" ASC, id ASC
+  ) AS rn
+  FROM "Purchase" WHERE "invoiceNo" IS NOT NULL
+)
 UPDATE "Purchase" p
-SET "invoiceNo" = p."invoiceNo" || '-' || left(p.id, 4)
-WHERE p."invoiceNo" IS NOT NULL AND EXISTS (
-  SELECT 1 FROM "Purchase" o
-  WHERE o."companyId" = p."companyId" AND o."invoiceNo" = p."invoiceNo" AND o."createdAt" < p."createdAt"
-);
+SET "invoiceNo" = p."invoiceNo" || '-' || r.rn
+FROM ranked r
+WHERE p.id = r.id AND r.rn > 1;
