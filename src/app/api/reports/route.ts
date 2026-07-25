@@ -23,6 +23,8 @@ export async function GET(req: NextRequest) {
 
     const dateFilter = from || to ? { date: dateRange } : {}
     const companyFilter = withCompanyScope({}, auth.companyId)
+    // سجلات الموظفين ليس بها companyId، تُفلتر عبر علاقة worker
+    const workerCompanyFilter = { worker: { companyId: auth.companyId } }
 
     // Sales totals
     const sales = await db.sale.findMany({
@@ -46,7 +48,7 @@ export async function GET(req: NextRequest) {
 
     // Worker advances
     const advances = await db.workerAdvance.findMany({
-      where: { ...companyFilter, ...dateFilter },
+      where: { ...workerCompanyFilter, ...dateFilter },
       include: { worker: true },
       orderBy: { date: 'desc' },
     })
@@ -54,7 +56,7 @@ export async function GET(req: NextRequest) {
 
     // Worker receipts
     const receipts = await db.workerReceipt.findMany({
-      where: { ...companyFilter, ...dateFilter },
+      where: { ...workerCompanyFilter, ...dateFilter },
       include: { worker: true },
       orderBy: { date: 'desc' },
     })
@@ -62,7 +64,7 @@ export async function GET(req: NextRequest) {
 
     // Worker production
     const productions = await db.production.findMany({
-      where: { ...companyFilter, ...dateFilter },
+      where: { ...workerCompanyFilter, ...dateFilter },
       include: { worker: true },
       orderBy: { date: 'desc' },
     })
@@ -71,7 +73,7 @@ export async function GET(req: NextRequest) {
 
     // Worker attendance
     const attendance = await db.workerAttendance.findMany({
-      where: { ...companyFilter, ...dateFilter },
+      where: { ...workerCompanyFilter, ...dateFilter },
       include: { worker: true },
       orderBy: { date: 'desc' },
     })

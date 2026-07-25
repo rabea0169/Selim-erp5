@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
 import { requireAuth } from '@/lib/require-auth'
 
+function numOrNull(value: unknown): number | null {
+  const n = Number(value)
+  return value === null || value === undefined || value === '' || isNaN(n) ? null : n
+}
+
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const auth = await requireAuth('update')
@@ -9,7 +14,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
     const { id } = await params
     const body = await req.json()
-    const { name, phone, job, type, notes } = body
+    const { name, phone, job, type, notes, hourlyRate, overtimeRate, workStartTime, workHoursPerDay, monthlySalary } = body
 
     if (!name?.trim()) {
       return NextResponse.json({ error: 'اسم الموظف مطلوب' }, { status: 400 })
@@ -20,7 +25,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: 'الموظف غير موجود' }, { status: 404 })
     }
 
-    const validType = type === 'production' ? 'production' : 'monthly'
+    const validType = type === 'production' || type === 'hourly' ? type : 'monthly'
 
     const worker = await db.worker.update({
       where: { id },
@@ -30,6 +35,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         job: job?.trim() || null,
         type: validType,
         notes: notes?.trim() || null,
+        hourlyRate: numOrNull(hourlyRate),
+        overtimeRate: numOrNull(overtimeRate),
+        workStartTime: workStartTime?.trim() || null,
+        workHoursPerDay: numOrNull(workHoursPerDay),
+        monthlySalary: numOrNull(monthlySalary),
       },
     })
     return NextResponse.json({ worker })
