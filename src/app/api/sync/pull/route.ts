@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
-import { requireAuth } from '@/lib/permissions'
+import { requireAuth } from '@/lib/require-auth'
 
 // GET /api/sync/pull
 export async function GET() {

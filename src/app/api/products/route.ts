@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
-import { requireAuth, withCompanyScope } from '@/lib/permissions'
+import { requireAuth } from '@/lib/require-auth'
+import { withCompanyScope } from '@/lib/permissions'
 
 // GET /api/products?q=&page=&limit=&category=&warehouseId=
 export async function GET(req: NextRequest) {

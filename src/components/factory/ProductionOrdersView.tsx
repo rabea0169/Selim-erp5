@@ -1,23 +1,16 @@
 'use client'
 
 import { usePermissions } from '@/hooks/usePermissions'
-  const currentUser = getCurrentUser()
-  const perms = usePermissions(currentUser?.role)
 import { useState, useEffect } from 'react'
-import { usePermissions } from '@/hooks/usePermissions'
 import {
   Plus,
   Factory,
   CheckCircle2,
   Clock,
 } from 'lucide-react'
-import { usePermissions } from '@/hooks/usePermissions'
 import { Button } from '@/components/ui/button'
-import { usePermissions } from '@/hooks/usePermissions'
 import { Input } from '@/components/ui/input'
-import { usePermissions } from '@/hooks/usePermissions'
 import { Label } from '@/components/ui/label'
-import { usePermissions } from '@/hooks/usePermissions'
 import {
   Select,
   SelectContent,
@@ -25,7 +18,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { usePermissions } from '@/hooks/usePermissions'
 import {
   productionOrderRepository,
   productRepository,
@@ -34,12 +26,10 @@ import {
   type ProductionOrder,
   type Product,
   type Material,
-} { getCurrentUser } from '@/lib/db'
-import { usePermissions } from '@/hooks/usePermissions'
+  getCurrentUser,
+} from '@/lib/db'
 import { OrderCard } from './production-orders/OrderCard'
-import { usePermissions } from '@/hooks/usePermissions'
 import { OrderForm } from './production-orders/OrderForm'
-import { usePermissions } from '@/hooks/usePermissions'
 import { OrderDetails } from './production-orders/OrderDetails'
 
 interface OrdersData {
@@ -66,6 +56,9 @@ async function fetchOrdersData(statusFilter: string): Promise<OrdersData> {
 }
 
 export function ProductionOrdersView() {
+  const currentUser = getCurrentUser()
+  const perms = usePermissions(currentUser?.role)
+
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [open, setOpen] = useState(false)
   const [detailOrderId, setDetailOrderId] = useState<string | null>(null)

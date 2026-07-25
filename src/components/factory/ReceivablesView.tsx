@@ -1,10 +1,7 @@
 'use client'
 
 import { usePermissions } from '@/hooks/usePermissions'
-  const currentUser = getCurrentUser()
-  const perms = usePermissions(currentUser?.role)
 import { useState, useEffect, useMemo } from 'react'
-import { usePermissions } from '@/hooks/usePermissions'
 import {
   Search,
   Users,
@@ -15,17 +12,11 @@ import {
   TrendingDown,
   AlertTriangle,
 } from 'lucide-react'
-import { usePermissions } from '@/hooks/usePermissions'
 import { Button } from '@/components/ui/button'
-import { usePermissions } from '@/hooks/usePermissions'
 import { Input } from '@/components/ui/input'
-import { usePermissions } from '@/hooks/usePermissions'
 import { Label } from '@/components/ui/label'
-import { usePermissions } from '@/hooks/usePermissions'
 import { Textarea } from '@/components/ui/textarea'
-import { usePermissions } from '@/hooks/usePermissions'
 import { Badge } from '@/components/ui/badge'
-import { usePermissions } from '@/hooks/usePermissions'
 import {
   Dialog,
   DialogContent,
@@ -34,7 +25,6 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { usePermissions } from '@/hooks/usePermissions'
 import {
   Select,
   SelectContent,
@@ -42,11 +32,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { usePermissions } from '@/hooks/usePermissions'
 import { useToast } from '@/hooks/use-toast'
-import { usePermissions } from '@/hooks/usePermissions'
 import { formatCurrency, formatDate, formatDateTime, todayStr } from '@/lib/format'
-import { usePermissions } from '@/hooks/usePermissions'
 import {
   customerRepository,
   paymentRepository,
@@ -55,7 +42,8 @@ import {
   type Customer,
   type Sale,
   type Payment,
-} { getCurrentUser } from '@/lib/db'
+  getCurrentUser,
+} from '@/lib/db'
 
 interface ReceivableViewItem {
   customer: Customer
@@ -140,6 +128,9 @@ async function fetchReceivables(search: string): Promise<ReceivablesData> {
 }
 
 export function ReceivablesView({ onBack }: { onBack?: () => void }) {
+  const currentUser = getCurrentUser()
+  const perms = usePermissions(currentUser?.role)
+
   const [search, setSearch] = useState('')
   const [paymentOpen, setPaymentOpen] = useState(false)
   const [statementOpen, setStatementOpen] = useState(false)

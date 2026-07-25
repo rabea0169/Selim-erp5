@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireAuth, hasPermission } from '@/lib/permissions'
+import { requireAuth } from '@/lib/require-auth'
 import { db } from '@/lib/db-server'
 
 // GET /api/auth/users - list users in company

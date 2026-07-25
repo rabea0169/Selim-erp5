@@ -1,10 +1,7 @@
 'use client'
 
 import { usePermissions } from '@/hooks/usePermissions'
-  const currentUser = getCurrentUser()
-  const perms = usePermissions(currentUser?.role)
 import { useState, useEffect } from 'react'
-import { usePermissions } from '@/hooks/usePermissions'
 import {
   Plus,
   Trash2,
@@ -15,15 +12,10 @@ import {
   Settings,
   X,
 } from 'lucide-react'
-import { usePermissions } from '@/hooks/usePermissions'
 import { Button } from '@/components/ui/button'
-import { usePermissions } from '@/hooks/usePermissions'
 import { Input } from '@/components/ui/input'
-import { usePermissions } from '@/hooks/usePermissions'
 import { Label } from '@/components/ui/label'
-import { usePermissions } from '@/hooks/usePermissions'
 import { Badge } from '@/components/ui/badge'
-import { usePermissions } from '@/hooks/usePermissions'
 import {
   Select,
   SelectContent,
@@ -31,20 +23,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { usePermissions } from '@/hooks/usePermissions'
 import { useToast } from '@/hooks/use-toast'
-import { usePermissions } from '@/hooks/usePermissions'
 import { formatCurrency, formatDate, todayStr } from '@/lib/format'
-import { usePermissions } from '@/hooks/usePermissions'
 import {
   expenseRepository,
   expenseCategoryRepository,
   dataChangeEmitter,
   useLiveData,
-} { getCurrentUser } from '@/lib/db'
-import { usePermissions } from '@/hooks/usePermissions'
+  getCurrentUser,
+} from '@/lib/db'
 import { ExpenseForm } from './expenses/ExpenseForm'
-import { usePermissions } from '@/hooks/usePermissions'
 import { CategoryManager } from './expenses/CategoryManager'
 import type { Expense, ExpenseCategory } from './expenses/types'
 
@@ -79,6 +67,9 @@ async function fetchExpensesAndCategories(
 }
 
 export function ExpensesView() {
+  const currentUser = getCurrentUser()
+  const perms = usePermissions(currentUser?.role)
+
   const [open, setOpen] = useState(false)
   const [catOpen, setCatOpen] = useState(false)
   const [search, setSearch] = useState('')
@@ -99,8 +90,8 @@ export function ExpensesView() {
   }, [search, filterCat, from, to, reload])
 
   const handleDelete = async (id: string) => {
-    if (!perms.canDelete) { alert("ليس لديك صلاحية الحذف"); return }
     if (!confirm('حذف هذا المصروف؟')) return
+    if (!perms.canDelete) { alert('ليس لديك صلاحية الحذف'); return }
     try {
       await expenseRepository.delete(id)
       dataChangeEmitter.notifyDelete('expenses')

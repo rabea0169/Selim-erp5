@@ -1,10 +1,7 @@
 'use client'
 
 import { usePermissions } from '@/hooks/usePermissions'
-  const currentUser = getCurrentUser()
-  const perms = usePermissions(currentUser?.role)
 import { useState, useEffect } from 'react'
-import { usePermissions } from '@/hooks/usePermissions'
 import {
   Plus,
   Minus,
@@ -18,17 +15,11 @@ import {
   ArrowUpCircle,
   Tag,
 } from 'lucide-react'
-import { usePermissions } from '@/hooks/usePermissions'
 import { Button } from '@/components/ui/button'
-import { usePermissions } from '@/hooks/usePermissions'
 import { Input } from '@/components/ui/input'
-import { usePermissions } from '@/hooks/usePermissions'
 import { Label } from '@/components/ui/label'
-import { usePermissions } from '@/hooks/usePermissions'
 import { Badge } from '@/components/ui/badge'
-import { usePermissions } from '@/hooks/usePermissions'
 import { Textarea } from '@/components/ui/textarea'
-import { usePermissions } from '@/hooks/usePermissions'
 import {
   Dialog,
   DialogContent,
@@ -37,7 +28,6 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { usePermissions } from '@/hooks/usePermissions'
 import {
   Select,
   SelectContent,
@@ -45,17 +35,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { usePermissions } from '@/hooks/usePermissions'
 import { useToast } from '@/hooks/use-toast'
-import { usePermissions } from '@/hooks/usePermissions'
 import { formatCurrency, formatDate, todayStr } from '@/lib/format'
-import { usePermissions } from '@/hooks/usePermissions'
 import {
   treasuryRepository,
   dataChangeEmitter,
   useLiveData,
   type TreasuryTransaction,
-} { getCurrentUser } from '@/lib/db'
+  getCurrentUser,
+} from '@/lib/db'
 
 interface TreasuryData {
   balance: number
@@ -98,6 +86,9 @@ async function fetchTreasury(from?: string, to?: string): Promise<TreasuryData> 
 }
 
 export function TreasuryView() {
+  const currentUser = getCurrentUser()
+  const perms = usePermissions(currentUser?.role)
+
   const [open, setOpen] = useState(false)
   const [txType, setTxType] = useState<'deposit' | 'withdrawal'>('deposit')
   const [from, setFrom] = useState('')
@@ -130,8 +121,8 @@ export function TreasuryView() {
   }
 
   const handleDelete = async (id: string) => {
-    if (!perms.canDelete) { alert("ليس لديك صلاحية الحذف"); return }
     if (!confirm('حذف هذه المعاملة؟')) return
+    if (!perms.canDelete) { alert('ليس لديك صلاحية الحذف'); return }
     try {
       await treasuryRepository.delete(id)
       dataChangeEmitter.notifyDelete('treasuryTransactions')

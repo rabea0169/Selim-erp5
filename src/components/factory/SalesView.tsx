@@ -1,20 +1,12 @@
 'use client'
 
 import { usePermissions } from '@/hooks/usePermissions'
-  const currentUser = getCurrentUser()
-  const perms = usePermissions(currentUser?.role)
 import { useState, useEffect } from 'react'
-import { usePermissions } from '@/hooks/usePermissions'
 import { Plus, X, Search, ShoppingCart, Users } from 'lucide-react'
-import { usePermissions } from '@/hooks/usePermissions'
 import { Button } from '@/components/ui/button'
-import { usePermissions } from '@/hooks/usePermissions'
 import { Input } from '@/components/ui/input'
-import { usePermissions } from '@/hooks/usePermissions'
 import { Label } from '@/components/ui/label'
-import { usePermissions } from '@/hooks/usePermissions'
 import { formatCurrency } from '@/lib/format'
-import { usePermissions } from '@/hooks/usePermissions'
 import {
   saleRepository,
   customerRepository,
@@ -22,15 +14,16 @@ import {
   useLiveData,
   type Sale,
   type Customer,
-} { getCurrentUser } from '@/lib/db'
-import { usePermissions } from '@/hooks/usePermissions'
+  getCurrentUser,
+} from '@/lib/db'
 import { CustomersView } from './CustomersView'
-import { usePermissions } from '@/hooks/usePermissions'
 import { SaleCard } from './sales/SaleCard'
-import { usePermissions } from '@/hooks/usePermissions'
 import { SaleForm } from './sales/SaleForm'
 
 export function SalesView() {
+  const currentUser = getCurrentUser()
+  const perms = usePermissions(currentUser?.role)
+
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [from, setFrom] = useState('')
@@ -55,8 +48,8 @@ export function SalesView() {
   }, [search, from, to, reloadSales])
 
   const handleDelete = async (id: string) => {
-    if (!perms.canDelete) { alert("ليس لديك صلاحية الحذف"); return }
     if (!confirm('هل أنت متأكد من حذف هذه الفاتورة؟')) return
+    if (!perms.canDelete) { alert('ليس لديك صلاحية الحذف'); return }
     try {
       await saleRepository.delete(id)
       dataChangeEmitter.notifyDelete('sales')

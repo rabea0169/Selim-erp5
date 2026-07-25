@@ -1,20 +1,12 @@
 'use client'
 
 import { usePermissions } from '@/hooks/usePermissions'
-  const currentUser = getCurrentUser()
-  const perms = usePermissions(currentUser?.role)
 import { useState, useEffect } from 'react'
-import { usePermissions } from '@/hooks/usePermissions'
 import { Plus, X, Search, Package, Truck } from 'lucide-react'
-import { usePermissions } from '@/hooks/usePermissions'
 import { Button } from '@/components/ui/button'
-import { usePermissions } from '@/hooks/usePermissions'
 import { Input } from '@/components/ui/input'
-import { usePermissions } from '@/hooks/usePermissions'
 import { Label } from '@/components/ui/label'
-import { usePermissions } from '@/hooks/usePermissions'
 import { formatCurrency } from '@/lib/format'
-import { usePermissions } from '@/hooks/usePermissions'
 import {
   purchaseRepository,
   supplierRepository,
@@ -22,15 +14,16 @@ import {
   useLiveData,
   type Purchase,
   type Supplier,
-} { getCurrentUser } from '@/lib/db'
-import { usePermissions } from '@/hooks/usePermissions'
+  getCurrentUser,
+} from '@/lib/db'
 import { SuppliersView } from './SuppliersView'
-import { usePermissions } from '@/hooks/usePermissions'
 import { PurchaseCard } from './purchases/PurchaseCard'
-import { usePermissions } from '@/hooks/usePermissions'
 import { PurchaseForm } from './purchases/PurchaseForm'
 
 export function PurchasesView() {
+  const currentUser = getCurrentUser()
+  const perms = usePermissions(currentUser?.role)
+
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [from, setFrom] = useState('')
@@ -55,8 +48,8 @@ export function PurchasesView() {
   }, [search, from, to, reloadPurchases])
 
   const handleDelete = async (id: string) => {
-    if (!perms.canDelete) { alert("ليس لديك صلاحية الحذف"); return }
     if (!confirm('هل أنت متأكد من حذف هذه الفاتورة؟')) return
+    if (!perms.canDelete) { alert('ليس لديك صلاحية الحذف'); return }
     try {
       await purchaseRepository.delete(id)
       dataChangeEmitter.notifyDelete('purchases')

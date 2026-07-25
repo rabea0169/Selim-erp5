@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
-import { requireAuth } from '@/lib/permissions'
+import { requireAuth } from '@/lib/require-auth'
 
 // GET /api/materials/[id]
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
