@@ -13,7 +13,8 @@ export async function GET(req: NextRequest) {
     const to = searchParams.get('to')
     const workerId = searchParams.get('workerId')
 
-    const where: any = withCompanyScope({}, auth.companyId)
+    // سجلات الموظفين ليس بها companyId، تُفلتر عبر علاقة worker
+    const where: any = { worker: { companyId: auth.companyId } }
     if (workerId) where.workerId = workerId
     if (from || to) {
       where.date = {}

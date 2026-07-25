@@ -3,6 +3,11 @@ import { db } from '@/lib/db-server'
 import { requireAuth } from '@/lib/require-auth'
 import { withCompanyScope } from '@/lib/permissions'
 
+function numOrNull(value: unknown): number | null {
+  const n = Number(value)
+  return value === null || value === undefined || value === '' || isNaN(n) ? null : n
+}
+
 export async function GET(req: NextRequest) {
   try {
     const auth = await requireAuth('read')
@@ -52,13 +57,13 @@ export async function POST(req: NextRequest) {
     if (!auth.authorized) return auth.response
 
     const body = await req.json()
-    const { name, phone, job, type, notes } = body
+    const { name, phone, job, type, notes, hourlyRate, overtimeRate, workStartTime, workHoursPerDay, monthlySalary } = body
 
     if (!name?.trim()) {
       return NextResponse.json({ error: 'اسم الموظف مطلوب' }, { status: 400 })
     }
 
-    const validType = type === 'production' ? 'production' : 'monthly'
+    const validType = type === 'production' || type === 'hourly' ? type : 'monthly'
 
     const worker = await db.worker.create({
       data: {
@@ -67,6 +72,11 @@ export async function POST(req: NextRequest) {
         job: job?.trim() || null,
         type: validType,
         notes: notes?.trim() || null,
+        hourlyRate: numOrNull(hourlyRate),
+        overtimeRate: numOrNull(overtimeRate),
+        workStartTime: workStartTime?.trim() || null,
+        workHoursPerDay: numOrNull(workHoursPerDay),
+        monthlySalary: numOrNull(monthlySalary),
         companyId: auth.companyId,
       },
     })
