@@ -142,9 +142,14 @@ class ReportRepository {
   async exportAll(): Promise<any> {
     const db = await getDB()
     const tables: Array<keyof DatabaseSchema> = [
-      'users', 'workers', 'workerAdvances', 'workerReceipts', 'workerAttendance',
-      'production', 'customers', 'suppliers', 'sales', 'saleItems',
-      'purchases', 'purchaseItems', 'expenseCategories', 'expenses',
+      'factorySettings', 'users', 'workers', 'workerAdvances', 'workerReceipts',
+      'workerAttendance', 'production', 'customers', 'suppliers',
+      'sales', 'saleItems', 'purchases', 'purchaseItems',
+      'expenseCategories', 'expenses',
+      'treasuryTransactions', 'warehouses', 'materials', 'materialTransactions',
+      'products', 'productionOrders',
+      'payments', 'saleReturns', 'saleReturnItems',
+      'purchaseReturns', 'purchaseReturnItems',
     ]
 
     const data: any = {}
@@ -153,7 +158,7 @@ class ReportRepository {
     }
 
     return {
-      version: 3,
+      version: 5,
       app: 'clothing-factory-management',
       type: 'offline-first',
       exportedAt: new Date().toISOString(),
@@ -171,9 +176,14 @@ class ReportRepository {
     const data = backupData.data
 
     const tables: Array<keyof DatabaseSchema> = [
-      'users', 'workers', 'workerAdvances', 'workerReceipts', 'workerAttendance',
-      'production', 'customers', 'suppliers', 'sales', 'saleItems',
-      'purchases', 'purchaseItems', 'expenseCategories', 'expenses',
+      'factorySettings', 'users', 'workers', 'workerAdvances', 'workerReceipts',
+      'workerAttendance', 'production', 'customers', 'suppliers',
+      'sales', 'saleItems', 'purchases', 'purchaseItems',
+      'expenseCategories', 'expenses',
+      'treasuryTransactions', 'warehouses', 'materials', 'materialTransactions',
+      'products', 'productionOrders',
+      'payments', 'saleReturns', 'saleReturnItems',
+      'purchaseReturns', 'purchaseReturnItems',
     ]
 
     const tx = db.transaction(tables, 'readwrite')

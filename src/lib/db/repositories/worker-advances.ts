@@ -24,42 +24,54 @@ class WorkerAdvanceRepository extends BaseRepository<WorkerAdvance> {
   private async getByDateRangeBase(indexName: string, from?: string, to?: string): Promise<WorkerAdvance[]> {
     const db = await this.getDB()
     if (from && to) {
-      return (db as any).getAllFromIndex(this.storeName, indexName, IDBKeyRange.bound(from, to))
+      const toDate = new Date(to)
+      toDate.setHours(23, 59, 59, 999)
+      return (db as any).getAllFromIndex(this.storeName, indexName, IDBKeyRange.bound(from, toDate.toISOString()))
     } else if (from) {
       return (db as any).getAllFromIndex(this.storeName, indexName, IDBKeyRange.lowerBound(from))
     } else if (to) {
-      return (db as any).getAllFromIndex(this.storeName, indexName, IDBKeyRange.upperBound(to))
+      const toDate = new Date(to)
+      toDate.setHours(23, 59, 59, 999)
+      return (db as any).getAllFromIndex(this.storeName, indexName, IDBKeyRange.upperBound(toDate.toISOString()))
     }
     return this.getAll()
   }
 
-  // إنشاء سلفة + سحب من الخزينة تلقائياً
+  // إنشاء سلفة + سحب من الخزينة تلقائياً (معاملة ذرية)
   async create(data: Partial<WorkerAdvance>): Promise<WorkerAdvance> {
-    const record = await super.create(data)
+    const now = nowISO()
+    const id = data.id || generateId()
+    const record = {
+      ...data,
+      id,
+      createdAt: (data as any).createdAt || now,
+      updatedAt: (data as any).updatedAt || now,
+    } as WorkerAdvance
 
-    // سحب من الخزينة
+    const db = await getDB()
+    const tx = db.transaction(['workerAdvances', 'treasuryTransactions'], 'readwrite')
+
+    await tx.objectStore('workerAdvances').add(record)
+
+    // سحب من الخزينة في نفس المعاملة
     if (record.amount > 0 && record.workerId) {
-      try {
-        const worker = await workerRepository.getById(record.workerId)
-        const db = await getDB()
-        const treasuryTx = {
-          id: generateId(),
-          type: 'withdrawal' as const,
-          amount: record.amount,
-          date: record.date,
-          description: `سلفة موظف - ${worker?.name || 'موظف'}`,
-          category: 'سلف موظفين',
-          referenceType: 'worker_advance',
-          referenceId: record.id,
-          notes: record.notes,
-          createdAt: nowISO(),
-        }
-        await db.add('treasuryTransactions', treasuryTx)
-      } catch (e) {
-        console.error('Failed to create treasury transaction for advance:', e)
+      const worker = await workerRepository.getById(record.workerId)
+      const treasuryTx = {
+        id: generateId(),
+        type: 'withdrawal' as const,
+        amount: record.amount,
+        date: record.date,
+        description: `سلفة موظف - ${worker?.name || 'موظف'}`,
+        category: 'سلف موظفين',
+        referenceType: 'worker_advance',
+        referenceId: record.id,
+        notes: record.notes,
+        createdAt: nowISO(),
       }
+      await tx.objectStore('treasuryTransactions').add(treasuryTx)
     }
 
+    await tx.done
     return record
   }
 
@@ -68,7 +80,6 @@ class WorkerAdvanceRepository extends BaseRepository<WorkerAdvance> {
     const db = await getDB()
     const tx = db.transaction(['workerAdvances', 'treasuryTransactions'], 'readwrite')
 
-    // حذف المعاملة المرتبطة في الخزينة
     const allTreasury = await tx.objectStore('treasuryTransactions').getAll()
     for (const t of allTreasury) {
       if (t.referenceType === 'worker_advance' && t.referenceId === id) {

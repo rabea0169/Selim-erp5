@@ -75,17 +75,35 @@ class WorkerRepository extends BaseRepository<Worker> {
   async deleteWithRelations(workerId: string): Promise<void> {
     const db = await getDB()
     const tx = db.transaction(
-      ['workers', 'workerAdvances', 'workerReceipts', 'workerAttendance', 'production'],
+      ['workers', 'workerAdvances', 'workerReceipts', 'workerAttendance', 'production', 'treasuryTransactions'],
       'readwrite'
     )
 
     // حذف السلف
     const advances = await tx.objectStore('workerAdvances').index('by-worker').getAllKeys(workerId)
-    await Promise.all(advances.map((k) => tx.objectStore('workerAdvances').delete(k)))
+    // حذف معاملات الخزينة المرتبطة بالسلف
+    for (const key of advances) {
+      const allTreasury = await tx.objectStore('treasuryTransactions').getAll()
+      for (const t of allTreasury) {
+        if (t.referenceType === 'worker_advance' && t.referenceId === key) {
+          await tx.objectStore('treasuryTransactions').delete(t.id)
+        }
+      }
+      await tx.objectStore('workerAdvances').delete(key)
+    }
 
     // حذف القبض
     const receipts = await tx.objectStore('workerReceipts').index('by-worker').getAllKeys(workerId)
-    await Promise.all(receipts.map((k) => tx.objectStore('workerReceipts').delete(k)))
+    // حذف معاملات الخزينة المرتبطة بالقبض
+    for (const key of receipts) {
+      const allTreasury = await tx.objectStore('treasuryTransactions').getAll()
+      for (const t of allTreasury) {
+        if (t.referenceType === 'worker_receipt' && t.referenceId === key) {
+          await tx.objectStore('treasuryTransactions').delete(t.id)
+        }
+      }
+      await tx.objectStore('workerReceipts').delete(key)
+    }
 
     // حذف الحضور
     const attendance = await tx.objectStore('workerAttendance').index('by-worker').getAllKeys(workerId)

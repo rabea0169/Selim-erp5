@@ -24,42 +24,54 @@ class WorkerReceiptRepository extends BaseRepository<WorkerReceipt> {
   private async getByDateRangeBase(indexName: string, from?: string, to?: string): Promise<WorkerReceipt[]> {
     const db = await this.getDB()
     if (from && to) {
-      return (db as any).getAllFromIndex(this.storeName, indexName, IDBKeyRange.bound(from, to))
+      const toDate = new Date(to)
+      toDate.setHours(23, 59, 59, 999)
+      return (db as any).getAllFromIndex(this.storeName, indexName, IDBKeyRange.bound(from, toDate.toISOString()))
     } else if (from) {
       return (db as any).getAllFromIndex(this.storeName, indexName, IDBKeyRange.lowerBound(from))
     } else if (to) {
-      return (db as any).getAllFromIndex(this.storeName, indexName, IDBKeyRange.upperBound(to))
+      const toDate = new Date(to)
+      toDate.setHours(23, 59, 59, 999)
+      return (db as any).getAllFromIndex(this.storeName, indexName, IDBKeyRange.upperBound(toDate.toISOString()))
     }
     return this.getAll()
   }
 
-  // إنشاء قبض + إيداع في الخزينة تلقائياً
+  // إنشاء قبض + إيداع في الخزينة تلقائياً (معاملة ذرية)
   async create(data: Partial<WorkerReceipt>): Promise<WorkerReceipt> {
-    const record = await super.create(data)
+    const now = nowISO()
+    const id = data.id || generateId()
+    const record = {
+      ...data,
+      id,
+      createdAt: (data as any).createdAt || now,
+      updatedAt: (data as any).updatedAt || now,
+    } as WorkerReceipt
 
-    // إيداع في الخزينة
+    const db = await getDB()
+    const tx = db.transaction(['workerReceipts', 'treasuryTransactions'], 'readwrite')
+
+    await tx.objectStore('workerReceipts').add(record)
+
+    // إيداع في الخزينة في نفس المعاملة
     if (record.amount > 0 && record.workerId) {
-      try {
-        const worker = await workerRepository.getById(record.workerId)
-        const db = await getDB()
-        const treasuryTx = {
-          id: generateId(),
-          type: 'deposit' as const,
-          amount: record.amount,
-          date: record.date,
-          description: `قبض من موظف - ${worker?.name || 'موظف'}`,
-          category: 'قبض موظفين',
-          referenceType: 'worker_receipt',
-          referenceId: record.id,
-          notes: record.notes,
-          createdAt: nowISO(),
-        }
-        await db.add('treasuryTransactions', treasuryTx)
-      } catch (e) {
-        console.error('Failed to create treasury transaction for receipt:', e)
+      const worker = await workerRepository.getById(record.workerId)
+      const treasuryTx = {
+        id: generateId(),
+        type: 'deposit' as const,
+        amount: record.amount,
+        date: record.date,
+        description: `قبض من موظف - ${worker?.name || 'موظف'}`,
+        category: 'قبض موظفين',
+        referenceType: 'worker_receipt',
+        referenceId: record.id,
+        notes: record.notes,
+        createdAt: nowISO(),
       }
+      await tx.objectStore('treasuryTransactions').add(treasuryTx)
     }
 
+    await tx.done
     return record
   }
 

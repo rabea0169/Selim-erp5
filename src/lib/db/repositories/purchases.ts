@@ -1,6 +1,5 @@
 import { BaseRepository } from './base'
 import { getDB, generateId, nowISO } from '../connection'
-import { materialRepository } from './warehouses'
 import type { Purchase, PurchaseItem } from '../types'
 
 class PurchaseRepository extends BaseRepository<Purchase> {
@@ -80,7 +79,7 @@ class PurchaseRepository extends BaseRepository<Purchase> {
     }>
   }): Promise<Purchase> {
     const db = await this.getDB()
-    const tx = db.transaction(['purchases', 'purchaseItems', 'treasuryTransactions'], 'readwrite')
+    const tx = db.transaction(['purchases', 'purchaseItems', 'treasuryTransactions', 'materials', 'materialTransactions'], 'readwrite')
 
     // حساب الإجمالي الفرعي
     const subtotal = data.items.reduce((s, it) => s + it.quantity * it.unitPrice, 0)
@@ -164,25 +163,48 @@ class PurchaseRepository extends BaseRepository<Purchase> {
       await tx.objectStore('treasuryTransactions').add(treasuryTx)
     }
 
-    await tx.done
-
-    // إضافة الكميات للمواد الخام المرتبطة (خارج المعاملة لتجنب تعارض object stores)
+    // إضافة الكميات للمواد الخام المرتبطة داخل نفس المعاملة
     for (const it of data.items) {
       if (it.materialId) {
         try {
-          await materialRepository.addStock(
-            it.materialId,
-            it.quantity,
-            it.unitPrice,
-            `شراء - ${data.supplierName}${data.invoiceNo ? ` (فاتورة ${data.invoiceNo})` : ''}`,
-            `من فاتورة مشتريات ${purchaseId}`
-          )
+          const material = await tx.objectStore('materials').get(it.materialId)
+          if (material) {
+            const totalOldValue = material.quantity * material.unitCost
+            const totalNewValue = it.quantity * it.unitPrice
+            const newQuantity = material.quantity + it.quantity
+            const newUnitCost = newQuantity > 0 ? (totalOldValue + totalNewValue) / newQuantity : it.unitPrice
+
+            await tx.objectStore('materials').put({
+              ...material,
+              quantity: newQuantity,
+              unitCost: newUnitCost,
+              updatedAt: now,
+            })
+
+            const matTx = {
+              id: generateId(),
+              materialId: it.materialId,
+              warehouseId: material.warehouseId,
+              type: 'in' as const,
+              quantity: it.quantity,
+              unitCost: it.unitPrice,
+              date: now,
+              reason: `شراء - ${data.supplierName}${data.invoiceNo ? ` (فاتورة ${data.invoiceNo})` : ''}`,
+              referenceType: 'purchase',
+              referenceId: purchaseId,
+              notes: `من فاتورة مشتريات ${purchaseId}`,
+              createdAt: now,
+            }
+            await tx.objectStore('materialTransactions').add(matTx)
+          }
         } catch (e) {
           // لو المادة محذوفة - تجاهل
           console.warn('Could not add stock to material', it.materialId, e)
         }
       }
     }
+
+    await tx.done
 
     return { ...purchase, items }
   }
