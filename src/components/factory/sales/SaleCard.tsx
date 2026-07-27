@@ -1,21 +1,25 @@
 'use client'
 
 import { useState } from 'react'
-import { Trash2, Calendar } from 'lucide-react'
+import { Trash2, Calendar, HandCoins } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { formatCurrency, formatDate } from '@/lib/format'
 import { PrintButton } from '../PrintButton'
 import type { Sale } from '@/lib/db'
 import { buildSalePrintHtml } from './SalePrintHelpers'
+import { CustomerPaymentDialog } from './CustomerPaymentDialog'
 
 interface SaleCardProps {
   sale: Sale
   onDelete: (id: string) => void
+  onPay?: (sale: Sale) => void
 }
 
-export function SaleCard({ sale, onDelete }: SaleCardProps) {
+export function SaleCard({ sale, onDelete, onPay }: SaleCardProps) {
   const [expanded, setExpanded] = useState(false)
   const [printHtml, setPrintHtml] = useState('')
+  const [paymentOpen, setPaymentOpen] = useState(false)
   const remaining = sale.total - sale.paid
 
   const handlePrintClick = async () => {
@@ -29,23 +33,35 @@ export function SaleCard({ sale, onDelete }: SaleCardProps) {
         onClick={() => setExpanded(!expanded)}
         className="w-full p-3 flex items-center justify-between text-right"
       >
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="font-bold text-slate-800">{sale.customerName}</span>
-            {sale.invoiceNo && (
-              <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">
-                #{sale.invoiceNo}
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-2 text-[11px] text-slate-500">
-            <Calendar className="w-3 h-3" />
-            {formatDate(sale.date)}
+        <div className="flex items-center gap-2">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="font-bold text-slate-800">{sale.customerName}</span>
+              {sale.invoiceNo && (
+                <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">
+                  #{sale.invoiceNo}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2 text-[11px] text-slate-500">
+              <Calendar className="w-3 h-3" />
+              {formatDate(sale.date)}
+            </div>
           </div>
         </div>
-        <div className="text-left">
-          <p className="text-sm font-bold text-emerald-700">{formatCurrency(sale.total)}</p>
-          <p className="text-[10px] text-slate-500">{sale.items.length} صنف</p>
+        <div className="text-left flex items-center gap-2">
+          {remaining > 0 && !expanded && (
+            <Badge
+              variant="outline"
+              className="bg-amber-50 text-amber-700 border-amber-200 text-[10px]"
+            >
+              متبقي {formatCurrency(remaining)}
+            </Badge>
+          )}
+          <div>
+            <p className="text-sm font-bold text-emerald-700">{formatCurrency(sale.total)}</p>
+            <p className="text-[10px] text-slate-500">{sale.items.length} صنف</p>
+          </div>
         </div>
       </button>
 
@@ -78,6 +94,18 @@ export function SaleCard({ sale, onDelete }: SaleCardProps) {
             </div>
           </div>
 
+          {/* زر استلام دفعة */}
+          {remaining > 0 && (
+            <Button
+              size="sm"
+              onClick={() => setPaymentOpen(true)}
+              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white h-9 text-xs"
+            >
+              <HandCoins className="w-4 h-4 ml-1" />
+              استلام دفعة ({formatCurrency(remaining)})
+            </Button>
+          )}
+
           {printHtml ? (
             <PrintButton
               contentHtml={printHtml}
@@ -85,7 +113,7 @@ export function SaleCard({ sale, onDelete }: SaleCardProps) {
               variant="outline"
               size="sm"
               className="w-full border-emerald-300 text-emerald-700 hover:bg-emerald-50"
-              label="🖨️ طباعة الفاتورة"
+              label="طباعة الفاتورة"
             />
           ) : (
             <Button
@@ -94,7 +122,7 @@ export function SaleCard({ sale, onDelete }: SaleCardProps) {
               onClick={handlePrintClick}
               className="w-full border-emerald-300 text-emerald-700 hover:bg-emerald-50"
             >
-              🖨️ تحضير للطباعة
+              تحضير للطباعة
             </Button>
           )}
 
@@ -104,6 +132,13 @@ export function SaleCard({ sale, onDelete }: SaleCardProps) {
           </Button>
         </div>
       )}
+
+      {/* نافذة استلام الدفعة */}
+      <CustomerPaymentDialog
+        open={paymentOpen}
+        onOpenChange={setPaymentOpen}
+        sale={sale}
+      />
     </div>
   )
 }

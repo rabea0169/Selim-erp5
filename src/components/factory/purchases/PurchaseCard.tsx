@@ -1,21 +1,25 @@
 'use client'
 
 import { useState } from 'react'
-import { Trash2, Calendar } from 'lucide-react'
+import { Trash2, Calendar, HandCoins } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { formatCurrency, formatDate } from '@/lib/format'
 import { PrintButton } from '../PrintButton'
 import type { Purchase } from '@/lib/db'
 import { buildPurchasePrintHtml } from './PurchasePrintHelpers'
+import { SupplierPaymentDialog } from './SupplierPaymentDialog'
 
 interface PurchaseCardProps {
   purchase: Purchase
   onDelete: (id: string) => void
+  onPay?: (purchase: Purchase) => void
 }
 
-export function PurchaseCard({ purchase, onDelete }: PurchaseCardProps) {
+export function PurchaseCard({ purchase, onDelete, onPay }: PurchaseCardProps) {
   const [expanded, setExpanded] = useState(false)
   const [printHtml, setPrintHtml] = useState('')
+  const [paymentOpen, setPaymentOpen] = useState(false)
   const remaining = purchase.total - purchase.paid
 
   const handlePrintClick = async () => {
@@ -26,19 +30,31 @@ export function PurchaseCard({ purchase, onDelete }: PurchaseCardProps) {
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
       <button onClick={() => setExpanded(!expanded)} className="w-full p-3 flex items-center justify-between text-right">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="font-bold text-slate-800">{purchase.supplierName}</span>
-            {purchase.invoiceNo && <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">#{purchase.invoiceNo}</span>}
-          </div>
-          <div className="flex items-center gap-2 text-[11px] text-slate-500">
-            <Calendar className="w-3 h-3" />
-            {formatDate(purchase.date)}
+        <div className="flex items-center gap-2">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="font-bold text-slate-800">{purchase.supplierName}</span>
+              {purchase.invoiceNo && <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">#{purchase.invoiceNo}</span>}
+            </div>
+            <div className="flex items-center gap-2 text-[11px] text-slate-500">
+              <Calendar className="w-3 h-3" />
+              {formatDate(purchase.date)}
+            </div>
           </div>
         </div>
-        <div className="text-left">
-          <p className="text-sm font-bold text-amber-700">{formatCurrency(purchase.total)}</p>
-          <p className="text-[10px] text-slate-500">{purchase.items.length} صنف</p>
+        <div className="text-left flex items-center gap-2">
+          {remaining > 0 && !expanded && (
+            <Badge
+              variant="outline"
+              className="bg-rose-50 text-rose-700 border-rose-200 text-[10px]"
+            >
+              متبقي {formatCurrency(remaining)}
+            </Badge>
+          )}
+          <div>
+            <p className="text-sm font-bold text-amber-700">{formatCurrency(purchase.total)}</p>
+            <p className="text-[10px] text-slate-500">{purchase.items.length} صنف</p>
+          </div>
         </div>
       </button>
 
@@ -60,6 +76,19 @@ export function PurchaseCard({ purchase, onDelete }: PurchaseCardProps) {
             <div className="bg-blue-50 rounded-lg p-2 text-center"><p className="text-[10px] text-blue-700">المدفوع</p><p className="font-bold text-blue-900">{formatCurrency(purchase.paid)}</p></div>
             <div className="bg-rose-50 rounded-lg p-2 text-center"><p className="text-[10px] text-rose-700">المتبقي</p><p className="font-bold text-rose-900">{formatCurrency(remaining)}</p></div>
           </div>
+
+          {/* زر دفع للمورد */}
+          {remaining > 0 && (
+            <Button
+              size="sm"
+              onClick={() => setPaymentOpen(true)}
+              className="w-full bg-amber-600 hover:bg-amber-700 text-white h-9 text-xs"
+            >
+              <HandCoins className="w-4 h-4 ml-1" />
+              دفع للمورد ({formatCurrency(remaining)})
+            </Button>
+          )}
+
           {printHtml ? (
             <PrintButton
               contentHtml={printHtml}
@@ -67,7 +96,7 @@ export function PurchaseCard({ purchase, onDelete }: PurchaseCardProps) {
               variant="outline"
               size="sm"
               className="w-full border-amber-300 text-amber-700 hover:bg-amber-50"
-              label="🖨️ طباعة الفاتورة"
+              label="طباعة الفاتورة"
             />
           ) : (
             <Button
@@ -76,7 +105,7 @@ export function PurchaseCard({ purchase, onDelete }: PurchaseCardProps) {
               onClick={handlePrintClick}
               className="w-full border-amber-300 text-amber-700 hover:bg-amber-50"
             >
-              🖨️ تحضير للطباعة
+              تحضير للطباعة
             </Button>
           )}
           <Button variant="ghost" size="sm" onClick={() => onDelete(purchase.id)} className="text-rose-600 hover:bg-rose-50 w-full">
@@ -85,6 +114,13 @@ export function PurchaseCard({ purchase, onDelete }: PurchaseCardProps) {
           </Button>
         </div>
       )}
+
+      {/* نافذة دفع للمورد */}
+      <SupplierPaymentDialog
+        open={paymentOpen}
+        onOpenChange={setPaymentOpen}
+        purchase={purchase}
+      />
     </div>
   )
 }

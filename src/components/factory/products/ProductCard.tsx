@@ -6,6 +6,7 @@ import {
   Tag,
   AlertTriangle,
   TrendingUp,
+  Eye,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -16,15 +17,21 @@ interface ProductCardProps {
   product: Product
   onEdit: () => void
   onDelete: () => void
+  onView?: () => void
 }
 
-export function ProductCard({ product: p, onEdit, onDelete }: ProductCardProps) {
+export function ProductCard({ product: p, onEdit, onDelete, onView }: ProductCardProps) {
   const isLowStock = p.reorderLevel && p.quantity <= p.reorderLevel
   const profitRetail = p.retailPrice - p.cost
   const profitRetailPct = p.cost > 0 ? (profitRetail / p.cost) * 100 : 0
 
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-3">
+    <div
+      className={`bg-white rounded-2xl shadow-sm border border-slate-100 p-3 transition-shadow ${
+        onView ? 'cursor-pointer hover:shadow-md' : ''
+      }`}
+      onClick={onView}
+    >
       <div className="flex items-start justify-between mb-2">
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-1">
@@ -50,11 +57,28 @@ export function ProductCard({ product: p, onEdit, onDelete }: ProductCardProps) 
           </div>
         </div>
         <div className="flex gap-1">
+          {onView && (
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7 text-slate-500 hover:text-indigo-600"
+              onClick={(e) => {
+                e.stopPropagation()
+                onView()
+              }}
+              title="عرض التفاصيل"
+            >
+              <Eye className="w-3.5 h-3.5" />
+            </Button>
+          )}
           <Button
             size="icon"
             variant="ghost"
             className="h-7 w-7 text-slate-500 hover:text-indigo-600"
-            onClick={onEdit}
+            onClick={(e) => {
+              e.stopPropagation()
+              onEdit()
+            }}
           >
             <Pencil className="w-3.5 h-3.5" />
           </Button>
@@ -62,7 +86,10 @@ export function ProductCard({ product: p, onEdit, onDelete }: ProductCardProps) 
             size="icon"
             variant="ghost"
             className="h-7 w-7 text-slate-400 hover:text-rose-500"
-            onClick={onDelete}
+            onClick={(e) => {
+              e.stopPropagation()
+              onDelete()
+            }}
           >
             <Trash2 className="w-3.5 h-3.5" />
           </Button>

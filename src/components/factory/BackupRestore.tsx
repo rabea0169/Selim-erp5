@@ -114,18 +114,14 @@ export function BackupRestore({ open, onOpenChange }: { open: boolean; onOpenCha
     }
   }
 
-  // تفعيل/تعطيل المزامنة التلقائية
+  // Sync is manual-only (user-triggered via buttons). No auto-start.
   const handleSyncToggle = (enabled: boolean) => {
     setSyncEnabled(enabled)
     syncService.setEnabled(enabled)
-    if (enabled) {
-      syncService.start()
-    } else {
-      syncService.stop()
-    }
+    // Auto-sync timer removed — sync is now manual-only
     toast({
       title: enabled ? 'تم التفعيل' : 'تم التعطيل',
-      description: enabled ? 'المزامنة التلقائية كل 5 دقائق' : 'المزامنة معطلة',
+      description: enabled ? 'الإعدادات محفوظة (المزامنة يدوية)' : 'المزامنة معطلة',
     })
   }
 
