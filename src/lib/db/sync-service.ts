@@ -10,38 +10,34 @@ class SyncService {
   private intervalId: ReturnType<typeof setInterval> | null = null
   private pendingChanges: Set<string> = new Set()
 
-  // المزامنة مفعّلة افتراضياً
+  // المزامنة معطّلة افتراضياً - تُفعّل يدوياً فقط بعد التأكد من عمل السيرفر
   isEnabled(): boolean {
     const stored = localStorage.getItem(SYNC_ENABLED_KEY)
-    return stored !== 'false' // مفعّل افتراضياً ما لم يتم تعطيله صراحةً
+    // معطّلة افتراضياً - تحتاج تفعيل يدوي من الإعدادات
+    return stored === 'true'
   }
 
   setEnabled(enabled: boolean) {
     localStorage.setItem(SYNC_ENABLED_KEY, String(enabled))
   }
 
-  // بدء المزامنة التلقائية - تعمل افتراضياً بدون تفاعل المستخدم
+  // بدء المزامنة التلقائية - معطّلة افتراضياً
   start() {
     if (typeof window === 'undefined') return
     if (!this.isEnabled()) return
 
-    // مزامنة فورية بعد 5 ثواني
+    // مزامنة فورية بعد 10 ثواني
     setTimeout(() => {
       Promise.resolve().then(() => this.sync())
-    }, 5000)
+    }, 10000)
 
-    // مزامنة كل دقيقتين (أكثر تكراراً)
+    // مزامنة كل 5 دقائق
     this.intervalId = setInterval(() => {
       Promise.resolve().then(() => this.sync())
-    }, 2 * 60 * 1000)
+    }, 5 * 60 * 1000)
 
     // مزامنة عند العودة online
     window.addEventListener('online', () => {
-      Promise.resolve().then(() => this.sync())
-    })
-
-    // مزامنة عند focus على التطبيق
-    window.addEventListener('focus', () => {
       Promise.resolve().then(() => this.sync())
     })
   }
