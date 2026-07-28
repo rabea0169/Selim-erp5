@@ -157,7 +157,7 @@ class AutoBackupService {
       const keys = await cache.keys()
       if (keys.length === 0) return null
 
-      const sortedKeys = keys.sort((a, b) => {
+      const sortedKeys = [...keys].sort((a, b) => {
         const timeA = Number(a.url.split('auto-backup-')[1] || 0)
         const timeB = Number(b.url.split('auto-backup-')[1] || 0)
         return timeB - timeA
@@ -191,7 +191,7 @@ class AutoBackupService {
       if (keys.length <= 7) return
 
       // ترتيب من الأقدم للأحدث
-      const sorted = keys.sort((a, b) => {
+      const sorted = [...keys].sort((a, b) => {
         const timeA = Number(a.url.split('auto-backup-')[1] || 0)
         const timeB = Number(b.url.split('auto-backup-')[1] || 0)
         return timeA - timeB

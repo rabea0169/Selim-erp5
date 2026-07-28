@@ -73,7 +73,8 @@ async function fetchWorkers(search: string): Promise<WorkerWithStats[]> {
 export function WorkersView() {
   const [search, setSearch] = useState('')
   const [open, setOpen] = useState(false)
-  const [subView, setSubView] = useState<SubView>('list')
+  const [subView, setSubView] = useState<'list' | 'attendance' | 'production'>('list')
+  const currentView = subView as string
   const { toast } = useToast()
 
   // تحميل الموظفين مع التحديث الفوري عند تغير السلف/القبض/الإنتاج
@@ -87,12 +88,13 @@ export function WorkersView() {
     reload()
   }, [search, reload])
 
-  if (subView === 'attendance') {
+  if (currentView === 'attendance') {
     return <AttendanceView onBack={() => setSubView('list')} />
   }
-  if (subView === 'production') {
+  if (currentView === 'production') {
     return <ProductionView onBack={() => setSubView('list')} />
   }
+
 
   const workersList = workers || []
   const totalAdvances = workersList.reduce((s, w) => s + w.totalAdvances, 0)
@@ -130,7 +132,7 @@ export function WorkersView() {
         <button
           onClick={() => setSubView('attendance')}
           className={`p-2.5 rounded-xl border text-xs font-bold transition-colors ${
-            subView === 'attendance'
+            currentView === 'attendance'
               ? 'bg-purple-600 text-white border-purple-600'
               : 'bg-white text-slate-600 border-slate-200'
           }`}
@@ -141,7 +143,7 @@ export function WorkersView() {
         <button
           onClick={() => setSubView('production')}
           className={`p-2.5 rounded-xl border text-xs font-bold transition-colors ${
-            subView === 'production'
+            currentView === 'production'
               ? 'bg-purple-600 text-white border-purple-600'
               : 'bg-white text-slate-600 border-slate-200'
           }`}

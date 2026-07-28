@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Trash2,
   Phone,
@@ -185,7 +185,7 @@ interface QuickPaymentDialogProps {
 
 function QuickPaymentDialog({ open, onOpenChange, supplierId, supplierName, maxAmount }: QuickPaymentDialogProps) {
   const [amount, setAmount] = useState('')
-  const [method, setMethod] = useState('cash')
+  const [method, setMethod] = useState<'cash' | 'transfer' | 'card'>('cash')
   const [date, setDate] = useState(todayStr())
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
@@ -258,7 +258,7 @@ function QuickPaymentDialog({ open, onOpenChange, supplierId, supplierName, maxA
           <div className="grid grid-cols-2 gap-2">
             <div>
               <Label className="text-xs">طريقة الدفع</Label>
-              <Select value={method} onValueChange={setMethod}>
+              <Select value={method} onValueChange={(v) => setMethod(v as 'cash' | 'transfer' | 'card')}>
                 <SelectTrigger className="bg-slate-50"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="cash">كاش</SelectItem>

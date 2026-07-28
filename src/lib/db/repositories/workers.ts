@@ -65,7 +65,7 @@ class WorkerRepository extends BaseRepository<Worker> {
     for (const w of workers) {
       const stats = await this.getWithStats(w.id)
       if (stats) {
-        result.push({ ...w, ...stats, worker: undefined })
+        result.push({ ...w, ...stats })
       }
     }
     return result
