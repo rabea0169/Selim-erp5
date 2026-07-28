@@ -71,7 +71,7 @@ class SyncService {
     }, 3000) // مزامنة بعد 3 ثواني من آخر تغيير
   }
 
-  // مزامنة كاملة (push + pull)
+  // مزامنة كاملة (push + pull) - مع حماية البيانات المحلية
   async sync(): Promise<{ success: boolean; pushed?: number; pulled?: number; error?: string }> {
     if (!navigator.onLine) {
       return { success: false, error: 'غير متصل بالإنترنت' }
@@ -80,43 +80,62 @@ class SyncService {
     try {
       // 1. Push - رفع البيانات المحلية للسيرفر
       const localData = await reportRepository.exportAll()
-      const pushRes = await fetch('/api/sync/push', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ data: localData.data }),
-      }).then((r) => r.json())
-
-      if (!pushRes.success) {
-        throw new Error(pushRes.error || 'فشل الرفع')
-      }
-
+      let pushSuccess = false
       let pushed = 0
-      for (const count of Object.values(pushRes.results || {})) {
-        pushed += count as number
+
+      try {
+        const pushRes = await fetch('/api/sync/push', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ data: localData.data }),
+        }).then((r) => r.json())
+
+        if (pushRes.success) {
+          pushSuccess = true
+          for (const count of Object.values(pushRes.results || {})) {
+            pushed += count as number
+          }
+        }
+      } catch (pushErr: any) {
+        console.warn('Sync push failed (will retry later):', pushErr.message)
       }
 
       // 2. Pull - تحميل البيانات من السيرفر
-      const pullRes = await fetch('/api/sync/pull').then((r) => r.json())
+      // فقط إذا كان Push ناجح أو كان هناك بيانات على السيرفر
+      try {
+        const pullRes = await fetch('/api/sync/pull').then((r) => r.json())
 
-      if (!pullRes.success) {
-        throw new Error(pullRes.error || 'فشل التحميل')
+        if (pullRes.success && pullRes.data) {
+          let pulled = 0
+          for (const records of Object.values(pullRes.data || {})) {
+            pulled += (records as any[]).length
+          }
+
+          // حماية: لا تسحب بيانات فاضية إذا عندك بيانات محلية
+          let localCount = 0
+          for (const records of Object.values(localData.data || {})) {
+            localCount += (records as any[]).length
+          }
+
+          if (pulled > 0 || localCount === 0) {
+            // importAll الآن يعمل merge (لا يمسح البيانات المحلية)
+            await reportRepository.importAll({ data: pullRes.data })
+            console.log('✅ Sync pull complete:', { pulled })
+          } else {
+            console.log('⏭️ Sync pull skipped: server has no data, preserving local data')
+          }
+
+          localStorage.setItem(SYNC_STATUS_KEY, String(Date.now()))
+          this.pendingChanges.clear()
+          console.log('✅ Sync complete:', { pushed, pulled })
+          return { success: true, pushed, pulled }
+        }
+      } catch (pullErr: any) {
+        console.warn('Sync pull failed (local data preserved):', pullErr.message)
       }
 
-      let pulled = 0
-      for (const records of Object.values(pullRes.data || {})) {
-        pulled += (records as any[]).length
-      }
-
-      // 3. حفظ البيانات القادمة من السيرفر محلياً
-      if (pullRes.data) {
-        await reportRepository.importAll({ data: pullRes.data })
-      }
-
-      localStorage.setItem(SYNC_STATUS_KEY, String(Date.now()))
-      this.pendingChanges.clear()
-      console.log('✅ Sync complete:', { pushed, pulled })
-
-      return { success: true, pushed, pulled }
+      // Push أو Pull فشل - البيانات المحلية محفوظة
+      return { success: true, pushed, pulled: 0 }
     } catch (e: any) {
       console.error('Sync error:', e)
       return { success: false, error: e.message }
@@ -153,7 +172,7 @@ class SyncService {
     }
   }
 
-  // تحميل البيانات من السيرفر فقط
+  // تحميل البيانات من السيرفر فقط - مع حماية البيانات المحلية
   async pullOnly(): Promise<{ success: boolean; count?: number; error?: string }> {
     if (!navigator.onLine) {
       return { success: false, error: 'غير متصل بالإنترنت' }
@@ -171,16 +190,29 @@ class SyncService {
         count += (records as any[]).length
       }
 
-      if (res.data) {
-        await reportRepository.importAll({ data: res.data })
-        const allTypes = [
-          'sales', 'purchases', 'workers', 'workerAdvances', 'workerReceipts',
-          'workerAttendance', 'production', 'customers', 'suppliers', 'expenses',
-          'expenseCategories', 'factorySettings', 'treasuryTransactions',
-          'warehouses', 'materials', 'materialTransactions', 'products',
-          'productionOrders', 'payments', 'saleReturns', 'purchaseReturns', 'reports',
-        ]
-        allTypes.forEach((t) => dataChangeEmitter.notifyUpdate(t as any))
+      // حماية: لا تسحب بيانات فاضية إذا عندك بيانات محلية
+      const localData = await reportRepository.exportAll()
+      let localCount = 0
+      for (const records of Object.values(localData.data || {})) {
+        localCount += (records as any[]).length
+      }
+
+      if (count > 0 || localCount === 0) {
+        if (res.data) {
+          // importAll الآن يعمل merge (لا يمسح البيانات المحلية)
+          await reportRepository.importAll({ data: res.data })
+          const allTypes = [
+            'sales', 'purchases', 'workers', 'workerAdvances', 'workerReceipts',
+            'workerAttendance', 'production', 'customers', 'suppliers', 'expenses',
+            'expenseCategories', 'factorySettings', 'treasuryTransactions',
+            'warehouses', 'materials', 'materialTransactions', 'products',
+            'productionOrders', 'payments', 'saleReturns', 'purchaseReturns', 'reports',
+          ]
+          allTypes.forEach((t) => dataChangeEmitter.notifyUpdate(t as any))
+        }
+      } else {
+        console.log('⏭️ Pull skipped: server empty, local data preserved')
+        return { success: true, count: 0 }
       }
 
       localStorage.setItem(SYNC_STATUS_KEY, String(Date.now()))

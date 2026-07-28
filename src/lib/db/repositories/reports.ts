@@ -166,7 +166,7 @@ class ReportRepository {
     }
   }
 
-  // استرجاع النسخة الاحتياطية
+  // استرجاع النسخة الاحتياطية (merge بدل استبدال - لا يمسح البيانات المحلية)
   async importAll(backupData: any): Promise<{ success: boolean; counts: any }> {
     if (!backupData?.data) {
       throw new Error('بيانات النسخة الاحتياطية غير صحيحة')
@@ -188,16 +188,16 @@ class ReportRepository {
 
     const tx = db.transaction(tables, 'readwrite')
 
-    // حذف كل البيانات الحالية
-    for (const table of tables) {
-      await tx.objectStore(table).clear()
-    }
-
-    // إدراج البيانات الجديدة
+    // merge: إدراج/تحديث كل سجل بدون مسح البيانات المحلية
+    // البيانات القادمة من السيرفر لا تمسح البيانات المحلية الموجودة
+    let totalImported = 0
     for (const table of tables) {
       const records = data[table] || []
       for (const record of records) {
-        await tx.objectStore(table).put(record)
+        if (record && record.id) {
+          await tx.objectStore(table).put(record)
+          totalImported++
+        }
       }
     }
 
@@ -212,6 +212,7 @@ class ReportRepository {
         sales: data.sales?.length || 0,
         purchases: data.purchases?.length || 0,
         expenses: data.expenses?.length || 0,
+        totalImported,
       },
     }
   }
