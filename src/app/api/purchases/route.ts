@@ -72,13 +72,6 @@ export async function POST(req: NextRequest) {
     }
 
     // ===== التحقق من ربط الأصناف بالم مواد الخام =====
-    const itemsWithoutMaterial = items.filter((it: any) => !it.materialId)
-    if (itemsWithoutMaterial.length > 0) {
-      return NextResponse.json(
-        { error: `يوجد ${itemsWithoutMaterial.length} أصناف غير مربوطة بمادة خام. يجب اختيار المادة من القائمة لضمان تحديث المخزون بشكل صحيح. الصنف: ${itemsWithoutMaterial[0].itemName || 'بدون اسم'}` },
-        { status: 400 }
-      )
-    }
 
     const validItems = items.filter(
       (it: any) => it.itemName?.trim() && Number(it.quantity) > 0 && Number(it.unitPrice) >= 0

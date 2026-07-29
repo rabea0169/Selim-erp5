@@ -74,13 +74,6 @@ export async function POST(req: NextRequest) {
     }
 
     // ===== التحقق من ربط الأصناف بالمنتجات =====
-    const itemsWithoutProduct = items.filter((it: any) => !it.productId)
-    if (itemsWithoutProduct.length > 0) {
-      return NextResponse.json(
-        { error: `يوجد ${itemsWithoutProduct.length} أصناف غير مربوطة بمنتج. يجب اختيار المنتج من القائمة لضمان تحديث المخزون بشكل صحيح. الصنف: ${itemsWithoutProduct[0].itemName || 'بدون اسم'}` },
-        { status: 400 }
-      )
-    }
 
     // التحقق من صحة كل صنف
     const validItems = items.filter(

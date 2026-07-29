@@ -1,57 +1,52 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { getCurrentUser } from '@/lib/auth'
 
-// GET /api/purchase-returns?purchaseId=&from=&to=&page=1&limit=50
 export async function GET(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: 'غير مصرح' }, { status: 401 })
+
     const { searchParams } = new URL(req.url)
     const purchaseId = searchParams.get('purchaseId')
     const from = searchParams.get('from')
     const to = searchParams.get('to')
     const page = Math.max(1, Number(searchParams.get('page')) || 1)
-    const limit = Math.min(200, Math.max(1, Number(searchParams.get('limit')) || 50))
+    const limit = Math.min(100, Math.max(1, Number(searchParams.get('limit')) || 50))
 
     const where: any = {}
     if (purchaseId) where.purchaseId = purchaseId
     if (from || to) {
       where.date = {}
       if (from) where.date.gte = new Date(from)
-      if (to) {
-        const d = new Date(to)
-        d.setHours(23, 59, 59, 999)
-        where.date.lte = d
-      }
+      if (to) { const d = new Date(to); d.setHours(23, 59, 59, 999); where.date.lte = d }
     }
 
     const [returns, total] = await Promise.all([
-      db.purchaseReturn.findMany({
-        where,
-        include: { purchase: true },
-        orderBy: { date: 'desc' },
-        skip: (page - 1) * limit,
-        take: limit,
-      }),
+      db.purchaseReturn.findMany({ where, orderBy: { date: 'desc' }, skip: (page - 1) * limit, take: limit }),
       db.purchaseReturn.count({ where }),
     ])
 
-    return NextResponse.json({
-      returns,
-      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
-    })
+    return NextResponse.json({ returns, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } })
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })
   }
 }
 
-// POST /api/purchase-returns
 export async function POST(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: 'غير مصرح' }, { status: 401 })
+
     const body = await req.json()
     const { purchaseId, invoiceNo, supplierName, supplierId_ref, date, total, reason, restockItems, items, notes } = body
 
     if (!purchaseId || !supplierName || !date) {
       return NextResponse.json({ error: 'بيانات مطلوبة ناقصة' }, { status: 400 })
     }
+
+    const purchase = await db.purchase.findFirst({ where: { id: purchaseId } })
+    if (!purchase) return NextResponse.json({ error: 'فاتورة الشراء غير موجودة' }, { status: 404 })
 
     const purchaseReturn = await db.$transaction(async (tx) => {
       const ret = await tx.purchaseReturn.create({
@@ -67,22 +62,22 @@ export async function POST(req: NextRequest) {
           items: items || [],
           notes: notes?.trim() || null,
         },
-        include: { purchase: true },
       })
 
-      // Decrement material quantities (reverse the purchase addition)
       if (restockItems !== false && Array.isArray(items)) {
         for (const it of items) {
           if (it.materialId) {
-            await tx.material.update({
-              where: { id: it.materialId },
-              data: { quantity: { decrement: Number(it.quantity) || 0 } },
-            })
+            const mat = await tx.material.findFirst({ where: { id: it.materialId } })
+            if (mat) {
+              await tx.material.update({
+                where: { id: mat.id },
+                data: { quantity: { decrement: Math.max(0, Number(it.quantity) || 0) } },
+              })
+            }
           }
         }
       }
 
-      // Treasury transaction (deposit - money coming back from supplier)
       if (ret.total > 0) {
         await tx.treasuryTransaction.create({
           data: {

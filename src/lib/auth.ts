@@ -31,6 +31,7 @@ export async function getCurrentUser(): Promise<{
   username: string
   name: string
   role: string
+
 } | null> {
   const cookieStore = await cookies()
   const token = cookieStore.get(SESSION_COOKIE)?.value
