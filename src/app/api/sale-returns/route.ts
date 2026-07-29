@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: 'غير مصرح' }, { status: 401 })
 
     const body = await req.json()
-    const { saleId, date, total, reason, notes, items } = body
+    const { saleId, date, total, reason, notes, items, returnNumber, customerName } = body
 
     if (!saleId || !date || !total) {
       return NextResponse.json({ error: 'بيانات المرتجع غير مكتملة' }, { status: 400 })
@@ -47,11 +47,23 @@ export async function POST(req: NextRequest) {
     const sale = await db.sale.findFirst({ where: { id: saleId }, include: { items: true } })
     if (!sale) return NextResponse.json({ error: 'الفاتورة غير موجودة' }, { status: 404 })
 
+    // إنشاء رقم المرتجع
+    const retNum = returnNumber || `RET-${Date.now()}`
+    const cName = customerName || sale.customerName || ''
+
     const ret = await db.$transaction(async (tx) => {
       const saleReturn = await tx.saleReturn.create({
         data: {
-          saleId, date: new Date(date), total: Number(total),
-          reason: reason?.trim() || null, notes: notes?.trim() || null,
+          returnNumber: retNum,
+          saleId,
+          invoiceNo: sale.invoiceNo,
+          customerName: cName,
+          customerId_ref: sale.customerId_ref,
+          date: new Date(date),
+          total: Number(total),
+          items: Array.isArray(items) ? items : [],
+          reason: reason?.trim() || null,
+          notes: notes?.trim() || null,
         },
       })
 
