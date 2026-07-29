@@ -47,6 +47,9 @@ interface FactoryDBSchema extends DBSchema {
 
 let dbInstance: IDBPDatabase<FactoryDBSchema> | null = null
 
+// حفظ عدد السجلات الأخير للكشف عن فقدان البيانات
+const LAST_KNOWN_COUNT_KEY = 'db_last_known_count'
+
 export async function getDB(): Promise<IDBPDatabase<FactoryDBSchema>> {
   // لو الاتصال الحالي مغلق أو معطّل، أنشئ اتصال جديد
   if (dbInstance) {
@@ -195,8 +198,24 @@ export async function getDB(): Promise<IDBPDatabase<FactoryDBSchema>> {
     blocked(currentVersion, requestedVersion, event) {
       // لو حدث تعارض في إصدار DB، لا تحظر - اسمح بالتحديث
       console.warn(`[DB] Version blocked: ${currentVersion} < ${requestedVersion}, allowing upgrade`)
-      // عدم منع الترقية
     },
+    terminated() {
+      // قاعدة البيانات اتقفلت بشكل غير متوقع (مثلاً تخزين المتصفح اتمسح)
+      console.error('[DB] ⚠️ Database connection terminated unexpectedly!')
+      dbInstance = null
+    },
+  })
+
+  // استمع لأحداث إغلاق قاعدة البيانات لاكتشاف المشاكل
+  dbInstance.addEventListener('versionchange', (event) => {
+    console.warn(`[DB] ⚠️ versionchange event: old=${event.oldVersion} new=${event.newVersion} — closing current connection`)
+    dbInstance?.close()
+    dbInstance = null
+  })
+
+  dbInstance.addEventListener('close', () => {
+    console.warn('[DB] ⚠️ Database connection closed by browser/system')
+    dbInstance = null
   })
 
   // تحقق سريع أن قاعدة البيانات تعمل
@@ -238,5 +257,27 @@ export async function getDBStats(): Promise<Record<string, number>> {
       stats[name] = -1
     }
   }
+
+  // حفظ العدد في localStorage للكشف عن فقدان البيانات عند التحميل التالي
+  const totalRecords = Object.values(stats).reduce((a: number, b: number) => a + Math.max(0, b), 0)
+  if (totalRecords > 0) {
+    try {
+      localStorage.setItem(LAST_KNOWN_COUNT_KEY, String(totalRecords))
+    } catch {}
+  }
+
   return stats
+}
+
+// فحص سلامة البيانات — يُستدعى عند تحميل التطبيق
+export async function checkDataIntegrity(): Promise<{ ok: boolean; currentCount: number; lastKnownCount: number; lost: boolean }> {
+  const stats = await getDBStats()
+  const currentCount = Object.values(stats).reduce((a: number, b: number) => a + Math.max(0, b), 0)
+  const lastKnownStr = localStorage.getItem(LAST_KNOWN_COUNT_KEY)
+  const lastKnownCount = lastKnownStr ? Number(lastKnownStr) : 0
+  const lost = lastKnownCount > 0 && currentCount < lastKnownCount && currentCount < 5
+  if (lost) {
+    console.error(`[DB] ⚠️ DATA LOSS DETECTED! Previous: ${lastKnownCount} records, Current: ${currentCount} records`)
+  }
+  return { ok: !lost, currentCount, lastKnownCount, lost }
 }

@@ -13,7 +13,7 @@ export interface SessionUser {
 }
 
 // التحقق من السيرفر أولاً ثم IndexedDB
-async function checkServerUser(username: string, password: string): Promise<SessionUser | null> {
+async function checkServerUser(username: string, password: string): Promise<{ user: SessionUser | null; serverReachable: boolean }> {
   try {
     const res = await fetch('/api/auth/login', {
       method: 'POST',
@@ -21,12 +21,10 @@ async function checkServerUser(username: string, password: string): Promise<Sess
       body: JSON.stringify({ username, password }),
     }).then((r) => r.json())
 
-    if (res.user) {
-      return res.user
-    }
-    return null
+    // لو حصلنا على رد من السيرفر، يبقى السيرفر شغال
+    return { user: res.user || null, serverReachable: true }
   } catch {
-    return null // لو السيرفر مش متاح، نكمل محلياً
+    return { user: null, serverReachable: false } // لو السيرفر مش متاح
   }
 }
 
@@ -43,17 +41,32 @@ async function checkServerHasUsers(): Promise<boolean> {
 export async function login(username: string, password: string): Promise<{ success: boolean; error?: string; user?: SessionUser }> {
   try {
     // 1. محاولة تسجيل الدخول من السيرفر أولاً
-    const serverUser = await checkServerUser(username, password)
+    const { user: serverUser, serverReachable } = await checkServerUser(username, password)
     if (serverUser) {
       localStorage.setItem(SESSION_KEY, JSON.stringify(serverUser))
-      // مزامنة بيانات المستخدم محلياً
+      // مزامنة المستخدم محلياً لضمان العمل offline بعد ذلك
+      try {
+        const existingLocal = await userRepository.getByUsername(username)
+        if (!existingLocal) {
+          await userRepository.createWithPassword({ username, password, name: serverUser.name })
+          console.log('[Auth] Server login OK — user synced to local IndexedDB')
+        }
+      } catch (localErr: any) {
+        console.warn('[Auth] Server login OK but local sync failed:', localErr.message)
+      }
       return { success: true, user: serverUser }
     }
 
-    // 2. لو السيرفر رفض أو مش متاح، نحاول محلياً
+    // 2. لو السيرفر رفض (بيانات خاطئة) أو مش متاح، نحاول محلياً
     const user = await userRepository.verifyPassword(username, password)
     if (!user) {
-      return { success: false, error: 'اسم المستخدم أو كلمة المرور غير صحيحة' }
+      // لو السيرفر كان متاح ورفض، يبقى البيانات فعلاً غلط
+      if (serverReachable) {
+        return { success: false, error: 'اسم المستخدم أو كلمة المرور غير صحيحة' }
+      }
+      // لو السيرفر مش متاح والمحلي فاضی، ممكن يكون حدث مسح للبيانات المحلية
+      console.warn('[Auth] Both server and local login failed. Server was unreachable and local user not found.')
+      return { success: false, error: 'لا يمكن تسجيل الدخول حالياً. تأكد من اتصالك بالإنترنت أو أنشئ حساباً جديداً.' }
     }
 
     const sessionUser: SessionUser = {
@@ -83,6 +96,7 @@ export async function register(username: string, password: string, name: string)
     }
 
     // 1. محاولة التسجيل على السيرفر أولاً
+    let serverReachable = false
     try {
       const res = await fetch('/api/auth/register', {
         method: 'POST',
@@ -90,7 +104,19 @@ export async function register(username: string, password: string, name: string)
         body: JSON.stringify({ username, password, name }),
       }).then((r) => r.json())
 
+      serverReachable = true
+
       if (res.error) {
+        // لو السيرفر says المستخدم موجود، ممكن يكون هو نفسه المستخدم اللي بيفقد بياناته المحلية
+        // في حالة التسجيل بنفس البيانات، محاولة تسجيل الدخول بدلاً من ذلك
+        if (res.error.includes('موجود بالفعل')) {
+          console.log('[Auth] User already exists on server, attempting login instead of register')
+          const loginResult = await login(username, password)
+          if (loginResult.success) {
+            return loginResult
+          }
+          return { success: false, error: 'اسم المستخدم موجود بالفعل على السيرفر. حاول تسجيل الدخول.' }
+        }
         return { success: false, error: res.error }
       }
 
@@ -98,7 +124,11 @@ export async function register(username: string, password: string, name: string)
         const sessionUser: SessionUser = res.user
         localStorage.setItem(SESSION_KEY, JSON.stringify(sessionUser))
         // إنشاء المستخدم محلياً أيضاً للعمل offline
-        await userRepository.createWithPassword({ username, password, name })
+        try {
+          await userRepository.createWithPassword({ username, password, name })
+        } catch (localErr: any) {
+          console.warn('[Auth] Server register OK but local sync failed:', localErr.message)
+        }
         return { success: true, user: sessionUser }
       }
     } catch {
@@ -136,8 +166,15 @@ export function getCurrentUser(): SessionUser | null {
   }
 }
 
-export function logout(): void {
+export async function logout(): Promise<void> {
+  // مسح الجلسة المحلية
   localStorage.removeItem(SESSION_KEY)
+  // محاولة مسح الجلسة من السيرفر أيضاً
+  try {
+    await fetch('/api/auth/logout', { method: 'POST' })
+  } catch {
+    // لو السيرفر مش متاح، مش مشكلة — الجلسة المحلية اتمسحت
+  }
 }
 
 // التحقق من وجود مستخدمين - يفحص السيرفر أولاً

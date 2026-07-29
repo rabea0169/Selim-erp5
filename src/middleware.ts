@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
+import { verifySessionToken } from '@/lib/auth'
 
 // Routes عامة لا تحتاج مصادقة
 const PUBLIC_ROUTES = [
@@ -22,8 +22,9 @@ export async function middleware(req: NextRequest) {
   }
 
   // التحقق من الـ session cookie
-  const sessionId = req.cookies.get('factory_session')?.value
-  if (!sessionId) {
+  const sessionCookie = req.cookies.get('factory_session')?.value
+  const session = verifySessionToken(sessionCookie)
+  if (!session) {
     return NextResponse.json(
       { error: 'غير مصرح — يجب تسجيل الدخول أولاً' },
       { status: 401 }

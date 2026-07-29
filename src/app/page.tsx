@@ -20,7 +20,7 @@ import { FactorySettingsView } from '@/components/factory/FactorySettingsView'
 import { InstallPrompt } from '@/components/factory/InstallPrompt'
 import { Header } from '@/components/factory/Header'
 import { BottomNav, type TabKey } from '@/components/factory/BottomNav'
-import { getCurrentUser, logout, factorySettingsRepository, expenseCategoryRepository, warehouseRepository, autoBackupService, syncService, auditLogRepository, getDBStats, type SessionUser, type FactorySettings } from '@/lib/db'
+import { getCurrentUser, logout, factorySettingsRepository, expenseCategoryRepository, warehouseRepository, autoBackupService, syncService, auditLogRepository, getDBStats, checkDataIntegrity, type SessionUser, type FactorySettings } from '@/lib/db'
 
 export type { TabKey }
 
@@ -42,7 +42,12 @@ export default function Home() {
       setAuthChecked(true)
       if (currentUser) {
         try {
-          // تشخيص: التحقق من قاعدة البيانات عند التحميل
+          // فحص سلامة البيانات
+          const integrity = await checkDataIntegrity()
+          if (integrity.lost) {
+            console.error(`[App] DATA LOSS: had ${integrity.lastKnownCount} records, now ${integrity.currentCount}`)
+          }
+
           const stats = await getDBStats()
           const totalRecords = Object.values(stats).reduce((a: number, b: number) => a + Math.max(0, b), 0)
           console.log(`[App] DB stats on login: ${totalRecords} total records`, stats)
@@ -76,9 +81,9 @@ export default function Home() {
     }
   }, [reloadKey])
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     if (!confirm('هل تريد تسجيل الخروج؟')) return
-    logout()
+    await logout()
     setUser(null)
     setTab('dashboard')
   }
