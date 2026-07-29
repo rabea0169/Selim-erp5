@@ -73,6 +73,15 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    // ===== التحقق من ربط الأصناف بالمنتجات =====
+    const itemsWithoutProduct = items.filter((it: any) => !it.productId)
+    if (itemsWithoutProduct.length > 0) {
+      return NextResponse.json(
+        { error: `يوجد ${itemsWithoutProduct.length} أصناف غير مربوطة بمنتج. يجب اختيار المنتج من القائمة لضمان تحديث المخزون بشكل صحيح. الصنف: ${itemsWithoutProduct[0].itemName || 'بدون اسم'}` },
+        { status: 400 }
+      )
+    }
+
     // التحقق من صحة كل صنف
     const validItems = items.filter(
       (it: any) => it.itemName?.trim() && Number(it.quantity) > 0 && Number(it.unitPrice) >= 0
@@ -82,6 +91,25 @@ export async function POST(req: NextRequest) {
         { error: 'أضف صنفاً صحيحاً واحداً على الأقل' },
         { status: 400 }
       )
+    }
+
+    // التحقق من توفر الكميات في المخزون
+    for (const it of validItems) {
+      if (it.productId) {
+        const product = await db.product.findUnique({ where: { id: it.productId } })
+        if (!product) {
+          return NextResponse.json(
+            { error: `المنتج "${it.itemName}" غير موجود في قاعدة البيانات` },
+            { status: 400 }
+          )
+        }
+        if (product.quantity < it.quantity) {
+          return NextResponse.json(
+            { error: `الكمية المتاحة من ${product.name} (${product.quantity}) أقل من المطلوب (${it.quantity})` },
+            { status: 400 }
+          )
+        }
+      }
     }
 
     // حساب الإجمالي
@@ -118,6 +146,8 @@ export async function POST(req: NextRequest) {
           items: {
             create: validItems.map((it: any) => ({
               itemName: it.itemName.trim(),
+              productId: it.productId || null,
+              priceType: it.priceType || null,
               quantity: Number(it.quantity),
               unitPrice: Number(it.unitPrice),
               total: Number(it.quantity) * Number(it.unitPrice),
@@ -126,6 +156,36 @@ export async function POST(req: NextRequest) {
         },
         include: { items: true },
       })
+
+      // ===== خصم الكميات من مخزون المنتجات =====
+      for (const it of validItems) {
+        if (it.productId) {
+          await tx.product.update({
+            where: { id: it.productId },
+            data: {
+              quantity: { decrement: Number(it.quantity) },
+              updatedAt: new Date(),
+            },
+          })
+        }
+      }
+
+      // ===== إنشاء حركة خزينة (إيداع المبلغ المدفوع) =====
+      if (paidAmount > 0) {
+        await tx.treasuryTransaction.create({
+          data: {
+            type: 'deposit',
+            amount: paidAmount,
+            date: new Date(date),
+            description: `مبيعات - ${customerName.trim()}`,
+            category: 'مبيعات',
+            referenceType: 'sale',
+            referenceId: newSale.id,
+            notes: invoiceNo ? `فاتورة رقم ${invoiceNo.trim()}` : null,
+          },
+        })
+      }
+
       return newSale
     })
 

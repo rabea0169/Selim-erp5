@@ -87,6 +87,7 @@ model Worker {
 model WorkerAdvance {
   id        String   @id @default(cuid())
   workerId  String
+  companyId  String?
   amount    Float
   date      DateTime
   notes     String?
@@ -95,12 +96,14 @@ model WorkerAdvance {
   worker Worker @relation(fields: [workerId], references: [id], onDelete: Cascade)
 
   @@index([workerId])
+  @@index([companyId])
   @@index([date])
 }
 
 model WorkerReceipt {
   id        String   @id @default(cuid())
   workerId  String
+  companyId  String?
   amount    Float
   date      DateTime
   notes     String?
@@ -109,6 +112,7 @@ model WorkerReceipt {
   worker Worker @relation(fields: [workerId], references: [id], onDelete: Cascade)
 
   @@index([workerId])
+  @@index([companyId])
   @@index([date])
 }
 
@@ -464,6 +468,7 @@ model PurchaseReturn {
   date           DateTime
   total          Float
   reason         String?
+  restockItems   Boolean  @default(true)
   items          Json
   notes          String?
   createdAt      DateTime @default(now())

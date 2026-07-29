@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { workerId, amount, date, notes } = body
+    const { workerId, companyId, amount, date, notes } = body
 
     // التحقق من البيانات
     if (!workerId) {
@@ -70,6 +70,7 @@ export async function POST(req: NextRequest) {
     const advance = await db.workerAdvance.create({
       data: {
         workerId,
+        companyId: companyId || null,
         amount: amt,
         date: new Date(date),
         notes: notes?.trim() || null,

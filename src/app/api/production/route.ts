@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { workerId, date, modelName, quantity, unitPrice, notes } = body
+    const { workerId, date, modelName, quantity, unitPrice, productId, addToInventory, notes } = body
 
     // التحقق من البيانات
     if (!workerId) {
@@ -80,18 +80,47 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const production = await db.production.create({
-      data: {
-        workerId,
-        date: new Date(date),
-        modelName: modelName.trim(),
-        quantity: qty,
-        unitPrice: price,
-        total: qty * price,
-        notes: notes?.trim() || null,
-      },
-      include: { worker: true },
+    // ===== ربط إنتاج العمال بالمخزون =====
+    // إذا تم تحديد منتج وطلب إضافته للمخزون
+    let targetProductId = productId || null
+    if (targetProductId) {
+      const product = await db.product.findUnique({ where: { id: targetProductId } })
+      if (!product) {
+        return NextResponse.json(
+          { error: 'المنتج المحدد غير موجود' },
+          { status: 404 }
+        )
+      }
+    }
+
+    const production = await db.$transaction(async (tx) => {
+      const newProduction = await tx.production.create({
+        data: {
+          workerId,
+          date: new Date(date),
+          modelName: modelName.trim(),
+          quantity: qty,
+          unitPrice: price,
+          total: qty * price,
+          notes: notes?.trim() || null,
+        },
+        include: { worker: true },
+      })
+
+      // إضافة الكمية المنتجة لمخزون المنتج (إذا تم تحديد منتج)
+      if (targetProductId && addToInventory !== false) {
+        await tx.product.update({
+          where: { id: targetProductId },
+          data: {
+            quantity: { increment: qty },
+            updatedAt: new Date(),
+          },
+        })
+      }
+
+      return newProduction
     })
+
     return NextResponse.json({ production })
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })

@@ -21,26 +21,45 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     }
     const filter = from || to ? { date: dateRange } : {}
 
-    const purchases = await db.purchase.findMany({
-      where: { supplierId_ref: id, ...filter },
-      include: { items: true },
-      orderBy: { date: 'desc' },
-    })
+    const [purchases, returns, payments] = await Promise.all([
+      db.purchase.findMany({
+        where: { supplierId_ref: id, ...filter },
+        include: { items: true },
+        orderBy: { date: 'desc' },
+      }),
+      db.purchaseReturn.findMany({
+        where: { supplierId_ref: id, ...filter },
+        orderBy: { date: 'desc' },
+      }),
+      db.payment.findMany({
+        where: { partyId: id, type: 'supplier_payment', ...filter },
+        orderBy: { date: 'desc' },
+      }),
+    ])
 
     const totalPurchases = purchases.reduce((s, x) => s + x.total, 0)
+    const totalReturns = returns.reduce((s, x) => s + x.total, 0)
+    const totalPayments = payments.reduce((s, x) => s + x.amount, 0)
     const totalPaid = purchases.reduce((s, x) => s + x.paid, 0)
-    const totalRemaining = totalPurchases - totalPaid
+    // الرصيد المتبقي = إجمالي المشتريات - المدفوع على الفواتير - المدفوعات المستقلة - إجمالي المرتجعات
+    const totalRemaining = totalPurchases - totalPaid - totalPayments - totalReturns
 
     return NextResponse.json({
       supplier,
       range: { from, to },
       summary: {
         purchasesCount: purchases.length,
+        returnsCount: returns.length,
+        paymentsCount: payments.length,
         totalPurchases,
+        totalReturns,
+        totalPayments,
         totalPaid,
-        totalRemaining,
+        totalRemaining: Math.max(0, totalRemaining),
       },
       purchases,
+      returns,
+      payments,
     })
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })

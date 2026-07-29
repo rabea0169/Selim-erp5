@@ -71,6 +71,15 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    // ===== التحقق من ربط الأصناف بالم مواد الخام =====
+    const itemsWithoutMaterial = items.filter((it: any) => !it.materialId)
+    if (itemsWithoutMaterial.length > 0) {
+      return NextResponse.json(
+        { error: `يوجد ${itemsWithoutMaterial.length} أصناف غير مربوطة بمادة خام. يجب اختيار المادة من القائمة لضمان تحديث المخزون بشكل صحيح. الصنف: ${itemsWithoutMaterial[0].itemName || 'بدون اسم'}` },
+        { status: 400 }
+      )
+    }
+
     const validItems = items.filter(
       (it: any) => it.itemName?.trim() && Number(it.quantity) > 0 && Number(it.unitPrice) >= 0
     )
@@ -79,6 +88,19 @@ export async function POST(req: NextRequest) {
         { error: 'أضف صنفاً صحيحاً واحداً على الأقل' },
         { status: 400 }
       )
+    }
+
+    // التحقق من وجود المواد في قاعدة البيانات
+    for (const it of validItems) {
+      if (it.materialId) {
+        const material = await db.material.findUnique({ where: { id: it.materialId } })
+        if (!material) {
+          return NextResponse.json(
+            { error: `المادة "${it.itemName}" غير موجودة في قاعدة البيانات` },
+            { status: 400 }
+          )
+        }
+      }
     }
 
     const total = validItems.reduce(
@@ -113,6 +135,7 @@ export async function POST(req: NextRequest) {
           items: {
             create: validItems.map((it: any) => ({
               itemName: it.itemName.trim(),
+              materialId: it.materialId || null,
               quantity: Number(it.quantity),
               unitPrice: Number(it.unitPrice),
               total: Number(it.quantity) * Number(it.unitPrice),
@@ -121,6 +144,61 @@ export async function POST(req: NextRequest) {
         },
         include: { items: true },
       })
+
+      // ===== إضافة الكميات لمخزون المواد الخام =====
+      for (const it of validItems) {
+        if (it.materialId) {
+          const material = await tx.material.findUnique({ where: { id: it.materialId } })
+          if (material) {
+            // حساب متوسط التكلفة الجديدة
+            const totalOldValue = material.quantity * material.unitCost
+            const totalNewValue = Number(it.quantity) * Number(it.unitPrice)
+            const newQuantity = material.quantity + Number(it.quantity)
+            const newUnitCost = newQuantity > 0 ? (totalOldValue + totalNewValue) / newQuantity : Number(it.unitPrice)
+
+            await tx.material.update({
+              where: { id: it.materialId },
+              data: {
+                quantity: { increment: Number(it.quantity) },
+                unitCost: newUnitCost,
+                updatedAt: new Date(),
+              },
+            })
+
+            // تسجيل حركة إضافة للمخزون
+            await tx.materialTransaction.create({
+              data: {
+                materialId: it.materialId,
+                warehouseId: material.warehouseId,
+                type: 'in',
+                quantity: Number(it.quantity),
+                unitCost: Number(it.unitPrice),
+                date: new Date(date),
+                reason: `شراء - ${supplierName.trim()}${invoiceNo ? ` (فاتورة ${invoiceNo})` : ''}`,
+                referenceType: 'purchase',
+                referenceId: newPurchase.id,
+              },
+            })
+          }
+        }
+      }
+
+      // ===== إنشاء حركة خزينة (سحب المبلغ المدفوع) =====
+      if (paidAmount > 0) {
+        await tx.treasuryTransaction.create({
+          data: {
+            type: 'withdrawal',
+            amount: paidAmount,
+            date: new Date(date),
+            description: `مشتريات - ${supplierName.trim()}`,
+            category: 'مشتريات',
+            referenceType: 'purchase',
+            referenceId: newPurchase.id,
+            notes: invoiceNo ? `فاتورة رقم ${invoiceNo.trim()}` : null,
+          },
+        })
+      }
+
       return newPurchase
     })
 

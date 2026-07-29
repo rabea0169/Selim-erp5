@@ -57,20 +57,68 @@ export async function POST(req: NextRequest) {
     const count = await db.productionOrder.count()
     const orderNumber = `PO-${String(count + 1).padStart(5, '0')}`
 
-    const order = await db.productionOrder.create({
-      data: {
-        orderNumber,
-        productId,
-        productName: productName.trim(),
-        quantity: Number(quantity),
-        unit: unit || product.unit,
-        status: 'draft',
-        materials: materials || [],
-        stages: stages || [],
-        date: new Date(date),
-        expectedEndDate: expectedEndDate ? new Date(expectedEndDate) : null,
-        notes: notes?.trim() || null,
-      },
+    // ===== ربط دورة الإنتاج بالمخزون =====
+    // إذا تم تمرير مواد خام مع أمر التشغيل، يتم سحبها من المخزن مباشرة
+    const parsedMaterials = (materials || []) as Array<{ materialId: string; materialName: string; quantity: number; unit: string }>
+    const hasMaterials = parsedMaterials.length > 0 && parsedMaterials.every((m) => m.materialId)
+    const orderStatus = hasMaterials ? 'in_progress' : 'draft'
+
+    const order = await db.$transaction(async (tx) => {
+      // إنشاء أمر التشغيل أولاً للحصول على المعرف
+      const newOrder = await tx.productionOrder.create({
+        data: {
+          orderNumber,
+          productId,
+          productName: productName.trim(),
+          quantity: Number(quantity),
+          unit: unit || product.unit,
+          status: orderStatus,
+          materials: materials || [],
+          stages: stages || [],
+          date: new Date(date),
+          expectedEndDate: expectedEndDate ? new Date(expectedEndDate) : null,
+          notes: notes?.trim() || null,
+        },
+      })
+
+      // سحب المواد الخام من المخزن عند الإنشاء المباشر (in_progress)
+      if (hasMaterials) {
+        for (const mat of parsedMaterials) {
+          if (!mat.materialId) continue
+
+          const material = await tx.material.findUnique({ where: { id: mat.materialId } })
+          if (!material) {
+            throw new Error(`المادة ${mat.materialName} غير موجودة`)
+          }
+          if (material.quantity < mat.quantity) {
+            throw new Error(`الكمية المتاحة من ${mat.materialName} (${material.quantity}) أقل من المطلوب (${mat.quantity})`)
+          }
+
+          // سحب الكمية من المادة الخام
+          await tx.material.update({
+            where: { id: mat.materialId },
+            data: { quantity: { decrement: mat.quantity }, updatedAt: new Date() },
+          })
+
+          // تسجيل حركة السحب
+          await tx.materialTransaction.create({
+            data: {
+              materialId: mat.materialId,
+              warehouseId: material.warehouseId,
+              type: 'out',
+              quantity: mat.quantity,
+              unitCost: material.unitCost,
+              date: new Date(date),
+              reason: `أمر تشغيل ${orderNumber}`,
+              referenceType: 'production_order',
+              referenceId: newOrder.id,
+              notes: `سحب لإنتاج ${productName.trim()}`,
+            },
+          })
+        }
+      }
+
+      return newOrder
     })
 
     return NextResponse.json({ order })
