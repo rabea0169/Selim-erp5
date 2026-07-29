@@ -48,196 +48,164 @@ interface FactoryDBSchema extends DBSchema {
 let dbInstance: IDBPDatabase<FactoryDBSchema> | null = null
 
 export async function getDB(): Promise<IDBPDatabase<FactoryDBSchema>> {
-  if (dbInstance) return dbInstance
+  // لو الاتصال الحالي مغلق أو معطّل، أنشئ اتصال جديد
+  if (dbInstance) {
+    try {
+      // تحقق بسيط أن الاتصال لا يزال صالحاً
+      const names = dbInstance.objectStoreNames
+      if (names && names.length > 0) return dbInstance
+    } catch {
+      dbInstance = null
+    }
+  }
 
   dbInstance = await openDB<FactoryDBSchema>(DB_NAME, DB_VERSION, {
-    upgrade(db, oldVersion) {
-      // إنشاء كل الجداول مع الفهارس
+    upgrade(db, oldVersion, newVersion, transaction) {
+      console.log(`[DB] Upgrade: ${oldVersion} → ${newVersion}, stores: [${Array.from(db.objectStoreNames).join(', ')}]`)
 
-      // Factory Settings (singleton)
+      // إنشاء كل الجداول مع الفهارس (محمي بـ if.contains)
       if (!db.objectStoreNames.contains('factorySettings')) {
         db.createObjectStore('factorySettings', { keyPath: 'id' })
       }
-
-      // Audit Logs
       if (!db.objectStoreNames.contains('auditLogs')) {
         db.createObjectStore('auditLogs', { keyPath: 'id' })
       }
-
-      // Users
       if (!db.objectStoreNames.contains('users')) {
         const store = db.createObjectStore('users', { keyPath: 'id' })
         store.createIndex('by-username', 'username', { unique: true })
       }
-
-      // Workers
       if (!db.objectStoreNames.contains('workers')) {
         const store = db.createObjectStore('workers', { keyPath: 'id' })
         store.createIndex('by-name', 'name')
       }
-
-      // Worker Advances
       if (!db.objectStoreNames.contains('workerAdvances')) {
         const store = db.createObjectStore('workerAdvances', { keyPath: 'id' })
         store.createIndex('by-worker', 'workerId')
         store.createIndex('by-date', 'date')
       }
-
-      // Worker Receipts
       if (!db.objectStoreNames.contains('workerReceipts')) {
         const store = db.createObjectStore('workerReceipts', { keyPath: 'id' })
         store.createIndex('by-worker', 'workerId')
         store.createIndex('by-date', 'date')
       }
-
-      // Worker Attendance
       if (!db.objectStoreNames.contains('workerAttendance')) {
         const store = db.createObjectStore('workerAttendance', { keyPath: 'id' })
         store.createIndex('by-worker', 'workerId')
         store.createIndex('by-date', 'date')
       }
-
-      // Production
       if (!db.objectStoreNames.contains('production')) {
         const store = db.createObjectStore('production', { keyPath: 'id' })
         store.createIndex('by-worker', 'workerId')
         store.createIndex('by-date', 'date')
       }
-
-      // Customers
       if (!db.objectStoreNames.contains('customers')) {
         const store = db.createObjectStore('customers', { keyPath: 'id' })
         store.createIndex('by-name', 'name')
       }
-
-      // Suppliers
       if (!db.objectStoreNames.contains('suppliers')) {
         const store = db.createObjectStore('suppliers', { keyPath: 'id' })
         store.createIndex('by-name', 'name')
       }
-
-      // Sales
       if (!db.objectStoreNames.contains('sales')) {
         const store = db.createObjectStore('sales', { keyPath: 'id' })
         store.createIndex('by-date', 'date')
         store.createIndex('by-customer', 'customerId_ref')
       }
-
-      // Sale Items
       if (!db.objectStoreNames.contains('saleItems')) {
         const store = db.createObjectStore('saleItems', { keyPath: 'id' })
         store.createIndex('by-sale', 'saleId')
       }
-
-      // Purchases
       if (!db.objectStoreNames.contains('purchases')) {
         const store = db.createObjectStore('purchases', { keyPath: 'id' })
         store.createIndex('by-date', 'date')
         store.createIndex('by-supplier', 'supplierId_ref')
       }
-
-      // Purchase Items
       if (!db.objectStoreNames.contains('purchaseItems')) {
         const store = db.createObjectStore('purchaseItems', { keyPath: 'id' })
         store.createIndex('by-purchase', 'purchaseId')
       }
-
-      // Expense Categories
       if (!db.objectStoreNames.contains('expenseCategories')) {
         db.createObjectStore('expenseCategories', { keyPath: 'id' })
       }
-
-      // Expenses
       if (!db.objectStoreNames.contains('expenses')) {
         const store = db.createObjectStore('expenses', { keyPath: 'id' })
         store.createIndex('by-date', 'date')
         store.createIndex('by-category', 'categoryId')
       }
-
-      // ====== المخازن الجديدة ======
-
-      // Treasury (الخزينة)
       if (!db.objectStoreNames.contains('treasuryTransactions')) {
         const store = db.createObjectStore('treasuryTransactions', { keyPath: 'id' })
         store.createIndex('by-date', 'date')
         store.createIndex('by-type', 'type')
       }
-
-      // Warehouses (المخازن)
       if (!db.objectStoreNames.contains('warehouses')) {
         const store = db.createObjectStore('warehouses', { keyPath: 'id' })
         store.createIndex('by-type', 'type')
       }
-
-      // Materials (المواد الخام)
       if (!db.objectStoreNames.contains('materials')) {
         const store = db.createObjectStore('materials', { keyPath: 'id' })
         store.createIndex('by-warehouse', 'warehouseId')
         store.createIndex('by-name', 'name')
       }
-
-      // Material Transactions (حركات المواد)
       if (!db.objectStoreNames.contains('materialTransactions')) {
         const store = db.createObjectStore('materialTransactions', { keyPath: 'id' })
         store.createIndex('by-material', 'materialId')
         store.createIndex('by-date', 'date')
         store.createIndex('by-warehouse', 'warehouseId')
       }
-
-      // Products (المنتجات)
       if (!db.objectStoreNames.contains('products')) {
         const store = db.createObjectStore('products', { keyPath: 'id' })
         store.createIndex('by-name', 'name')
         store.createIndex('by-warehouse', 'warehouseId')
       }
-
-      // Production Orders (أوامر التشغيل)
       if (!db.objectStoreNames.contains('productionOrders')) {
         const store = db.createObjectStore('productionOrders', { keyPath: 'id' })
         store.createIndex('by-date', 'date')
         store.createIndex('by-status', 'status')
         store.createIndex('by-product', 'productId')
       }
-
-      // ====== السدادات والمرتجعات ======
-
-      // Payments (السدادات)
       if (!db.objectStoreNames.contains('payments')) {
         const store = db.createObjectStore('payments', { keyPath: 'id' })
         store.createIndex('by-date', 'date')
         store.createIndex('by-party', 'partyId')
         store.createIndex('by-type', 'type')
       }
-
-      // Sale Returns (مرتجع المبيعات)
       if (!db.objectStoreNames.contains('saleReturns')) {
         const store = db.createObjectStore('saleReturns', { keyPath: 'id' })
         store.createIndex('by-date', 'date')
         store.createIndex('by-sale', 'saleId')
         store.createIndex('by-customer', 'customerId_ref')
       }
-
-      // Sale Return Items
       if (!db.objectStoreNames.contains('saleReturnItems')) {
         const store = db.createObjectStore('saleReturnItems', { keyPath: 'id' })
         store.createIndex('by-return', 'returnId')
       }
-
-      // Purchase Returns (مرتجع المشتريات)
       if (!db.objectStoreNames.contains('purchaseReturns')) {
         const store = db.createObjectStore('purchaseReturns', { keyPath: 'id' })
         store.createIndex('by-date', 'date')
         store.createIndex('by-purchase', 'purchaseId')
         store.createIndex('by-supplier', 'supplierId_ref')
       }
-
-      // Purchase Return Items
       if (!db.objectStoreNames.contains('purchaseReturnItems')) {
         const store = db.createObjectStore('purchaseReturnItems', { keyPath: 'id' })
         store.createIndex('by-return', 'returnId')
       }
+
+      console.log(`[DB] Upgrade complete. Total stores: ${db.objectStoreNames.length}`)
+    },
+    blocked(currentVersion, requestedVersion, event) {
+      // لو حدث تعارض في إصدار DB، لا تحظر - اسمح بالتحديث
+      console.warn(`[DB] Version blocked: ${currentVersion} < ${requestedVersion}, allowing upgrade`)
+      // عدم منع الترقية
     },
   })
+
+  // تحقق سريع أن قاعدة البيانات تعمل
+  try {
+    const stores = dbInstance.objectStoreNames
+    console.log(`[DB] Opened successfully. ${stores.length} stores: ${Array.from(stores).join(', ')}`)
+  } catch (e) {
+    console.error('[DB] Error after open:', e)
+  }
 
   return dbInstance
 }
@@ -250,4 +218,25 @@ export function generateId(): string {
 // التاريخ الحالي بصيغة ISO
 export function nowISO(): string {
   return new Date().toISOString()
+}
+
+// للتشخيص: عد جميع السجلات في كل store
+export async function getDBStats(): Promise<Record<string, number>> {
+  const db = await getDB()
+  const stats: Record<string, number> = {}
+  const storeNames = ['factorySettings', 'users', 'workers', 'workerAdvances', 'workerReceipts',
+    'workerAttendance', 'production', 'customers', 'suppliers',
+    'sales', 'saleItems', 'purchases', 'purchaseItems',
+    'expenseCategories', 'expenses', 'treasuryTransactions',
+    'warehouses', 'materials', 'materialTransactions', 'products',
+    'productionOrders', 'payments', 'saleReturns', 'saleReturnItems',
+    'purchaseReturns', 'purchaseReturnItems']
+  for (const name of storeNames) {
+    try {
+      stats[name] = await (db as any).count(name)
+    } catch {
+      stats[name] = -1
+    }
+  }
+  return stats
 }

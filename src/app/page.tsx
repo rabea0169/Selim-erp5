@@ -20,7 +20,7 @@ import { FactorySettingsView } from '@/components/factory/FactorySettingsView'
 import { InstallPrompt } from '@/components/factory/InstallPrompt'
 import { Header } from '@/components/factory/Header'
 import { BottomNav, type TabKey } from '@/components/factory/BottomNav'
-import { getCurrentUser, logout, factorySettingsRepository, expenseCategoryRepository, warehouseRepository, autoBackupService, syncService, auditLogRepository, type SessionUser, type FactorySettings } from '@/lib/db'
+import { getCurrentUser, logout, factorySettingsRepository, expenseCategoryRepository, warehouseRepository, autoBackupService, syncService, auditLogRepository, getDBStats, type SessionUser, type FactorySettings } from '@/lib/db'
 
 export type { TabKey }
 
@@ -42,10 +42,16 @@ export default function Home() {
       setAuthChecked(true)
       if (currentUser) {
         try {
+          // تشخيص: التحقق من قاعدة البيانات عند التحميل
+          const stats = await getDBStats()
+          const totalRecords = Object.values(stats).reduce((a: number, b: number) => a + Math.max(0, b), 0)
+          console.log(`[App] DB stats on login: ${totalRecords} total records`, stats)
+
           const settings = await factorySettingsRepository.get()
           setFactorySettings(settings)
           autoBackupService.start()
-          syncService.start() // بدء المزامنة السحابية التلقائية
+          // Sync معطّل افتراضياً - لا يُفعّل تلقائياً لحماية البيانات
+          // syncService.start() تم تعطيله لتجنب أي مشاكل محتملة
           warehouseRepository.seedDefaults().catch(() => {})
           auditLogRepository.log({
             userId: currentUser.id,
@@ -66,7 +72,7 @@ export default function Home() {
 
     return () => {
       autoBackupService.stop()
-      syncService.stop()
+      // syncService.stop() - Sync معطّل، لا حاجة للإيقاف
     }
   }, [reloadKey])
 
