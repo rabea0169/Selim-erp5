@@ -2,6 +2,13 @@ import { z } from 'zod'
 
 // ====== Schemas للتحقق من البيانات ======
 
+export const MIN_PASSWORD_LENGTH = 8
+
+// ====== Schema لكلمة المرور ======
+export const passwordSchema = z
+  .string()
+  .min(MIN_PASSWORD_LENGTH, `كلمة المرور يجب أن تكون ${MIN_PASSWORD_LENGTH} أحرف على الأقل`)
+
 export const saleItemSchema = z.object({
   itemName: z.string().min(1, 'اسم الصنف مطلوب'),
   quantity: z.number().positive('الكمية يجب أن تكون موجبة'),

@@ -22,8 +22,8 @@ export async function GET() {
     })
 
     return NextResponse.json({ users })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch {
+    return NextResponse.json({ error: 'حدث خطأ في الخادم' }, { status: 500 })
   }
 }
 
@@ -66,7 +66,7 @@ export async function DELETE(req: NextRequest) {
 
     await db.user.delete({ where: { id: userId } })
     return NextResponse.json({ success: true })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch {
+    return NextResponse.json({ error: 'حدث خطأ في الخادم' }, { status: 500 })
   }
 }

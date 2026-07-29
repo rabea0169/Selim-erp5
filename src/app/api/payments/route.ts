@@ -31,8 +31,8 @@ export async function GET(req: NextRequest) {
 
     const payments = await db.payment.findMany({ where, orderBy: { date: 'desc' } })
     return NextResponse.json({ payments: payments.map(withPartyId) })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch {
+    return NextResponse.json({ error: 'حدث خطأ في الخادم' }, { status: 500 })
   }
 }
 
@@ -101,7 +101,7 @@ export async function POST(req: NextRequest) {
     })
 
     return NextResponse.json({ payment: withPartyId(payment) })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch {
+    return NextResponse.json({ error: 'حدث خطأ في الخادم' }, { status: 500 })
   }
 }

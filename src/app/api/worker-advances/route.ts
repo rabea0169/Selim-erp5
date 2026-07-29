@@ -33,8 +33,8 @@ export async function GET(req: NextRequest) {
     })
 
     return NextResponse.json({ advances })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch {
+    return NextResponse.json({ error: 'حدث خطأ في الخادم' }, { status: 500 })
   }
 }
 
@@ -67,7 +67,7 @@ export async function POST(req: NextRequest) {
       include: { worker: true },
     })
     return NextResponse.json({ advance })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch {
+    return NextResponse.json({ error: 'حدث خطأ في الخادم' }, { status: 500 })
   }
 }

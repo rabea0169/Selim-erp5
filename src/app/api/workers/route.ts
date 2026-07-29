@@ -46,8 +46,8 @@ export async function GET(req: NextRequest) {
     })
 
     return NextResponse.json({ workers: workersWithTotals })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch {
+    return NextResponse.json({ error: 'حدث خطأ في الخادم' }, { status: 500 })
   }
 }
 
@@ -81,7 +81,7 @@ export async function POST(req: NextRequest) {
       },
     })
     return NextResponse.json({ worker })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch {
+    return NextResponse.json({ error: 'حدث خطأ في الخادم' }, { status: 500 })
   }
 }

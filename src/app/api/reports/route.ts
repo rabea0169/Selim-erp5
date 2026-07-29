@@ -131,7 +131,7 @@ export async function GET(req: NextRequest) {
       sales, purchases, advances, receipts, productions, attendance, expenses,
       expensesByCategory, topItems, topModels,
     })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch {
+    return NextResponse.json({ error: 'حدث خطأ في الخادم' }, { status: 500 })
   }
 }

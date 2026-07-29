@@ -1,6 +1,7 @@
 import { cookies } from 'next/headers'
 import { db } from './db-server'
 import { hashSync, compareSync } from 'bcryptjs'
+import { v4 as uuidv4 } from 'uuid'
 
 export interface ServerUser {
   id: string
@@ -12,27 +13,41 @@ export interface ServerUser {
 }
 
 const COOKIE_NAME = 'session'
+const SESSION_DURATION_DAYS = 30
+const MIN_PASSWORD_LENGTH = 8
 
-// ====== getCurrentUser: يقرأ المستخدم من cookie ======
+// ====== getCurrentUser: يقرأ المستخدم من session token آمن ======
 export async function getCurrentUser(): Promise<ServerUser | null> {
   try {
     const cookieStore = await cookies()
-    const sessionId = cookieStore.get(COOKIE_NAME)?.value
-    if (!sessionId) return null
+    const token = cookieStore.get(COOKIE_NAME)?.value
+    if (!token) return null
 
-    const user = await db.user.findUnique({
-      where: { id: sessionId },
-      select: {
-        id: true,
-        username: true,
-        name: true,
-        role: true,
-        phone: true,
-        companyId: true,
+    const session = await db.session.findUnique({
+      where: { token },
+      include: {
+        user: {
+          select: {
+            id: true,
+            username: true,
+            name: true,
+            role: true,
+            phone: true,
+            companyId: true,
+          },
+        },
       },
     })
 
-    return user
+    if (!session) return null
+
+    // التحقق من انتهاء الجلسة
+    if (session.expiresAt < new Date()) {
+      await db.session.delete({ where: { token } }).catch(() => {})
+      return null
+    }
+
+    return session.user
   } catch {
     return null
   }
@@ -44,11 +59,41 @@ export async function hasAnyUser(): Promise<boolean> {
   return count > 0
 }
 
-// ====== loginUser: تسجيل دخول + وضع cookie ======
+// ====== createSession: إنشاء جلسة آمنة بـ UUID عشوائي ======
+async function createSession(userId: string): Promise<string> {
+  const token = uuidv4()
+  const expiresAt = new Date()
+  expiresAt.setDate(expiresAt.getDate() + SESSION_DURATION_DAYS)
+
+  // حذف الجلسات المنتهية لنفس المستخدم
+  await db.session.deleteMany({
+    where: { userId, expiresAt: { lt: new Date() } },
+  })
+
+  await db.session.create({
+    data: { token, userId, expiresAt },
+  })
+
+  return token
+}
+
+// ====== setSessionCookie: ضبط cookie الجلسة ======
+async function setSessionCookie(token: string): Promise<void> {
+  const cookieStore = await cookies()
+  cookieStore.set(COOKIE_NAME, token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: 60 * 60 * 24 * SESSION_DURATION_DAYS,
+    path: '/',
+  })
+}
+
+// ====== loginUser: تسجيل دخول + إنشاء session آمن ======
 export async function loginUser(
   username: string,
   password: string,
-): Promise<{ success: boolean; error?: string; user?: any }> {
+): Promise<{ success: boolean; error?: string; user?: ServerUser }> {
   const user = await db.user.findUnique({ where: { username } })
   if (!user) {
     return { success: false, error: 'اسم المستخدم أو كلمة المرور غير صحيحة' }
@@ -59,14 +104,8 @@ export async function loginUser(
     return { success: false, error: 'اسم المستخدم أو كلمة المرور غير صحيحة' }
   }
 
-  const cookieStore = await cookies()
-  cookieStore.set(COOKIE_NAME, user.id, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    maxAge: 60 * 60 * 24 * 30, // 30 يوم
-    path: '/',
-  })
+  const token = await createSession(user.id)
+  await setSessionCookie(token)
 
   return {
     success: true,
@@ -75,7 +114,7 @@ export async function loginUser(
       username: user.username,
       name: user.name,
       role: user.role,
-      phone: user.phone,
+      phone: user.phone ?? undefined,
       companyId: user.companyId,
     },
   }
@@ -90,12 +129,12 @@ export async function registerUser(
   phone?: string,
   securityQuestion?: string,
   securityAnswer?: string,
-): Promise<{ success: boolean; error?: string; user?: any }> {
+): Promise<{ success: boolean; error?: string; user?: ServerUser }> {
   if (!username || username.length < 3) {
     return { success: false, error: 'اسم المستخدم يجب أن يكون 3 أحرف على الأقل' }
   }
-  if (!password || password.length < 4) {
-    return { success: false, error: 'كلمة المرور يجب أن تكون 4 أحرف على الأقل' }
+  if (!password || password.length < MIN_PASSWORD_LENGTH) {
+    return { success: false, error: `كلمة المرور يجب أن تكون ${MIN_PASSWORD_LENGTH} أحرف على الأقل` }
   }
   if (!name?.trim()) {
     return { success: false, error: 'الاسم مطلوب' }
@@ -131,9 +170,10 @@ export async function registerUser(
     },
   })
 
-  // إنشاء إعدادات المصنع الافتراضية
+  // إنشاء إعدادات المصنع الافتراضية بـ ID مرتبط بالشركة
   await db.factorySettings.create({
     data: {
+      id: company.id,
       factoryName: companyName,
       currency: 'ج.م',
       companyId: company.id,
@@ -152,14 +192,8 @@ export async function registerUser(
     })
   }
 
-  const cookieStore = await cookies()
-  cookieStore.set(COOKIE_NAME, user.id, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    maxAge: 60 * 60 * 24 * 30,
-    path: '/',
-  })
+  const token = await createSession(user.id)
+  await setSessionCookie(token)
 
   return {
     success: true,
@@ -168,7 +202,7 @@ export async function registerUser(
       username: user.username,
       name: user.name,
       role: user.role,
-      phone: user.phone,
+      phone: user.phone ?? undefined,
       companyId: user.companyId,
     },
   }
@@ -184,12 +218,12 @@ export async function addUserToCompany(
   phone?: string,
   securityQuestion?: string,
   securityAnswer?: string,
-): Promise<{ success: boolean; error?: string; user?: any }> {
+): Promise<{ success: boolean; error?: string; user?: ServerUser }> {
   if (!username || username.length < 3) {
     return { success: false, error: 'اسم المستخدم يجب أن يكون 3 أحرف على الأقل' }
   }
-  if (!password || password.length < 4) {
-    return { success: false, error: 'كلمة المرور يجب أن تكون 4 أحرف على الأقل' }
+  if (!password || password.length < MIN_PASSWORD_LENGTH) {
+    return { success: false, error: `كلمة المرور يجب أن تكون ${MIN_PASSWORD_LENGTH} أحرف على الأقل` }
   }
   if (!name?.trim()) {
     return { success: false, error: 'الاسم مطلوب' }
@@ -238,16 +272,24 @@ export async function addUserToCompany(
       username: user.username,
       name: user.name,
       role: user.role,
-      phone: user.phone,
+      phone: user.phone ?? undefined,
       companyId: user.companyId,
     },
   }
 }
 
-// ====== logoutUser: حذف cookie ======
+// ====== logoutUser: حذف session من DB + cookie ======
 export async function logoutUser(): Promise<void> {
-  const cookieStore = await cookies()
-  cookieStore.delete(COOKIE_NAME)
+  try {
+    const cookieStore = await cookies()
+    const token = cookieStore.get(COOKIE_NAME)?.value
+    if (token) {
+      await db.session.deleteMany({ where: { token } })
+      cookieStore.delete(COOKIE_NAME)
+    }
+  } catch {
+    // تجاهل الأخطاء عند تسجيل الخروج
+  }
 }
 
 // ====== getSecurityQuestion: الحصول على سؤال الأمان ======
@@ -286,8 +328,8 @@ export async function verifySecurityAnswer(
     return { success: false, error: 'إجابة الأمان غير صحيحة' }
   }
 
-  if (!newPassword || newPassword.length < 4) {
-    return { success: false, error: 'كلمة المرور الجديدة يجب أن تكون 4 أحرف على الأقل' }
+  if (!newPassword || newPassword.length < MIN_PASSWORD_LENGTH) {
+    return { success: false, error: `كلمة المرور الجديدة يجب أن تكون ${MIN_PASSWORD_LENGTH} أحرف على الأقل` }
   }
 
   const newPasswordHash = hashSync(newPassword, 10)
@@ -295,6 +337,9 @@ export async function verifySecurityAnswer(
     where: { username },
     data: { passwordHash: newPasswordHash },
   })
+
+  // إبطال جميع الجلسات الحالية للمستخدم بعد تغيير كلمة المرور
+  await db.session.deleteMany({ where: { userId: user.id } })
 
   return { success: true }
 }

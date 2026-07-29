@@ -34,8 +34,8 @@ export async function GET(req: NextRequest) {
 
     const returns = await db.purchaseReturn.findMany({ where, orderBy: { date: 'desc' } })
     return NextResponse.json({ returns })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch {
+    return NextResponse.json({ error: 'حدث خطأ في الخادم' }, { status: 500 })
   }
 }
 
@@ -121,7 +121,7 @@ export async function POST(req: NextRequest) {
     })
 
     return NextResponse.json({ return: created })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch {
+    return NextResponse.json({ error: 'حدث خطأ في الخادم' }, { status: 500 })
   }
 }

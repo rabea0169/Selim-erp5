@@ -149,7 +149,7 @@ export async function POST(req: NextRequest) {
         expenses: data.expenses?.length || 0,
       },
     })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch {
+    return NextResponse.json({ error: 'حدث خطأ في الخادم' }, { status: 500 })
   }
 }

@@ -75,7 +75,7 @@ export async function GET() {
         'Content-Disposition': `attachment; filename="selim-backup-${new Date().toISOString().split('T')[0]}.json"`,
       },
     })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch {
+    return NextResponse.json({ error: 'حدث خطأ في الخادم' }, { status: 500 })
   }
 }

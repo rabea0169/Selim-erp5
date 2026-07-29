@@ -60,8 +60,24 @@ model User {
   company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   auditLogs       AuditLog[]
+  sessions        Session[]
 
   @@index([companyId])
+}
+
+// ====== جلسات المستخدمين (آمنة) ======
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique @default(cuid())
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 // ====== سجل العمليات ======
@@ -87,7 +103,7 @@ model AuditLog {
 
 // ====== إعدادات المصنع ======
 model FactorySettings {
-  id                  String   @id @default("singleton")
+  id                  String   @id @default(cuid())
   factoryName         String
   factoryNameEn       String?
   slogan              String?

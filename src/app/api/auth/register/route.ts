@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { registerUser, addUserToCompany, hasAnyUser, getCurrentUser } from '@/lib/auth'
+import { registerUser, addUserToCompany, hasAnyUser } from '@/lib/auth'
 import { requireAuth } from '@/lib/require-auth'
 import { hasPermission } from '@/lib/permissions'
 
@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
       password,
       name,
       body.role || 'employee',
-      auth.companyId,
+      auth.companyId!,
       phone,
       securityQuestion,
       securityAnswer,
@@ -48,8 +48,8 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ user: result.user })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch {
+    return NextResponse.json({ error: 'حدث خطأ في الخادم، يرجى المحاولة مرة أخرى' }, { status: 500 })
   }
 }
 
@@ -58,7 +58,7 @@ export async function GET() {
   try {
     const exists = await hasAnyUser()
     return NextResponse.json({ hasUsers: exists })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch {
+    return NextResponse.json({ error: 'حدث خطأ في الخادم' }, { status: 500 })
   }
 }

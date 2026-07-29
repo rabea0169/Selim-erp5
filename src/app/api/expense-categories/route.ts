@@ -14,8 +14,8 @@ export async function GET() {
       include: { _count: { select: { expenses: true } } },
     })
     return NextResponse.json({ categories: cats })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch {
+    return NextResponse.json({ error: 'حدث خطأ في الخادم' }, { status: 500 })
   }
 }
 
@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
       data: { name, notes: notes || null, companyId: auth.companyId },
     })
     return NextResponse.json({ category: cat })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch {
+    return NextResponse.json({ error: 'حدث خطأ في الخادم' }, { status: 500 })
   }
 }

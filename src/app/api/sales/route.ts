@@ -4,6 +4,28 @@ import { requireAuth } from '@/lib/require-auth'
 import { withCompanyScope } from '@/lib/permissions'
 import { computeInvoiceTotals } from '@/lib/invoice-totals'
 
+interface SaleItem {
+  itemName: string
+  productId?: string | null
+  priceType?: string | null
+  quantity: number
+  unitPrice: number
+}
+
+interface SaleBody {
+  customerName?: string
+  customerId_ref?: string | null
+  invoiceNo?: string | null
+  date?: string
+  items?: SaleItem[]
+  paid?: number
+  notes?: string | null
+  discountType?: 'percentage' | 'fixed' | 'none' | null
+  discountValue?: number | null
+  taxRate?: number | null
+  extraFees?: number | null
+}
+
 // GET /api/sales?from=&to=&q=
 export async function GET(req: NextRequest) {
   try {
@@ -15,15 +37,16 @@ export async function GET(req: NextRequest) {
     const to = searchParams.get('to')
     const q = searchParams.get('q') || ''
 
-    const where: any = withCompanyScope({}, auth.companyId)
+    const where: Record<string, unknown> = withCompanyScope({}, auth.companyId!)
     if (from || to) {
-      where.date = {}
-      if (from) where.date.gte = new Date(from)
+      const dateFilter: Record<string, Date> = {}
+      if (from) dateFilter.gte = new Date(from)
       if (to) {
         const toDate = new Date(to)
         toDate.setHours(23, 59, 59, 999)
-        where.date.lte = toDate
+        dateFilter.lte = toDate
       }
+      where.date = dateFilter
     }
     if (q) {
       where.OR = [
@@ -40,8 +63,8 @@ export async function GET(req: NextRequest) {
     })
 
     return NextResponse.json({ sales })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch {
+    return NextResponse.json({ error: 'حدث خطأ في الخادم' }, { status: 500 })
   }
 }
 
@@ -51,7 +74,7 @@ export async function POST(req: NextRequest) {
     const auth = await requireAuth('create')
     if (!auth.authorized) return auth.response
 
-    const body = await req.json()
+    const body: SaleBody = await req.json()
     const {
       customerName,
       customerId_ref,
@@ -77,14 +100,14 @@ export async function POST(req: NextRequest) {
     }
 
     const validItems = items.filter(
-      (it: any) => it.itemName?.trim() && Number(it.quantity) > 0 && Number(it.unitPrice) >= 0
+      (it) => it.itemName?.trim() && Number(it.quantity) > 0 && Number(it.unitPrice) >= 0
     )
     if (validItems.length === 0) {
       return NextResponse.json({ error: 'أضف صنفاً صحيحاً واحداً على الأقل' }, { status: 400 })
     }
 
     const subtotal = validItems.reduce(
-      (sum: number, it: any) => sum + Number(it.quantity) * Number(it.unitPrice),
+      (sum, it) => sum + Number(it.quantity) * Number(it.unitPrice),
       0
     )
     const totals = computeInvoiceTotals({ subtotal, discountType, discountValue, taxRate, extraFees })
@@ -116,9 +139,9 @@ export async function POST(req: NextRequest) {
           total: totals.total,
           paid: paidAmount,
           notes: notes?.trim() || null,
-          companyId: auth.companyId,
+          companyId: auth.companyId!,
           items: {
-            create: validItems.map((it: any) => ({
+            create: validItems.map((it) => ({
               itemName: it.itemName.trim(),
               productId: it.productId || null,
               priceType: it.priceType || null,
@@ -151,7 +174,7 @@ export async function POST(req: NextRequest) {
             category: 'مبيعات',
             referenceType: 'sale',
             referenceId: newSale.id,
-            companyId: auth.companyId,
+            companyId: auth.companyId!,
           },
         })
       }
@@ -160,7 +183,7 @@ export async function POST(req: NextRequest) {
     })
 
     return NextResponse.json({ sale })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch {
+    return NextResponse.json({ error: 'حدث خطأ في الخادم' }, { status: 500 })
   }
 }

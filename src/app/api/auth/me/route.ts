@@ -8,7 +8,7 @@ export async function GET() {
       return NextResponse.json({ user: null }, { status: 401 })
     }
     return NextResponse.json({ user })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch {
+    return NextResponse.json({ error: 'حدث خطأ في الخادم' }, { status: 500 })
   }
 }
