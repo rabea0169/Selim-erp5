@@ -1,9 +1,16 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { requireAdmin } from '@/lib/admin-check'
+import { safeError } from '@/lib/safe-error'
 
 // POST /api/seed - إنشاء فئات المصاريف الافتراضية
 export async function POST() {
   try {
+    const admin = await requireAdmin()
+    if (!admin.ok) {
+      return NextResponse.json({ error: admin.error }, { status: admin.status })
+    }
+
     const defaultCategories = [
       'كهرباء',
       'مياه',
@@ -43,7 +50,8 @@ export async function POST() {
       categories,
       createdCount,
     })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    const { error, status } = safeError(e)
+    return NextResponse.json({ error }, { status })
   }
 }

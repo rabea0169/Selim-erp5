@@ -1,8 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { loginUser } from '@/lib/auth'
+import { rateLimit, getClientIP } from '@/lib/rate-limit'
+import { safeError } from '@/lib/safe-error'
 
 export async function POST(req: NextRequest) {
   try {
+    // Rate limiting: 10 محاولات دخول في الدقيقة
+    const ip = getClientIP(req)
+    const { limited, retryAfter } = rateLimit(`login:${ip}`, 10, 60_000)
+    if (limited) {
+      return NextResponse.json(
+        { error: `محاولات كثيرة جداً. حاول بعد ${retryAfter} ثانية` },
+        { status: 429, headers: { 'Retry-After': String(retryAfter) } }
+      )
+    }
+
     const body = await req.json()
     const { username, password } = body
 
@@ -19,7 +31,8 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ user: result.user })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    const { error, status } = safeError(e)
+    return NextResponse.json({ error }, { status })
   }
 }

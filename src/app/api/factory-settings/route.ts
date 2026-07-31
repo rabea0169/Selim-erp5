@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { requireAdmin } from '@/lib/admin-check'
+import { safeError } from '@/lib/safe-error'
 
 export async function GET() {
   try {
@@ -7,13 +9,19 @@ export async function GET() {
       where: { id: 'singleton' },
     })
     return NextResponse.json({ settings })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    const { error, status } = safeError(e)
+    return NextResponse.json({ error }, { status })
   }
 }
 
 export async function PUT(req: NextRequest) {
   try {
+    const admin = await requireAdmin()
+    if (!admin.ok) {
+      return NextResponse.json({ error: admin.error }, { status: admin.status })
+    }
+
     const body = await req.json()
 
     if (!body.factoryName?.trim()) {
@@ -63,7 +71,8 @@ export async function PUT(req: NextRequest) {
     })
 
     return NextResponse.json({ settings })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    const { error, status } = safeError(e)
+    return NextResponse.json({ error }, { status })
   }
 }

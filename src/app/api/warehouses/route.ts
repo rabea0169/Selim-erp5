@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { safeError } from '@/lib/safe-error'
 
 // GET /api/warehouses
 export async function GET() {
@@ -9,8 +10,8 @@ export async function GET() {
       orderBy: { name: 'asc' },
     })
     return NextResponse.json({ warehouses })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    const { error, status } = safeError(e); return NextResponse.json({ error }, { status })
   }
 }
 
@@ -38,7 +39,7 @@ export async function POST(req: NextRequest) {
     })
 
     return NextResponse.json({ warehouse })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    const { error, status } = safeError(e); return NextResponse.json({ error }, { status })
   }
 }

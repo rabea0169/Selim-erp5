@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { safeError } from '@/lib/safe-error'
 
 // GET /api/production-orders/:id
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -10,8 +11,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: 'أمر التشغيل غير موجود' }, { status: 404 })
     }
     return NextResponse.json({ productionOrder: order })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    const { error, status } = safeError(e, 500)
+    return NextResponse.json({ error }, { status })
   }
 }
 
@@ -39,7 +41,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const newStatus = status || existing.status
     const finalCompletedQuantity = completedQuantity != null ? Number(completedQuantity) : existing.completedQuantity
 
-    await db.$transaction(async (tx) => {
+    const order = await db.$transaction(async (tx) => {
       // 1) عند بدء أمر التشغيل (draft → in_progress): سحب المواد الخام من المخزن
       if (newStatus === 'in_progress' && existing.status === 'draft') {
         const orderMaterials = (materials !== undefined ? materials : existing.materials) as Array<{ materialId: string; materialName: string; quantity: number; unit: string }> || []
@@ -124,29 +126,31 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
           }
         }
       }
-    })
 
-    const order = await db.productionOrder.update({
-      where: { id },
-      data: {
-        orderNumber: orderNumber?.trim() || existing.orderNumber,
-        productId: productId || existing.productId,
-        productName: productName?.trim() || existing.productName,
-        quantity: quantity != null ? Number(quantity) : existing.quantity,
-        completedQuantity: finalCompletedQuantity,
-        unit: unit?.trim() || existing.unit,
-        status: newStatus,
-        materials: materials !== undefined ? materials : existing.materials,
-        stages: stages !== undefined ? stages : existing.stages,
-        date: date ? new Date(date) : existing.date,
-        expectedEndDate: expectedEndDate !== undefined ? (expectedEndDate ? new Date(expectedEndDate) : null) : existing.expectedEndDate,
-        completedDate: completedDate !== undefined ? (completedDate ? new Date(completedDate) : null) : existing.completedDate,
-        notes: notes !== undefined ? (notes?.trim() || null) : existing.notes,
-      },
+      const updated = await tx.productionOrder.update({
+        where: { id },
+        data: {
+          orderNumber: orderNumber?.trim() || existing.orderNumber,
+          productId: productId || existing.productId,
+          productName: productName?.trim() || existing.productName,
+          quantity: quantity != null ? Number(quantity) : existing.quantity,
+          completedQuantity: finalCompletedQuantity,
+          unit: unit?.trim() || existing.unit,
+          status: newStatus,
+          materials: materials !== undefined ? materials : existing.materials,
+          stages: stages !== undefined ? stages : existing.stages,
+          date: date ? new Date(date) : existing.date,
+          expectedEndDate: expectedEndDate !== undefined ? (expectedEndDate ? new Date(expectedEndDate) : null) : existing.expectedEndDate,
+          completedDate: completedDate !== undefined ? (completedDate ? new Date(completedDate) : null) : existing.completedDate,
+          notes: notes !== undefined ? (notes?.trim() || null) : existing.notes,
+        },
+      })
+      return updated
     })
     return NextResponse.json({ productionOrder: order })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    const { error, status } = safeError(e, 500)
+    return NextResponse.json({ error }, { status })
   }
 }
 
@@ -158,9 +162,56 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     if (!existing) {
       return NextResponse.json({ error: 'أمر التشغيل غير موجود' }, { status: 404 })
     }
-    await db.productionOrder.delete({ where: { id } })
+
+    await db.$transaction(async (tx) => {
+      // 1) لو كان in_progress: إرجاع المواد الخام
+      if (existing.status === 'in_progress') {
+        const orderMaterials = (existing.materials) as Array<{ materialId: string; materialName: string; quantity: number; unit: string }> || []
+        for (const mat of orderMaterials) {
+          if (!mat.materialId) continue
+          const material = await tx.material.findUnique({ where: { id: mat.materialId } })
+          if (!material) continue
+          await tx.material.update({
+            where: { id: mat.materialId },
+            data: { quantity: { increment: mat.quantity }, updatedAt: new Date() },
+          })
+          await tx.materialTransaction.create({
+            data: {
+              materialId: mat.materialId,
+              warehouseId: material.warehouseId,
+              type: 'in',
+              quantity: mat.quantity,
+              unitCost: material.unitCost,
+              date: new Date(),
+              reason: `حذف أمر تشغيل ${existing.orderNumber}`,
+              referenceType: 'production_order_delete',
+              referenceId: id,
+              notes: `إرجاع مادة ${mat.materialName} بسبب حذف أمر التشغيل`,
+            },
+          })
+        }
+      }
+
+      // 2) لو كان completed: إزالة الكمية المنتجة من مخزون المنتج
+      if (existing.status === 'completed' && existing.completedQuantity > 0) {
+        await tx.product.update({
+          where: { id: existing.productId },
+          data: { quantity: { decrement: existing.completedQuantity }, updatedAt: new Date() },
+        })
+      }
+
+      // 3) حذف حركات المواد المرتبطة بهذا الأمر
+      await tx.materialTransaction.deleteMany({
+        where: { referenceType: 'production_order', referenceId: id },
+      })
+
+      // 4) حذف أمر التشغيل
+      await tx.productionOrder.delete({ where: { id } })
+    })
+
     return NextResponse.json({ success: true })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    const { error, status } = safeError(e, 500)
+    return NextResponse.json({ error }, { status })
   }
 }

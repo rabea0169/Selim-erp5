@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { safeError } from '@/lib/safe-error'
 
 // GET /api/reports?from=&to=
 // returns aggregated totals for all transaction types in the date range
@@ -144,7 +145,7 @@ export async function GET(req: NextRequest) {
       topItems,
       topModels,
     })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    const { error, status } = safeError(e); return NextResponse.json({ error }, { status })
   }
 }

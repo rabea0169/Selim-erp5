@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { safeError } from '@/lib/safe-error'
 
 // GET /api/payments?type=customer_payment&partyId=xxx&from=&to=&page=1&limit=50
 export async function GET(req: NextRequest) {
@@ -49,8 +50,8 @@ export async function GET(req: NextRequest) {
         totalPages: Math.ceil(total / limit),
       },
     })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    const { error, status } = safeError(e); return NextResponse.json({ error }, { status })
   }
 }
 
@@ -195,8 +196,8 @@ export async function POST(req: NextRequest) {
     })
 
     return NextResponse.json({ payment })
-  } catch (e: any) {
+  } catch (e) {
     // رسائل الأخطاء الصادرة من داخل الـ transaction بالعربية
-    return NextResponse.json({ error: e.message }, { status: 500 })
+    const { error, status } = safeError(e); return NextResponse.json({ error }, { status })
   }
 }

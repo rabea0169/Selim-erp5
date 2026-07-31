@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { safeError } from '@/lib/safe-error'
 
 export async function GET(req: NextRequest) {
   try {
@@ -11,9 +12,14 @@ export async function GET(req: NextRequest) {
     const where: any = {}
     if (from || to) {
       where.date = {}
-      if (from) where.date.gte = new Date(from)
+      if (from) {
+        const d = new Date(from)
+        if (isNaN(d.getTime())) return NextResponse.json({ error: 'تاريخ "من" غير صالح' }, { status: 400 })
+        where.date.gte = d
+      }
       if (to) {
         const toDate = new Date(to)
+        if (isNaN(toDate.getTime())) return NextResponse.json({ error: 'تاريخ "إلى" غير صالح' }, { status: 400 })
         toDate.setHours(23, 59, 59, 999)
         where.date.lte = toDate
       }
@@ -33,8 +39,9 @@ export async function GET(req: NextRequest) {
     })
 
     return NextResponse.json({ purchases })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    const { error, status } = safeError(e)
+    return NextResponse.json({ error }, { status })
   }
 }
 
@@ -51,49 +58,25 @@ export async function POST(req: NextRequest) {
       notes,
     } = body
 
-    // التحقق من البيانات المدخلة
     if (!supplierName?.trim()) {
-      return NextResponse.json(
-        { error: 'اسم المورد مطلوب' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'اسم المورد مطلوب' }, { status: 400 })
     }
     if (!date) {
-      return NextResponse.json(
-        { error: 'التاريخ مطلوب' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'التاريخ مطلوب' }, { status: 400 })
+    }
+    const dateObj = new Date(date)
+    if (isNaN(dateObj.getTime())) {
+      return NextResponse.json({ error: 'التاريخ غير صالح' }, { status: 400 })
     }
     if (!Array.isArray(items) || items.length === 0) {
-      return NextResponse.json(
-        { error: 'يجب إضافة صنف واحد على الأقل' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'يجب إضافة صنف واحد على الأقل' }, { status: 400 })
     }
-
-    // ===== التحقق من ربط الأصناف بالم مواد الخام =====
 
     const validItems = items.filter(
       (it: any) => it.itemName?.trim() && Number(it.quantity) > 0 && Number(it.unitPrice) >= 0
     )
     if (validItems.length === 0) {
-      return NextResponse.json(
-        { error: 'أضف صنفاً صحيحاً واحداً على الأقل' },
-        { status: 400 }
-      )
-    }
-
-    // التحقق من وجود المواد في قاعدة البيانات
-    for (const it of validItems) {
-      if (it.materialId) {
-        const material = await db.material.findUnique({ where: { id: it.materialId } })
-        if (!material) {
-          return NextResponse.json(
-            { error: `المادة "${it.itemName}" غير موجودة في قاعدة البيانات` },
-            { status: 400 }
-          )
-        }
-      }
+      return NextResponse.json({ error: 'أضف صنفاً صحيحاً واحداً على الأقل' }, { status: 400 })
     }
 
     const total = validItems.reduce(
@@ -102,26 +85,30 @@ export async function POST(req: NextRequest) {
     )
     const paidAmount = Number(paid) || 0
 
-    // التحقق من وجود المورد لو تم تحديده
-    if (supplierId_ref) {
-      const supplier = await db.supplier.findUnique({
-        where: { id: supplierId_ref },
-      })
-      if (!supplier) {
-        return NextResponse.json(
-          { error: 'المورد المحدد غير موجود' },
-          { status: 400 }
-        )
-      }
-    }
-
     const purchase = await db.$transaction(async (tx) => {
+      // فحص المواد والعميل داخل الـ transaction (TOCTOU fix)
+      for (const it of validItems) {
+        if (it.materialId) {
+          const material = await tx.material.findUnique({ where: { id: it.materialId } })
+          if (!material) {
+            throw new Error(`المادة "${it.itemName}" غير موجودة في قاعدة البيانات`)
+          }
+        }
+      }
+
+      if (supplierId_ref) {
+        const supplier = await tx.supplier.findUnique({ where: { id: supplierId_ref } })
+        if (!supplier) {
+          throw new Error('المورد المحدد غير موجود')
+        }
+      }
+
       const newPurchase = await tx.purchase.create({
         data: {
           supplierName: supplierName.trim(),
           supplierId_ref: supplierId_ref || null,
           invoiceNo: invoiceNo?.trim() || null,
-          date: new Date(date),
+          date: dateObj,
           total,
           paid: paidAmount,
           notes: notes?.trim() || null,
@@ -138,12 +125,11 @@ export async function POST(req: NextRequest) {
         include: { items: true },
       })
 
-      // ===== إضافة الكميات لمخزون المواد الخام =====
+      // إضافة الكميات لمخزون المواد الخام
       for (const it of validItems) {
         if (it.materialId) {
           const material = await tx.material.findUnique({ where: { id: it.materialId } })
           if (material) {
-            // حساب متوسط التكلفة الجديدة
             const totalOldValue = material.quantity * material.unitCost
             const totalNewValue = Number(it.quantity) * Number(it.unitPrice)
             const newQuantity = material.quantity + Number(it.quantity)
@@ -158,7 +144,6 @@ export async function POST(req: NextRequest) {
               },
             })
 
-            // تسجيل حركة إضافة للمخزون
             await tx.materialTransaction.create({
               data: {
                 materialId: it.materialId,
@@ -166,7 +151,7 @@ export async function POST(req: NextRequest) {
                 type: 'in',
                 quantity: Number(it.quantity),
                 unitCost: Number(it.unitPrice),
-                date: new Date(date),
+                date: dateObj,
                 reason: `شراء - ${supplierName.trim()}${invoiceNo ? ` (فاتورة ${invoiceNo})` : ''}`,
                 referenceType: 'purchase',
                 referenceId: newPurchase.id,
@@ -176,13 +161,12 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // ===== إنشاء حركة خزينة (سحب المبلغ المدفوع) =====
       if (paidAmount > 0) {
         await tx.treasuryTransaction.create({
           data: {
             type: 'withdrawal',
             amount: paidAmount,
-            date: new Date(date),
+            date: dateObj,
             description: `مشتريات - ${supplierName.trim()}`,
             category: 'مشتريات',
             referenceType: 'purchase',
@@ -196,7 +180,11 @@ export async function POST(req: NextRequest) {
     })
 
     return NextResponse.json({ purchase })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    if (e instanceof Error && (e.message.includes('المادة') || e.message.includes('المورد'))) {
+      return NextResponse.json({ error: e.message }, { status: 400 })
+    }
+    const { error, status } = safeError(e)
+    return NextResponse.json({ error }, { status })
   }
 }

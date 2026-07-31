@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { safeError } from '@/lib/safe-error'
 
 // GET /api/sales?from=&to=&q=
 export async function GET(req: NextRequest) {
@@ -12,9 +13,14 @@ export async function GET(req: NextRequest) {
     const where: any = {}
     if (from || to) {
       where.date = {}
-      if (from) where.date.gte = new Date(from)
+      if (from) {
+        const d = new Date(from)
+        if (isNaN(d.getTime())) return NextResponse.json({ error: 'تاريخ "من" غير صالح' }, { status: 400 })
+        where.date.gte = d
+      }
       if (to) {
         const toDate = new Date(to)
+        if (isNaN(toDate.getTime())) return NextResponse.json({ error: 'تاريخ "إلى" غير صالح' }, { status: 400 })
         toDate.setHours(23, 59, 59, 999)
         where.date.lte = toDate
       }
@@ -34,8 +40,9 @@ export async function GET(req: NextRequest) {
     })
 
     return NextResponse.json({ sales })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    const { error, status } = safeError(e)
+    return NextResponse.json({ error }, { status })
   }
 }
 
@@ -53,86 +60,61 @@ export async function POST(req: NextRequest) {
       notes,
     } = body
 
-    // التحقق من البيانات المدخلة
     if (!customerName?.trim()) {
-      return NextResponse.json(
-        { error: 'اسم العميل مطلوب' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'اسم العميل مطلوب' }, { status: 400 })
     }
     if (!date) {
-      return NextResponse.json(
-        { error: 'التاريخ مطلوب' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'التاريخ مطلوب' }, { status: 400 })
+    }
+    const dateObj = new Date(date)
+    if (isNaN(dateObj.getTime())) {
+      return NextResponse.json({ error: 'التاريخ غير صالح' }, { status: 400 })
     }
     if (!Array.isArray(items) || items.length === 0) {
-      return NextResponse.json(
-        { error: 'يجب إضافة صنف واحد على الأقل' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'يجب إضافة صنف واحد على الأقل' }, { status: 400 })
     }
 
-    // ===== التحقق من ربط الأصناف بالمنتجات =====
-
-    // التحقق من صحة كل صنف
     const validItems = items.filter(
       (it: any) => it.itemName?.trim() && Number(it.quantity) > 0 && Number(it.unitPrice) >= 0
     )
     if (validItems.length === 0) {
-      return NextResponse.json(
-        { error: 'أضف صنفاً صحيحاً واحداً على الأقل' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'أضف صنفاً صحيحاً واحداً على الأقل' }, { status: 400 })
     }
 
-    // التحقق من توفر الكميات في المخزون
-    for (const it of validItems) {
-      if (it.productId) {
-        const product = await db.product.findUnique({ where: { id: it.productId } })
-        if (!product) {
-          return NextResponse.json(
-            { error: `المنتج "${it.itemName}" غير موجود في قاعدة البيانات` },
-            { status: 400 }
-          )
-        }
-        if (product.quantity < it.quantity) {
-          return NextResponse.json(
-            { error: `الكمية المتاحة من ${product.name} (${product.quantity}) أقل من المطلوب (${it.quantity})` },
-            { status: 400 }
-          )
-        }
-      }
-    }
-
-    // حساب الإجمالي
     const total = validItems.reduce(
       (sum: number, it: any) => sum + Number(it.quantity) * Number(it.unitPrice),
       0
     )
     const paidAmount = Number(paid) || 0
 
-    // التحقق من وجود العميل لو تم تحديده
-    if (customerId_ref) {
-      const customer = await db.customer.findUnique({
-        where: { id: customerId_ref },
-      })
-      if (!customer) {
-        return NextResponse.json(
-          { error: 'العميل المحدد غير موجود' },
-          { status: 400 }
-        )
-      }
-    }
-
-    // إنشاء الفاتورة وأصنافها في transaction واحد
     const sale = await db.$transaction(async (tx) => {
+      // فحص المخزون داخل الـ transaction (TOCTOU fix)
+      for (const it of validItems) {
+        if (it.productId) {
+          const product = await tx.product.findUnique({ where: { id: it.productId } })
+          if (!product) {
+            throw new Error(`المنتج "${it.itemName}" غير موجود في قاعدة البيانات`)
+          }
+          if (product.quantity < Number(it.quantity)) {
+            throw new Error(`الكمية المتاحة من ${product.name} (${product.quantity}) أقل من المطلوب (${it.quantity})`)
+          }
+        }
+      }
+
+      // التحقق من العميل داخل الـ transaction
+      if (customerId_ref) {
+        const customer = await tx.customer.findUnique({ where: { id: customerId_ref } })
+        if (!customer) {
+          throw new Error('العميل المحدد غير موجود')
+        }
+      }
+
       const newSale = await tx.sale.create({
         data: {
           customerName: customerName.trim(),
           customerId_ref: customerId_ref || null,
           invoiceNo: invoiceNo?.trim() || null,
-          date: new Date(date),
+          date: dateObj,
           total,
           paid: paidAmount,
           notes: notes?.trim() || null,
@@ -150,26 +132,23 @@ export async function POST(req: NextRequest) {
         include: { items: true },
       })
 
-      // ===== خصم الكميات من مخزون المنتجات =====
+      // خصم الكميات من مخزون المنتجات
       for (const it of validItems) {
         if (it.productId) {
           await tx.product.update({
             where: { id: it.productId },
-            data: {
-              quantity: { decrement: Number(it.quantity) },
-              updatedAt: new Date(),
-            },
+            data: { quantity: { decrement: Number(it.quantity) }, updatedAt: new Date() },
           })
         }
       }
 
-      // ===== إنشاء حركة خزينة (إيداع المبلغ المدفوع) =====
+      // إنشاء حركة خزينة
       if (paidAmount > 0) {
         await tx.treasuryTransaction.create({
           data: {
             type: 'deposit',
             amount: paidAmount,
-            date: new Date(date),
+            date: dateObj,
             description: `مبيعات - ${customerName.trim()}`,
             category: 'مبيعات',
             referenceType: 'sale',
@@ -183,7 +162,11 @@ export async function POST(req: NextRequest) {
     })
 
     return NextResponse.json({ sale })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    if (e instanceof Error && (e.message.includes('المنتج') || e.message.includes('الكمية') || e.message.includes('العميل'))) {
+      return NextResponse.json({ error: e.message }, { status: 400 })
+    }
+    const { error, status } = safeError(e)
+    return NextResponse.json({ error }, { status })
   }
 }

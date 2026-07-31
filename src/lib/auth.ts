@@ -5,13 +5,20 @@ import { db } from '@/lib/db-server'
 
 const SESSION_COOKIE = 'factory_session'
 const SESSION_EXPIRY_DAYS = 30
-const TOKEN_SECRET = process.env.TOKEN_SECRET || 'selim-erp-session-secret-change-in-prod'
+const TOKEN_SECRET = process.env.TOKEN_SECRET
+if (!TOKEN_SECRET) {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('TOKEN_SECRET environment variable is required in production')
+  }
+  console.warn('[Auth] ⚠️ TOKEN_SECRET not set — using dev-only fallback. NEVER use this in production!')
+}
+const _tokenSecret = TOKEN_SECRET || 'dev-only-fallback-never-use-in-prod'
 
 // إنشاء session token ببيانات المستخدم + توقيع HMAC
 function createSessionToken(userId: string, username: string): string {
   const expires = Date.now() + SESSION_EXPIRY_DAYS * 24 * 60 * 60 * 1000
   const payload = JSON.stringify({ userId, username, expires })
-  const signature = crypto.createHmac('sha256', TOKEN_SECRET).update(payload).digest('hex')
+  const signature = crypto.createHmac('sha256', _tokenSecret).update(payload).digest('hex')
   const tokenData = JSON.stringify({ payload, sig: signature })
   return Buffer.from(tokenData).toString('base64')
 }
@@ -22,7 +29,7 @@ export function verifySessionToken(token: string | undefined): { userId: string;
   try {
     const tokenData = JSON.parse(Buffer.from(token, 'base64').toString())
     const { payload, sig } = tokenData
-    const expectedSig = crypto.createHmac('sha256', TOKEN_SECRET).update(payload).digest('hex')
+    const expectedSig = crypto.createHmac('sha256', _tokenSecret).update(payload).digest('hex')
     if (sig !== expectedSig) return null
     const data = JSON.parse(payload)
     if (data.expires < Date.now()) return null
@@ -50,6 +57,11 @@ export async function getCurrentUser(): Promise<{
     select: { id: true, username: true, name: true, role: true },
   })
   return user
+}
+
+export async function isRegistrationAllowed(): Promise<boolean> {
+  const count = await db.user.count()
+  return count === 0
 }
 
 // تسجيل الدخول
@@ -103,11 +115,19 @@ export async function registerUser(
   if (!username?.trim() || username.length < 3) {
     return { success: false, error: 'اسم المستخدم يجب أن يكون 3 أحرف على الأقل' }
   }
-  if (!password || password.length < 4) {
-    return { success: false, error: 'كلمة المرور يجب أن تكون 4 أحرف على الأقل' }
+  if (!password || password.length < 6) {
+    return { success: false, error: 'كلمة المرور يجب أن تكون 6 أحرف على الأقل' }
   }
+    if (!/[a-zA-Z]/.test(password) || !/[0-9]/.test(password)) {
+      return { success: false, error: 'كلمة المرور يجب أن تحتوي على أحرف وأرقام' }
+    }
   if (!name?.trim()) {
     return { success: false, error: 'الاسم مطلوب' }
+  }
+
+  const canRegister = await isRegistrationAllowed()
+  if (!canRegister) {
+    return { success: false, error: 'التسجيل مغلق — يرجى التواصل مع المدير' }
   }
 
   const existing = await db.user.findUnique({ where: { username } })

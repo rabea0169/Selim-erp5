@@ -117,8 +117,11 @@ export async function register(username: string, password: string, name: string)
     if (!username || username.length < 3) {
       return { success: false, error: 'اسم المستخدم يجب أن يكون 3 أحرف على الأقل' }
     }
-    if (!password || password.length < 4) {
-      return { success: false, error: 'كلمة المرور يجب أن تكون 4 أحرف على الأقل' }
+    if (!password || password.length < 6) {
+      return { success: false, error: 'كلمة المرور يجب أن تكون 6 أحرف على الأقل' }
+    }
+    if (!/[a-zA-Z]/.test(password) || !/[0-9]/.test(password)) {
+      return { success: false, error: 'كلمة المرور يجب أن تحتوي على أحرف وأرقام' }
     }
     if (!name?.trim()) {
       return { success: false, error: 'الاسم مطلوب' }

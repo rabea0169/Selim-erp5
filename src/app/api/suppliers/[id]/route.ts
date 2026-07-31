@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { safeError } from '@/lib/safe-error'
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -32,8 +33,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       },
     })
     return NextResponse.json({ supplier })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    const { error, status } = safeError(e); return NextResponse.json({ error }, { status })
   }
 }
 
@@ -57,7 +58,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
 
     await db.supplier.delete({ where: { id } })
     return NextResponse.json({ success: true })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    const { error, status } = safeError(e); return NextResponse.json({ error }, { status })
   }
 }

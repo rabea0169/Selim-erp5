@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { safeError } from '@/lib/safe-error'
 
-// GET /api/production-orders?status=&q=&page=1&limit=50
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url)
@@ -10,8 +10,9 @@ export async function GET(req: NextRequest) {
     const page = Math.max(1, Number(searchParams.get('page')) || 1)
     const limit = Math.min(200, Math.max(1, Number(searchParams.get('limit')) || 50))
 
+    const validStatuses = ['draft', 'in_progress', 'completed', 'cancelled']
     const where: any = {}
-    if (status) where.status = status
+    if (status && validStatuses.includes(status)) where.status = status
     if (q) where.orderNumber = { contains: q }
 
     const [orders, total] = await Promise.all([
@@ -28,12 +29,12 @@ export async function GET(req: NextRequest) {
       orders,
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    const { error, status } = safeError(e)
+    return NextResponse.json({ error }, { status })
   }
 }
 
-// POST /api/production-orders
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
@@ -48,23 +49,25 @@ export async function POST(req: NextRequest) {
     if (!date) {
       return NextResponse.json({ error: 'التاريخ مطلوب' }, { status: 400 })
     }
-
-    const product = await db.product.findUnique({ where: { id: productId } })
-    if (!product) {
-      return NextResponse.json({ error: 'المنتج غير موجود' }, { status: 404 })
+    const dateObj = new Date(date)
+    if (isNaN(dateObj.getTime())) {
+      return NextResponse.json({ error: 'التاريخ غير صالح' }, { status: 400 })
     }
 
-    const count = await db.productionOrder.count()
-    const orderNumber = `PO-${String(count + 1).padStart(5, '0')}`
-
-    // ===== ربط دورة الإنتاج بالمخزون =====
-    // إذا تم تمرير مواد خام مع أمر التشغيل، يتم سحبها من المخزن مباشرة
     const parsedMaterials = (materials || []) as Array<{ materialId: string; materialName: string; quantity: number; unit: string }>
     const hasMaterials = parsedMaterials.length > 0 && parsedMaterials.every((m) => m.materialId)
     const orderStatus = hasMaterials ? 'in_progress' : 'draft'
 
     const order = await db.$transaction(async (tx) => {
-      // إنشاء أمر التشغيل أولاً للحصول على المعرف
+      const product = await tx.product.findUnique({ where: { id: productId } })
+      if (!product) {
+        throw new Error('المنتج غير موجود')
+      }
+
+      // توليد رقم الأمر داخل transaction لمنع التكرار
+      const count = await tx.productionOrder.count()
+      const orderNumber = `PO-${String(count + 1).padStart(5, '0')}`
+
       const newOrder = await tx.productionOrder.create({
         data: {
           orderNumber,
@@ -75,13 +78,12 @@ export async function POST(req: NextRequest) {
           status: orderStatus,
           materials: materials || [],
           stages: stages || [],
-          date: new Date(date),
+          date: dateObj,
           expectedEndDate: expectedEndDate ? new Date(expectedEndDate) : null,
           notes: notes?.trim() || null,
         },
       })
 
-      // سحب المواد الخام من المخزن عند الإنشاء المباشر (in_progress)
       if (hasMaterials) {
         for (const mat of parsedMaterials) {
           if (!mat.materialId) continue
@@ -94,13 +96,11 @@ export async function POST(req: NextRequest) {
             throw new Error(`الكمية المتاحة من ${mat.materialName} (${material.quantity}) أقل من المطلوب (${mat.quantity})`)
           }
 
-          // سحب الكمية من المادة الخام
           await tx.material.update({
             where: { id: mat.materialId },
             data: { quantity: { decrement: mat.quantity }, updatedAt: new Date() },
           })
 
-          // تسجيل حركة السحب
           await tx.materialTransaction.create({
             data: {
               materialId: mat.materialId,
@@ -108,7 +108,7 @@ export async function POST(req: NextRequest) {
               type: 'out',
               quantity: mat.quantity,
               unitCost: material.unitCost,
-              date: new Date(date),
+              date: dateObj,
               reason: `أمر تشغيل ${orderNumber}`,
               referenceType: 'production_order',
               referenceId: newOrder.id,
@@ -122,7 +122,11 @@ export async function POST(req: NextRequest) {
     })
 
     return NextResponse.json({ order })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    if (e instanceof Error && (e.message.includes('غير موجود') || e.message.includes('أقل من المطلوب'))) {
+      return NextResponse.json({ error: e.message }, { status: 400 })
+    }
+    const { error, status } = safeError(e)
+    return NextResponse.json({ error }, { status })
   }
 }

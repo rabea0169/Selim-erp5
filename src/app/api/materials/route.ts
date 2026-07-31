@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { safeError } from '@/lib/safe-error'
 
 // GET /api/materials?q=&warehouseId=&page=1&limit=50
 export async function GET(req: NextRequest) {
@@ -29,8 +30,9 @@ export async function GET(req: NextRequest) {
       materials,
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    const { error, status } = safeError(e)
+    return NextResponse.json({ error }, { status })
   }
 }
 
@@ -48,6 +50,13 @@ export async function POST(req: NextRequest) {
     }
     if (!warehouseId) {
       return NextResponse.json({ error: 'المخزن مطلوب' }, { status: 400 })
+    }
+
+    if (Number(body.quantity) < 0) {
+      return NextResponse.json({ error: 'الكمية لا يمكن أن تكون سالبة' }, { status: 400 })
+    }
+    if (Number(body.unitCost) < 0) {
+      return NextResponse.json({ error: 'سعر الوحدة لا يمكن أن يكون سالباً' }, { status: 400 })
     }
 
     const warehouse = await db.warehouse.findUnique({ where: { id: warehouseId } })
@@ -69,7 +78,8 @@ export async function POST(req: NextRequest) {
     })
 
     return NextResponse.json({ material })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    const { error, status } = safeError(e)
+    return NextResponse.json({ error }, { status })
   }
 }

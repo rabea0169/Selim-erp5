@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { safeError } from '@/lib/safe-error'
 
 // GET /api/supplier-report/[id]?from=&to=
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -41,8 +42,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const totalReturns = returns.reduce((s, x) => s + x.total, 0)
     const totalPayments = payments.reduce((s, x) => s + x.amount, 0)
     const totalPaid = purchases.reduce((s, x) => s + x.paid, 0)
-    // الرصيد المتبقي = إجمالي المشتريات - المدفوع على الفواتير - المدفوعات المستقلة - إجمالي المرتجعات
-    const totalRemaining = totalPurchases - totalPaid - totalPayments - totalReturns
+    // الرصيد المتبقي = إجمالي المشتريات - المدفوع (يشمل المدفوعات المستقلة) - إجمالي المرتجعات
+    const totalRemaining = totalPurchases - totalPaid - totalReturns
 
     return NextResponse.json({
       supplier,
@@ -61,7 +62,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       returns,
       payments,
     })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    const { error, status } = safeError(e)
+    return NextResponse.json({ error }, { status })
   }
 }

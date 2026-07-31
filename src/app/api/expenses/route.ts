@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { safeError } from '@/lib/safe-error'
 
 export async function GET(req: NextRequest) {
   try {
@@ -29,8 +30,8 @@ export async function GET(req: NextRequest) {
     })
 
     return NextResponse.json({ expenses })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    const { error, status } = safeError(e); return NextResponse.json({ error }, { status })
   }
 }
 
@@ -80,7 +81,7 @@ export async function POST(req: NextRequest) {
       include: { category: true },
     })
     return NextResponse.json({ expense })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    const { error, status } = safeError(e); return NextResponse.json({ error }, { status })
   }
 }

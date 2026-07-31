@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { safeError } from '@/lib/safe-error'
 
 // GET /api/materials/[id]
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -13,8 +14,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: 'الخامة غير موجودة' }, { status: 404 })
     }
     return NextResponse.json({ material })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    const { error, status } = safeError(e)
+    return NextResponse.json({ error }, { status })
   }
 }
 
@@ -35,6 +37,13 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const existing = await db.material.findUnique({ where: { id } })
     if (!existing) {
       return NextResponse.json({ error: 'الخامة غير موجودة' }, { status: 404 })
+    }
+
+    if (Number(body.quantity) < 0) {
+      return NextResponse.json({ error: 'الكمية لا يمكن أن تكون سالبة' }, { status: 400 })
+    }
+    if (Number(body.unitCost) < 0) {
+      return NextResponse.json({ error: 'سعر الوحدة لا يمكن أن يكون سالباً' }, { status: 400 })
     }
 
     if (warehouseId) {
@@ -59,8 +68,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     })
 
     return NextResponse.json({ material })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    const { error, status } = safeError(e)
+    return NextResponse.json({ error }, { status })
   }
 }
 
@@ -74,7 +84,8 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     }
     await db.material.delete({ where: { id } })
     return NextResponse.json({ success: true })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    const { error, status } = safeError(e)
+    return NextResponse.json({ error }, { status })
   }
 }

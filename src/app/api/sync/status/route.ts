@@ -1,9 +1,16 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { requireAdmin } from '@/lib/admin-check'
+import { safeError } from '@/lib/safe-error'
 
 // GET /api/sync/status - حالة السيرفر
 export async function GET() {
   try {
+    const admin = await requireAdmin()
+    if (!admin.ok) {
+      return NextResponse.json({ error: admin.error }, { status: admin.status })
+    }
+
     const counts: Record<string, number> = {}
     const tables = [
       'worker', 'customer', 'supplier', 'sale', 'purchase',
@@ -24,10 +31,8 @@ export async function GET() {
       counts,
       timestamp: new Date().toISOString(),
     })
-  } catch (e: any) {
-    return NextResponse.json({
-      connected: false,
-      error: e.message,
-    }, { status: 500 })
+  } catch (e) {
+    const { error, status } = safeError(e)
+    return NextResponse.json({ connected: false, error }, { status })
   }
 }

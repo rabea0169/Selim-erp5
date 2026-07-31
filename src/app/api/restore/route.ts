@@ -1,9 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { requireAdmin } from '@/lib/admin-check'
+import { safeError } from '@/lib/safe-error'
 
-// POST /api/restore - استرجاع البيانات من ملف JSON
+// POST /api/restore - استرجاع البيانات من ملف JSON (admin فقط)
 export async function POST(req: NextRequest) {
   try {
+    const admin = await requireAdmin()
+    if (!admin.ok) {
+      return NextResponse.json({ error: admin.error }, { status: admin.status })
+    }
+
     const body = await req.json()
     const { data } = body
 
@@ -29,7 +36,6 @@ export async function POST(req: NextRequest) {
       await tx.worker.deleteMany()
 
       // إعادة إنشاء البيانات بالترتيب الصحيح (الأصول قبل الأبناء)
-      // 1. فئات المصاريف
       if (data.expenseCategories?.length) {
         for (const c of data.expenseCategories) {
           await tx.expenseCategory.create({
@@ -42,7 +48,6 @@ export async function POST(req: NextRequest) {
           })
         }
       }
-      // 2. المصاريف (تعتمد على فئات المصاريف)
       if (data.expenses?.length) {
         for (const e of data.expenses) {
           await tx.expense.create({
@@ -58,7 +63,6 @@ export async function POST(req: NextRequest) {
           })
         }
       }
-      // 3. الموظفين
       if (data.workers?.length) {
         for (const w of data.workers) {
           await tx.worker.create({
@@ -75,7 +79,6 @@ export async function POST(req: NextRequest) {
           })
         }
       }
-      // 4. سلف/قبض/حضور/إنتاج الموظفين (تعتمد على الموظفين)
       if (data.workerAdvances?.length) {
         for (const a of data.workerAdvances) {
           await tx.workerAdvance.create({
@@ -137,7 +140,6 @@ export async function POST(req: NextRequest) {
           })
         }
       }
-      // 5. العملاء والموردين
       if (data.customers?.length) {
         for (const c of data.customers) {
           await tx.customer.create({
@@ -166,7 +168,6 @@ export async function POST(req: NextRequest) {
           })
         }
       }
-      // 6. المبيعات وأصنافها (تعتمد على العملاء)
       if (data.sales?.length) {
         for (const s of data.sales) {
           await tx.sale.create({
@@ -199,7 +200,6 @@ export async function POST(req: NextRequest) {
           })
         }
       }
-      // 7. المشتريات وأصنافها (تعتمد على الموردين)
       if (data.purchases?.length) {
         for (const p of data.purchases) {
           await tx.purchase.create({
@@ -246,7 +246,8 @@ export async function POST(req: NextRequest) {
         expenses: data.expenses?.length || 0,
       },
     })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    const { error, status } = safeError(e)
+    return NextResponse.json({ error }, { status })
   }
 }

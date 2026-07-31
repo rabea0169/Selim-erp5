@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifySessionToken } from '@/lib/auth'
+import { rateLimit, getClientIP } from '@/lib/rate-limit'
 
 // Routes عامة لا تحتاج مصادقة
 const PUBLIC_ROUTES = [
@@ -19,6 +20,16 @@ export async function middleware(req: NextRequest) {
     PUBLIC_ROUTES.includes(pathname)
   ) {
     return NextResponse.next()
+  }
+
+  // Rate limiting عام لجميع الـ API endpoints: 200 طلب في الدقيقة
+  const ip = getClientIP(req)
+  const { limited, retryAfter } = rateLimit(`api:${ip}`, 200, 60_000)
+  if (limited) {
+    return NextResponse.json(
+      { error: 'طلبات كثيرة جداً. حاول لاحقاً' },
+      { status: 429, headers: { 'Retry-After': String(retryAfter) } }
+    )
   }
 
   // التحقق من الـ session cookie

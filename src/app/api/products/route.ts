@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { safeError } from '@/lib/safe-error'
 
 // GET /api/products?q=&warehouseId=&page=1&limit=50
 export async function GET(req: NextRequest) {
@@ -29,8 +30,9 @@ export async function GET(req: NextRequest) {
       products,
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    const { error, status } = safeError(e)
+    return NextResponse.json({ error }, { status })
   }
 }
 
@@ -45,6 +47,17 @@ export async function POST(req: NextRequest) {
     }
     if (!unit?.trim()) {
       return NextResponse.json({ error: 'الوحدة مطلوبة' }, { status: 400 })
+    }
+
+    const retailPrice = Number(body.retailPrice) || 0
+    const wholesalePrice = Number(body.wholesalePrice) || 0
+    const costPrice = Number(body.cost) || 0
+    if (retailPrice < 0 || wholesalePrice < 0 || costPrice < 0) {
+      return NextResponse.json({ error: 'الأسعار لا يمكن أن تكون سالبة' }, { status: 400 })
+    }
+    const qty = Number(body.quantity) || 0
+    if (qty < 0) {
+      return NextResponse.json({ error: 'الكمية لا يمكن أن تكون سالبة' }, { status: 400 })
     }
 
     if (warehouseId) {
@@ -72,7 +85,8 @@ export async function POST(req: NextRequest) {
     })
 
     return NextResponse.json({ product })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    const { error, status } = safeError(e)
+    return NextResponse.json({ error }, { status })
   }
 }

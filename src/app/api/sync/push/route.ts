@@ -1,19 +1,59 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { requireAdmin } from '@/lib/admin-check'
+import { safeError } from '@/lib/safe-error'
 
-// POST /api/sync/push - رفع بيانات من IndexedDB للسيرفر
+// حقول محظورة من التزامن (لا يسمح للعميل بتعديلها)
+const FORBIDDEN_FIELDS: Record<string, string[]> = {
+  user: ['passwordHash', 'role'],
+}
+
+// حقول مسموحة لكل نموذج (أمان بالسماح لا بالمنع)
+const ALLOWED_FIELDS: Record<string, string[]> = {
+  factorySettings: ['id', 'factoryName', 'taxNumber', 'commercialRegister', 'phone', 'address', 'logo', 'notes', 'createdAt', 'updatedAt'],
+  worker: ['id', 'name', 'phone', 'job', 'type', 'dailyWage', 'monthlySalary', 'notes', 'createdAt', 'updatedAt'],
+  workerAdvance: ['id', 'workerId', 'amount', 'date', 'notes', 'createdAt'],
+  workerReceipt: ['id', 'workerId', 'amount', 'date', 'notes', 'createdAt'],
+  workerAttendance: ['id', 'workerId', 'date', 'checkIn', 'checkOut', 'status', 'notes', 'createdAt'],
+  production: ['id', 'workerId', 'date', 'modelName', 'quantity', 'unitPrice', 'total', 'notes', 'createdAt'],
+  customer: ['id', 'name', 'phone', 'address', 'notes', 'createdAt'],
+  supplier: ['id', 'name', 'phone', 'address', 'notes', 'createdAt'],
+  sale: ['id', 'invoiceNo', 'customerName', 'customerId_ref', 'date', 'total', 'paid', 'notes', 'createdAt', 'updatedAt'],
+  saleItem: ['id', 'saleId', 'itemName', 'productId', 'priceType', 'quantity', 'unitPrice', 'total'],
+  purchase: ['id', 'invoiceNo', 'supplierName', 'supplierId_ref', 'date', 'total', 'paid', 'notes', 'createdAt', 'updatedAt'],
+  purchaseItem: ['id', 'purchaseId', 'itemName', 'materialId', 'quantity', 'unitPrice', 'total'],
+  expenseCategory: ['id', 'name', 'notes', 'createdAt'],
+  expense: ['id', 'categoryId', 'categoryName', 'amount', 'date', 'notes', 'createdAt'],
+  treasuryTransaction: ['id', 'type', 'amount', 'date', 'description', 'category', 'referenceType', 'referenceId', 'notes', 'createdAt'],
+  warehouse: ['id', 'name', 'type', 'notes', 'createdAt'],
+  material: ['id', 'warehouseId', 'name', 'unit', 'quantity', 'unitCost', 'minStock', 'notes', 'createdAt', 'updatedAt'],
+  materialTransaction: ['id', 'materialId', 'warehouseId', 'type', 'quantity', 'unitCost', 'date', 'reason', 'referenceType', 'referenceId', 'notes', 'createdAt'],
+  product: ['id', 'name', 'warehouseId', 'sku', 'unit', 'quantity', 'retailPrice', 'wholesalePrice', 'costPrice', 'minStock', 'notes', 'createdAt', 'updatedAt'],
+  productionOrder: ['id', 'orderNumber', 'productId', 'productName', 'quantity', 'completedQuantity', 'unit', 'status', 'materials', 'stages', 'date', 'expectedEndDate', 'completedDate', 'notes', 'createdAt', 'updatedAt'],
+  payment: ['id', 'partyId', 'partyName', 'type', 'amount', 'date', 'referenceType', 'referenceId', 'notes', 'createdAt'],
+  saleReturn: ['id', 'saleId', 'customerId_ref', 'customerName', 'date', 'total', 'notes', 'items', 'createdAt'],
+  purchaseReturn: ['id', 'purchaseId', 'supplierId_ref', 'supplierName', 'date', 'total', 'notes', 'items', 'createdAt'],
+  auditLog: ['id', 'action', 'entity', 'entityId', 'details', 'userId', 'createdAt'],
+}
+
+// POST /api/sync/push - رفع بيانات من IndexedDB للسيرفر (admin فقط)
 export async function POST(req: NextRequest) {
   try {
+    // تحقق admin
+    const admin = await requireAdmin()
+    if (!admin.ok) {
+      return NextResponse.json({ error: admin.error }, { status: admin.status })
+    }
+
     const body = await req.json()
-    const { data, userId } = body
+    const { data } = body
 
     if (!data) {
       return NextResponse.json({ error: 'لا توجد بيانات' }, { status: 400 })
     }
 
-    const results: Record<string, number> = {}
+    const results: Record<string, { success: number; failed: number }> = {}
 
-    // رفع كل الجداول
     const tableMap: Record<string, any> = {
       users: 'user',
       factorySettings: 'factorySettings',
@@ -44,33 +84,54 @@ export async function POST(req: NextRequest) {
 
     for (const [localTable, modelName] of Object.entries(tableMap)) {
       const records = data[localTable]
-      if (!records || !Array.isArray(records) || records.length === 0) continue
+      if (!records || !Array.isArray(records) || records.length === 0) {
+        results[localTable] = { success: 0, failed: 0 }
+        continue
+      }
 
-      let count = 0
+      const allowed = ALLOWED_FIELDS[modelName]
+      const forbidden = FORBIDDEN_FIELDS[modelName] || []
+      let successCount = 0
+      let failedCount = 0
+
       for (const record of records) {
         try {
-          // تحويل التواريخ
+          if (!record.id) { failedCount++; continue }
+
+          // فلترة الحقول المسموحة فقط
           const processed: any = {}
           for (const [key, value] of Object.entries(record)) {
-            if (typeof value === 'string' && (key.includes('date') || key.includes('At') || key.includes('timestamp'))) {
-              processed[key] = new Date(value)
+            // تجاهل الحقول المحظورة
+            if (forbidden.includes(key)) continue
+
+            // تحويل التواريخ
+            if (typeof value === 'string' && (key.includes('date') || key.includes('At') || key === 'checkIn' || key === 'checkOut')) {
+              const d = new Date(value)
+              if (!isNaN(d.getTime())) {
+                processed[key] = d
+              }
             } else if (value !== undefined && value !== null) {
-              processed[key] = value
+              // لو في قائمة المسموحات نستخدمها، وإلا نسقط الحقل
+              if (!allowed || allowed.includes(key)) {
+                processed[key] = value
+              }
             }
           }
 
-          // upsert (إنشاء أو تحديث)
+          processed.updatedAt = new Date()
+
           await (db as any)[modelName].upsert({
             where: { id: record.id },
             create: processed,
             update: processed,
           })
-          count++
+          successCount++
         } catch (e: any) {
-          console.error(`Error in ${modelName}:`, e.message)
+          console.error(`[Sync] Error in ${modelName} record ${record.id}:`, e.message)
+          failedCount++
         }
       }
-      results[localTable] = count
+      results[localTable] = { success: successCount, failed: failedCount }
     }
 
     return NextResponse.json({
@@ -79,8 +140,8 @@ export async function POST(req: NextRequest) {
       results,
       syncedAt: new Date().toISOString(),
     })
-  } catch (e: any) {
-    console.error('Sync push error:', e)
-    return NextResponse.json({ error: e.message }, { status: 500 })
+  } catch (e) {
+    const { error, status } = safeError(e)
+    return NextResponse.json({ error }, { status })
   }
 }
