@@ -295,14 +295,48 @@ export async function getDBStats(): Promise<Record<string, number>> {
 }
 
 // فحص سلامة البيانات — يُستدعى عند تحميل التطبيق
-export async function checkDataIntegrity(): Promise<{ ok: boolean; currentCount: number; lastKnownCount: number; lost: boolean }> {
+// يفحص IndexedDB + Cache API لاكتشاف الفقدان حتى في أول استخدام
+export async function checkDataIntegrity(): Promise<{ ok: boolean; currentCount: number; lastKnownCount: number; lost: boolean; cacheAvailable: boolean }> {
   const stats = await getDBStats()
   const currentCount = Object.values(stats).reduce((a: number, b: number) => a + Math.max(0, b), 0)
   const lastKnownStr = localStorage.getItem(LAST_KNOWN_COUNT_KEY)
   const lastKnownCount = lastKnownStr ? Number(lastKnownStr) : 0
-  const lost = lastKnownCount > 0 && currentCount < lastKnownCount && currentCount < 5
-  if (lost) {
-    console.error(`[DB] ⚠️ DATA LOSS DETECTED! Previous: ${lastKnownCount} records, Current: ${currentCount} records`)
+
+  // فحص ثانوي: هل فيه بيانات في Cache API؟
+  let cacheAvailable = false
+  if (currentCount < 5) {
+    try {
+      const cache = await caches.open('auto-backups')
+      const latestResponse = await cache.match('/auto-backup-latest')
+      if (latestResponse) {
+        const text = await latestResponse.text()
+        if (text) {
+          const parsed = JSON.parse(text)
+          let cacheCount = 0
+          if (parsed?.data) {
+            for (const table of Object.keys(parsed.data)) {
+              if (Array.isArray(parsed.data[table])) {
+                cacheCount += parsed.data[table].length
+              }
+            }
+          }
+          cacheAvailable = cacheCount >= 5
+          if (cacheAvailable && !lastKnownCount) {
+            // أول استخدام ولا يوجد عد محفوظ — استخدم عد الكاش
+            console.log(`[DB] No lastKnownCount, but Cache API has ${cacheCount} records`)
+          }
+        }
+      }
+    } catch {
+      // Cache API غير متاح
+    }
   }
-  return { ok: !lost, currentCount, lastKnownCount, lost }
+
+  const lost = (lastKnownCount > 0 && currentCount < lastKnownCount && currentCount < 5)
+    || (currentCount < 5 && cacheAvailable)
+
+  if (lost) {
+    console.error(`[DB] DATA LOSS DETECTED! Previous: ${lastKnownCount}, Current: ${currentCount}, Cache: ${cacheAvailable}`)
+  }
+  return { ok: !lost, currentCount, lastKnownCount, lost, cacheAvailable }
 }

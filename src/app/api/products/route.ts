@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { name, category, unit, wholesalePrice, halfWholesalePrice, retailPrice, cost, warehouseId, quantity, reorderLevel, notes } = body
+    const { name, category, unit, halfWholesalePrice, warehouseId, quantity, reorderLevel, notes } = body
 
     if (!name?.trim()) {
       return NextResponse.json({ error: 'اسم المنتج مطلوب' }, { status: 400 })
@@ -72,12 +72,12 @@ export async function POST(req: NextRequest) {
         name: name.trim(),
         category: category?.trim() || null,
         unit: unit.trim(),
-        wholesalePrice: Number(wholesalePrice) || 0,
+        wholesalePrice,
         halfWholesalePrice: Number(halfWholesalePrice) || 0,
-        retailPrice: Number(retailPrice) || 0,
-        cost: Number(cost) || 0,
+        retailPrice,
+        cost: costPrice,
         warehouseId: warehouseId || null,
-        quantity: Number(quantity) || 0,
+        quantity: qty,
         reorderLevel: reorderLevel != null ? Number(reorderLevel) : null,
         notes: notes?.trim() || null,
       },

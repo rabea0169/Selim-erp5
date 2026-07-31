@@ -151,9 +151,23 @@ class AutoBackupService {
   }
 
   // استرجاع آخر نسخة من Cache API (طبقة حماية إضافية)
+  // يفحص /auto-backup-latest أولاً (المكان اللي dataChangeEmitter يحفظ فيه)
+  // ثم يبحث بالـ timestamp كـ fallback
   async getLastCacheBackup(): Promise<any | null> {
     try {
       const cache = await caches.open('auto-backups')
+
+      // أولاً: حاول المفتاح الثابت اللي dataChangeEmitter يحفظ فيه
+      const latestResponse = await cache.match('/auto-backup-latest')
+      if (latestResponse) {
+        const text = await latestResponse.text()
+        if (text) {
+          console.log('[Backup] ✅ Restored from /auto-backup-latest')
+          return JSON.parse(text)
+        }
+      }
+
+      // ثانياً: fallback — ابحث بالـ timestamp (نسخ التنزيل التلقائي)
       const keys = await cache.keys()
       if (keys.length === 0) return null
 
@@ -165,7 +179,11 @@ class AutoBackupService {
 
       const response = await cache.match(sortedKeys[0])
       const text = await response?.text()
-      return text ? JSON.parse(text) : null
+      if (text) {
+        console.log('[Backup] ✅ Restored from timestamped cache backup')
+        return JSON.parse(text)
+      }
+      return null
     } catch {
       return null
     }

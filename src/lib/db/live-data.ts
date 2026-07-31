@@ -65,7 +65,7 @@ class DataChangeEmitter {
       }
     })
 
-    // حفظ احتياطي تلقائي في Cache API بعد 5 ثواني من آخر تغيير
+    // حفظ احتياطي تلقائي في Cache API بعد 2 ثانية من آخر تغيير
     this.scheduleCacheBackup()
   }
 
@@ -74,7 +74,7 @@ class DataChangeEmitter {
     if (this.saveTimer) clearTimeout(this.saveTimer)
     this.saveTimer = setTimeout(() => {
       this.saveToCacheAPI()
-    }, 5000)
+    }, 2000)
   }
 
   private async saveToCacheAPI() {
