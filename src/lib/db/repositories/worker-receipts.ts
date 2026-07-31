@@ -45,8 +45,16 @@ class WorkerReceiptRepository extends BaseRepository<WorkerReceipt> {
       ...data,
       id,
       createdAt: (data as any).createdAt || now,
-      updatedAt: (data as any).updatedAt || now,
     } as WorkerReceipt
+
+    // جلب بيانات العامل قبل بدء المعاملة لتجنب مشاكل الاتصال المتقاطع
+    let workerName = 'موظف'
+    if (record.workerId) {
+      try {
+        const worker = await workerRepository.getById(record.workerId)
+        if (worker) workerName = worker.name
+      } catch {}
+    }
 
     const db = await getDB()
     const tx = db.transaction(['workerReceipts', 'treasuryTransactions'], 'readwrite')
@@ -55,13 +63,12 @@ class WorkerReceiptRepository extends BaseRepository<WorkerReceipt> {
 
     // إيداع في الخزينة في نفس المعاملة
     if (record.amount > 0 && record.workerId) {
-      const worker = await workerRepository.getById(record.workerId)
       const treasuryTx = {
         id: generateId(),
         type: 'deposit' as const,
         amount: record.amount,
         date: record.date,
-        description: `قبض من موظف - ${worker?.name || 'موظف'}`,
+        description: `قبض من موظف - ${workerName}`,
         category: 'قبض موظفين',
         referenceType: 'worker_receipt',
         referenceId: record.id,

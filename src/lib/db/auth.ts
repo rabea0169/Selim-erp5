@@ -15,12 +15,16 @@ export interface SessionUser {
 // التحقق من السيرفر أولاً ثم IndexedDB
 async function checkServerUser(username: string, password: string): Promise<{ user: SessionUser | null; serverReachable: boolean }> {
   try {
-    const res = await fetch('/api/auth/login', {
+    const response = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password }),
-    }).then((r) => r.json())
-
+    })
+    if (!response.ok) {
+      // السيرفر رد لكن بيها مشكلة
+      return { user: null, serverReachable: true }
+    }
+    const res = await response.json()
     // لو حصلنا على رد من السيرفر، يبقى السيرفر شغال
     return { user: res.user || null, serverReachable: true }
   } catch {
@@ -31,7 +35,9 @@ async function checkServerUser(username: string, password: string): Promise<{ us
 // التحقق من السيرفر لو فيه مستخدمين
 async function checkServerHasUsers(): Promise<boolean> {
   try {
-    const res = await fetch('/api/auth/register').then((r) => r.json())
+    const response = await fetch('/api/auth/register')
+    if (!response.ok) return false
+    const res = await response.json()
     return res.hasUsers === true
   } catch {
     return false
@@ -98,13 +104,14 @@ export async function register(username: string, password: string, name: string)
     // 1. محاولة التسجيل على السيرفر أولاً
     let serverReachable = false
     try {
-      const res = await fetch('/api/auth/register', {
+      const response = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password, name }),
-      }).then((r) => r.json())
+      })
 
       serverReachable = true
+      const res = await response.json()
 
       if (res.error) {
         // لو السيرفر says المستخدم موجود، ممكن يكون هو نفسه المستخدم اللي بيفقد بياناته المحلية

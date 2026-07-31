@@ -83,15 +83,15 @@ class PurchaseReturnRepository extends BaseRepository<PurchaseReturn> {
       unitPrice: number
     }>
   }): Promise<PurchaseReturn> {
+    const now = nowISO()
+    const returnId = generateId()
+    const returnNumber = await this.generateReturnNumber() // قبل بدء المعاملة
+
     const db = await getDB()
     const tx = db.transaction(
       ['purchaseReturns', 'purchaseReturnItems', 'purchases', 'materials', 'materialTransactions', 'treasuryTransactions'],
       'readwrite'
     )
-
-    const now = nowISO()
-    const returnId = generateId()
-    const returnNumber = await this.generateReturnNumber()
 
     // جلب الفاتورة الأصلية
     const purchase = await tx.objectStore('purchases').get(data.purchaseId) as Purchase | undefined

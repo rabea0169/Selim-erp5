@@ -1,6 +1,6 @@
 'use client'
 
-import { saleRepository, customerRepository, workerAttendanceRepository, factorySettingsRepository } from './repositories'
+import { saleRepository, customerRepository, workerAttendanceRepository, factorySettingsRepository, workerRepository, expenseRepository } from './repositories'
 import { todayStr } from '@/lib/format'
 
 export interface SmartAlert {
@@ -39,7 +39,7 @@ class AlertsService {
 
       // 2. عمال لم يحضروا اليوم
       const todayAttendance = await workerAttendanceRepository.getByDate(today)
-      const allWorkers = await import('./repositories').then((m) => m.workerRepository.getAll())
+      const allWorkers = await workerRepository.getAll()
       const absentWorkers = allWorkers.length - todayAttendance.length
       if (absentWorkers > 0 && allWorkers.length > 0) {
         alerts.push({
@@ -55,7 +55,7 @@ class AlertsService {
       }
 
       // 3. تذكير النسخ الاحتياطي
-      const lastBackup = localStorage.getItem('lastBackupDate')
+      const lastBackup = localStorage.getItem('lastAutoDownload') || localStorage.getItem('lastBackupDate')
       const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
       if (!lastBackup || Number(lastBackup) < weekAgo) {
         alerts.push({
@@ -86,9 +86,7 @@ class AlertsService {
       // 5. فحص المصاريف الزائدة
       const startOfMonth = new Date()
       startOfMonth.setDate(1)
-      const monthExpenses = await import('./repositories').then((m) =>
-        m.expenseRepository.getByDateRange(startOfMonth.toISOString().split('T')[0], today)
-      )
+      const monthExpenses = await expenseRepository.getByDateRange(startOfMonth.toISOString().split('T')[0], today)
       const totalExpenses = monthExpenses.reduce((s, e) => s + e.amount, 0)
       if (totalExpenses > 50000) {
         alerts.push({

@@ -1,25 +1,32 @@
 import bcrypt from 'bcryptjs'
+import crypto from 'crypto'
 import { cookies } from 'next/headers'
 import { db } from '@/lib/db-server'
 
 const SESSION_COOKIE = 'factory_session'
 const SESSION_EXPIRY_DAYS = 30
+const TOKEN_SECRET = process.env.TOKEN_SECRET || 'selim-erp-session-secret-change-in-prod'
 
-// إنشاء session token بسيط (base64 من بيانات المستخدم + توقيع)
+// إنشاء session token ببيانات المستخدم + توقيع HMAC
 function createSessionToken(userId: string, username: string): string {
   const expires = Date.now() + SESSION_EXPIRY_DAYS * 24 * 60 * 60 * 1000
   const payload = JSON.stringify({ userId, username, expires })
-  // تشفير بسيط base64 (ليس آمناً تشفيرياً لكنه كافٍ للجلسة المحلية)
-  return Buffer.from(payload).toString('base64')
+  const signature = crypto.createHmac('sha256', TOKEN_SECRET).update(payload).digest('hex')
+  const tokenData = JSON.stringify({ payload, sig: signature })
+  return Buffer.from(tokenData).toString('base64')
 }
 
-// التحقق من session token
+// التحقق من session token مع التحقق من التوقيع
 export function verifySessionToken(token: string | undefined): { userId: string; username: string } | null {
   if (!token) return null
   try {
-    const payload = JSON.parse(Buffer.from(token, 'base64').toString())
-    if (payload.expires < Date.now()) return null
-    return { userId: payload.userId, username: payload.username }
+    const tokenData = JSON.parse(Buffer.from(token, 'base64').toString())
+    const { payload, sig } = tokenData
+    const expectedSig = crypto.createHmac('sha256', TOKEN_SECRET).update(payload).digest('hex')
+    if (sig !== expectedSig) return null
+    const data = JSON.parse(payload)
+    if (data.expires < Date.now()) return null
+    return { userId: data.userId, username: data.username }
   } catch {
     return null
   }

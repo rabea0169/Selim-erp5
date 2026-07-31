@@ -31,10 +31,8 @@ class CustomerRepository extends BaseRepository<Customer> {
     if (!customer) return null
 
     const db = await getDB()
-    const allSales = await db.getAll('sales')
-    const sales = allSales
-      .filter((s) => s.customerId_ref === customerId)
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    const sales = await db.getAllFromIndex('sales', 'by-customer', customerId)
+      .then((s) => s.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()))
 
     const totalSales = sales.reduce((s, x) => s + x.total, 0)
     const totalPaid = sales.reduce((s, x) => s + x.paid, 0)

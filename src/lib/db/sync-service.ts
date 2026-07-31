@@ -8,6 +8,7 @@ const SYNC_ENABLED_KEY = 'serverSyncEnabled'
 
 class SyncService {
   private intervalId: ReturnType<typeof setInterval> | null = null
+  private onlineHandler: (() => void) | null = null
   private pendingChanges: Set<string> = new Set()
 
   // المزامنة معطّلة افتراضياً - تُفعّل يدوياً فقط بعد التأكد من عمل السيرفر
@@ -27,25 +28,24 @@ class SyncService {
     if (!this.isEnabled()) return
 
     // مزامنة فورية بعد 10 ثواني
-    setTimeout(() => {
-      Promise.resolve().then(() => this.sync())
-    }, 10000)
+    setTimeout(() => { this.sync() }, 10000)
 
     // مزامنة كل 5 دقائق
-    this.intervalId = setInterval(() => {
-      Promise.resolve().then(() => this.sync())
-    }, 5 * 60 * 1000)
+    this.intervalId = setInterval(() => { this.sync() }, 5 * 60 * 1000)
 
     // مزامنة عند العودة online
-    window.addEventListener('online', () => {
-      Promise.resolve().then(() => this.sync())
-    })
+    this.onlineHandler = () => { this.sync() }
+    window.addEventListener('online', this.onlineHandler)
   }
 
   stop() {
     if (this.intervalId) {
       clearInterval(this.intervalId)
       this.intervalId = null
+    }
+    if (this.onlineHandler) {
+      window.removeEventListener('online', this.onlineHandler)
+      this.onlineHandler = null
     }
   }
 
@@ -80,11 +80,13 @@ class SyncService {
       let pushed = 0
 
       try {
-        const pushRes = await fetch('/api/sync/push', {
+        const pushResponse = await fetch('/api/sync/push', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ data: localData.data }),
-        }).then((r) => r.json())
+        })
+        if (!pushResponse.ok) throw new Error(`Push failed: ${pushResponse.status}`)
+        const pushRes = await pushResponse.json()
 
         if (pushRes.success) {
           pushSuccess = true
@@ -99,7 +101,9 @@ class SyncService {
       // 2. Pull - تحميل البيانات من السيرفر
       // فقط إذا كان Push ناجح أو كان هناك بيانات على السيرفر
       try {
-        const pullRes = await fetch('/api/sync/pull').then((r) => r.json())
+        const pullResponse = await fetch('/api/sync/pull')
+        if (!pullResponse.ok) throw new Error(`Pull failed: ${pullResponse.status}`)
+        const pullRes = await pullResponse.json()
 
         if (pullRes.success && pullRes.data) {
           let pulled = 0

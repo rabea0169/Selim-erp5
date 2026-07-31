@@ -28,33 +28,39 @@ class ProductRepository extends BaseRepository<Product> {
     return all.filter((p) => p.reorderLevel && p.quantity <= p.reorderLevel)
   }
 
-  // إضافة كمية لمنتج (بعد انتهاء التصنيع)
+  // إضافة كمية لمنتج (بعد انتهاء التصنيع) - ذري داخل معاملة
   async addStock(productId: string, quantity: number, reason: string, referenceId?: string): Promise<void> {
     const db = await getDB()
-    const product = await db.get('products', productId)
+    const tx = db.transaction(['products'], 'readwrite')
+    const product = await tx.objectStore('products').get(productId)
     if (!product) throw new Error('المنتج غير موجود')
 
-    await db.put('products', {
+    await tx.objectStore('products').put({
       ...product,
       quantity: product.quantity + quantity,
       updatedAt: nowISO(),
     })
+
+    await tx.done
   }
 
-  // سحب كمية من منتج (بعد البيع)
+  // سحب كمية من منتج (بعد البيع) - ذري داخل معاملة
   async consumeStock(productId: string, quantity: number, reason: string): Promise<void> {
     const db = await getDB()
-    const product = await db.get('products', productId)
+    const tx = db.transaction(['products'], 'readwrite')
+    const product = await tx.objectStore('products').get(productId)
     if (!product) throw new Error('المنتج غير موجود')
     if (product.quantity < quantity) {
       throw new Error(`الكمية المتاحة (${product.quantity}) أقل من المطلوب (${quantity})`)
     }
 
-    await db.put('products', {
+    await tx.objectStore('products').put({
       ...product,
       quantity: product.quantity - quantity,
       updatedAt: nowISO(),
     })
+
+    await tx.done
   }
 }
 
@@ -177,12 +183,14 @@ class ProductionOrderRepository extends BaseRepository<ProductionOrder> {
     return order
   }
 
-  // إكمال مرحلة في أمر التشغيل
+  // إكمال مرحلة في أمر التشغيل - ذري داخل معاملة
   async completeStage(orderId: string, stageId: string, workerId?: string): Promise<void> {
-    const order = await this.getById(orderId)
+    const db = await getDB()
+    const tx = db.transaction(['productionOrders'], 'readwrite')
+    const order = await tx.objectStore('productionOrders').get(orderId)
     if (!order) throw new Error('أمر التشغيل غير موجود')
 
-    const stages = order.stages.map((s) => {
+    const stages = order.stages.map((s: ProductionOrderStage) => {
       if (s.id === stageId) {
         return {
           ...s,
@@ -194,15 +202,18 @@ class ProductionOrderRepository extends BaseRepository<ProductionOrder> {
       return s
     })
 
-    await this.update(orderId, { stages })
+    await tx.objectStore('productionOrders').put({ ...order, stages, updatedAt: nowISO() })
+    await tx.done
   }
 
-  // بدء مرحلة
+  // بدء مرحلة - ذري داخل معاملة
   async startStage(orderId: string, stageId: string, workerId?: string): Promise<void> {
-    const order = await this.getById(orderId)
+    const db = await getDB()
+    const tx = db.transaction(['productionOrders'], 'readwrite')
+    const order = await tx.objectStore('productionOrders').get(orderId)
     if (!order) throw new Error('أمر التشغيل غير موجود')
 
-    const stages = order.stages.map((s) => {
+    const stages = order.stages.map((s: ProductionOrderStage) => {
       if (s.id === stageId) {
         return {
           ...s,
@@ -214,7 +225,8 @@ class ProductionOrderRepository extends BaseRepository<ProductionOrder> {
       return s
     })
 
-    await this.update(orderId, { stages })
+    await tx.objectStore('productionOrders').put({ ...order, stages, updatedAt: nowISO() })
+    await tx.done
   }
 
   // إكمال أمر التشغيل + إضافة الكمية لمنتج

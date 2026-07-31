@@ -52,11 +52,12 @@ const LAST_KNOWN_COUNT_KEY = 'db_last_known_count'
 
 export async function getDB(): Promise<IDBPDatabase<FactoryDBSchema>> {
   // لو الاتصال الحالي مغلق أو معطّل، أنشئ اتصال جديد
-  if (dbInstance) {
+  const instance = dbInstance  // Capture reference locally to prevent race condition
+  if (instance) {
     try {
       // تحقق بسيط أن الاتصال لا يزال صالحاً
-      const names = dbInstance.objectStoreNames
-      if (names && names.length > 0) return dbInstance
+      const names = instance.objectStoreNames
+      if (names && names.length > 0) return instance
     } catch {
       dbInstance = null
     }
@@ -229,9 +230,12 @@ export async function getDB(): Promise<IDBPDatabase<FactoryDBSchema>> {
   return dbInstance
 }
 
-// توليد ID فريد
+// توليد ID فريد باستخدام crypto.randomUUID مع fallback
 export function generateId(): string {
-  return `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID()
+  }
+  return `${Date.now()}-${Math.random().toString(36).substring(2, 11)}-${Math.random().toString(36).substring(2, 11)}`
 }
 
 // التاريخ الحالي بصيغة ISO
@@ -243,7 +247,7 @@ export function nowISO(): string {
 export async function getDBStats(): Promise<Record<string, number>> {
   const db = await getDB()
   const stats: Record<string, number> = {}
-  const storeNames = ['factorySettings', 'users', 'workers', 'workerAdvances', 'workerReceipts',
+  const storeNames = ['factorySettings', 'users', 'auditLogs', 'workers', 'workerAdvances', 'workerReceipts',
     'workerAttendance', 'production', 'customers', 'suppliers',
     'sales', 'saleItems', 'purchases', 'purchaseItems',
     'expenseCategories', 'expenses', 'treasuryTransactions',

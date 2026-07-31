@@ -45,8 +45,16 @@ class WorkerAdvanceRepository extends BaseRepository<WorkerAdvance> {
       ...data,
       id,
       createdAt: (data as any).createdAt || now,
-      updatedAt: (data as any).updatedAt || now,
     } as WorkerAdvance
+
+    // جلب بيانات العامل قبل بدء المعاملة لتجنب مشاكل الاتصال المتقاطع
+    let workerName = 'موظف'
+    if (record.workerId) {
+      try {
+        const worker = await workerRepository.getById(record.workerId)
+        if (worker) workerName = worker.name
+      } catch {}
+    }
 
     const db = await getDB()
     const tx = db.transaction(['workerAdvances', 'treasuryTransactions'], 'readwrite')
@@ -55,13 +63,12 @@ class WorkerAdvanceRepository extends BaseRepository<WorkerAdvance> {
 
     // سحب من الخزينة في نفس المعاملة
     if (record.amount > 0 && record.workerId) {
-      const worker = await workerRepository.getById(record.workerId)
       const treasuryTx = {
         id: generateId(),
         type: 'withdrawal' as const,
         amount: record.amount,
         date: record.date,
-        description: `سلفة موظف - ${worker?.name || 'موظف'}`,
+        description: `سلفة موظف - ${workerName}`,
         category: 'سلف موظفين',
         referenceType: 'worker_advance',
         referenceId: record.id,

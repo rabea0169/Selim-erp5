@@ -211,7 +211,7 @@ class PurchaseRepository extends BaseRepository<Purchase> {
 
   async delete(id: string): Promise<void> {
     const db = await this.getDB()
-    const tx = db.transaction(['purchases', 'purchaseItems', 'treasuryTransactions'], 'readwrite')
+    const tx = db.transaction(['purchases', 'purchaseItems', 'treasuryTransactions', 'materials', 'materialTransactions'], 'readwrite')
 
     // حذف المعاملات المرتبطة في الخزينة
     const allTreasury = await tx.objectStore('treasuryTransactions').getAll()
@@ -221,8 +221,35 @@ class PurchaseRepository extends BaseRepository<Purchase> {
       }
     }
 
+    // تراجع عن إضافة الكميات للمواد الخام + حذف حركات المواد المرتبطة
     const itemKeys = await tx.objectStore('purchaseItems').index('by-purchase').getAllKeys(id)
-    await Promise.all(itemKeys.map((k) => tx.objectStore('purchaseItems').delete(k)))
+    for (const k of itemKeys) {
+      const item = await tx.objectStore('purchaseItems').get(k)
+      if (item && item.materialId) {
+        try {
+          const material = await tx.objectStore('materials').get(item.materialId)
+          if (material) {
+            const newQuantity = Math.max(0, material.quantity - item.quantity)
+            await tx.objectStore('materials').put({
+              ...material,
+              quantity: newQuantity,
+              updatedAt: nowISO(),
+            })
+          }
+        } catch (e) {
+          console.warn('Could not reverse material stock on purchase delete:', e)
+        }
+      }
+      await tx.objectStore('purchaseItems').delete(k)
+    }
+
+    // حذف حركات المواد المرتبطة بهذه المشتريات
+    const allMatTx = await tx.objectStore('materialTransactions').getAll()
+    for (const t of allMatTx) {
+      if (t.referenceType === 'purchase' && t.referenceId === id) {
+        await tx.objectStore('materialTransactions').delete(t.id)
+      }
+    }
 
     await tx.objectStore('purchases').delete(id)
 

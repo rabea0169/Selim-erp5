@@ -31,10 +31,8 @@ class SupplierRepository extends BaseRepository<Supplier> {
     if (!supplier) return null
 
     const db = await getDB()
-    const allPurchases = await db.getAll('purchases')
-    const purchases = allPurchases
-      .filter((p) => p.supplierId_ref === supplierId)
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    const purchases = await db.getAllFromIndex('purchases', 'by-supplier', supplierId)
+      .then((p) => p.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()))
 
     const totalPurchases = purchases.reduce((s, x) => s + x.total, 0)
     const totalPaid = purchases.reduce((s, x) => s + x.paid, 0)

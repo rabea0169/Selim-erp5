@@ -67,14 +67,18 @@ class PaymentRepository extends BaseRepository<Payment> {
 
     await tx.objectStore('payments').add(payment)
 
-    // تحديث المدفوع في الفاتورة المرتبطة (لو موجودة)
+    // تحديث المدفوع في الفاتورة المرتبطة (لو موجودة) مع التحقق من عدم تجاوز الإجمالي
     if (data.invoiceId) {
       if (data.type === 'customer_payment') {
         const sale = await tx.objectStore('sales').get(data.invoiceId) as Sale | undefined
         if (sale) {
+          const newPaid = (sale.paid || 0) + data.amount
+          if (newPaid > sale.total) {
+            throw new Error(`المبلغ يتجاوز إجمالي الفاتورة (المتبقي: ${(sale.total - (sale.paid || 0)).toFixed(2)})`)
+          }
           const updatedSale: Sale = {
             ...sale,
-            paid: (sale.paid || 0) + data.amount,
+            paid: newPaid,
             updatedAt: now,
           }
           await tx.objectStore('sales').put(updatedSale)
@@ -82,9 +86,13 @@ class PaymentRepository extends BaseRepository<Payment> {
       } else if (data.type === 'supplier_payment') {
         const purchase = await tx.objectStore('purchases').get(data.invoiceId) as Purchase | undefined
         if (purchase) {
+          const newPaid = (purchase.paid || 0) + data.amount
+          if (newPaid > purchase.total) {
+            throw new Error(`المبلغ يتجاوز إجمالي الفاتورة (المتبقي: ${(purchase.total - (purchase.paid || 0)).toFixed(2)})`)
+          }
           const updatedPurchase: Purchase = {
             ...purchase,
-            paid: (purchase.paid || 0) + data.amount,
+            paid: newPaid,
             updatedAt: now,
           }
           await tx.objectStore('purchases').put(updatedPurchase)

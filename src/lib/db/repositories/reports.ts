@@ -105,9 +105,11 @@ class ReportRepository {
       .sort((a, b) => b.total - a.total)
       .slice(0, 10)
 
-    // صافي الربح
+    // صافي الربح = إجمالي المبيعات - تكلفة المشتريات - المصاريف
+    // ملاحظة: السلف والقبض هما تحويلات مالية داخلية (لا تؤثر على الربح)
+    // والإنتاج هو تقييم داخلي وليس مصروف فعلي
     const netProfit =
-      salesTotal - purchasesTotal - expensesTotal - advancesTotal + receiptsTotal - productionTotal
+      salesTotal - purchasesTotal - expensesTotal
 
     return {
       range: { from, to },
@@ -142,7 +144,7 @@ class ReportRepository {
   async exportAll(): Promise<any> {
     const db = await getDB()
     const tables: Array<keyof DatabaseSchema> = [
-      'factorySettings', 'users', 'workers', 'workerAdvances', 'workerReceipts',
+      'factorySettings', 'users', 'auditLogs', 'workers', 'workerAdvances', 'workerReceipts',
       'workerAttendance', 'production', 'customers', 'suppliers',
       'sales', 'saleItems', 'purchases', 'purchaseItems',
       'expenseCategories', 'expenses',
@@ -152,7 +154,7 @@ class ReportRepository {
       'purchaseReturns', 'purchaseReturnItems',
     ]
 
-    const data: any = {}
+    const data: Record<string, unknown> = {}
     for (const table of tables) {
       data[table] = await db.getAll(table)
     }
@@ -176,7 +178,7 @@ class ReportRepository {
     const data = backupData.data
 
     const tables: Array<keyof DatabaseSchema> = [
-      'factorySettings', 'users', 'workers', 'workerAdvances', 'workerReceipts',
+      'factorySettings', 'users', 'auditLogs', 'workers', 'workerAdvances', 'workerReceipts',
       'workerAttendance', 'production', 'customers', 'suppliers',
       'sales', 'saleItems', 'purchases', 'purchaseItems',
       'expenseCategories', 'expenses',
