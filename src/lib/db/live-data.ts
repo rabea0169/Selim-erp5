@@ -22,8 +22,9 @@ interface DataChangeEvent {
 type Listener = (event: DataChangeEvent) => void
 
 class DataChangeEmitter {
-  private listeners = new Map<EntityType, Set<Listener>>()
+  private listeners = new Map<EntityType, Set<Listener>>()    
   private globalListeners = new Set<Listener>()
+  private saveTimer: ReturnType<typeof setTimeout> | null = null
 
   // الاشتراك في تغييرات نوع معين
   subscribe(type: EntityType, listener: Listener): () => void {
@@ -44,7 +45,7 @@ class DataChangeEmitter {
     }
   }
 
-  // بث حدث تغيير
+  // بث حدث تغيير + حفظ احتياطي تلقائي في Cache API
   emit(event: DataChangeEvent) {
     // بث للمستمعين المحددين
     this.listeners.get(event.type)?.forEach((listener) => {
@@ -63,6 +64,32 @@ class DataChangeEmitter {
         console.error('Global listener error:', e)
       }
     })
+
+    // حفظ احتياطي تلقائي في Cache API بعد 5 ثواني من آخر تغيير
+    this.scheduleCacheBackup()
+  }
+
+  // حفظ نسخة احتياطية في Cache API (debounced)
+  private scheduleCacheBackup() {
+    if (this.saveTimer) clearTimeout(this.saveTimer)
+    this.saveTimer = setTimeout(() => {
+      this.saveToCacheAPI()
+    }, 5000)
+  }
+
+  private async saveToCacheAPI() {
+    try {
+      const { reportRepository } = await import('./repositories')
+      const data = await reportRepository.exportAll()
+      const jsonStr = JSON.stringify(data)
+      const blob = new Blob([jsonStr], { type: 'application/json' })
+      const cache = await caches.open('auto-backups')
+      // حفظ نسخة واحدة فقط (باستبدال القديمة)
+      await cache.put('/auto-backup-latest', new Response(blob))
+      console.log('[DB] ✅ Auto-saved snapshot to Cache API')
+    } catch (e) {
+      // صامت - مشكلة في الكاش مش كارثية
+    }
   }
 
   // دوال مساعدة لبث الأحداث
@@ -101,23 +128,22 @@ export function useLiveData<T>(
 
   useEffect(() => {
     let mounted = true
-    let cancelled = false
 
     const loadData = async () => {
-      if (cancelled) return
+      if (!mounted) return
       setLoading(true)
       setError(null)
       try {
         const result = await fetcher()
-        if (mounted && !cancelled) {
+        if (mounted) {
           setData(result)
         }
       } catch (e: any) {
-        if (mounted && !cancelled) {
+        if (mounted) {
           setError(e.message)
         }
       } finally {
-        if (mounted && !cancelled) {
+        if (mounted) {
           setLoading(false)
         }
       }
@@ -134,7 +160,6 @@ export function useLiveData<T>(
 
     return () => {
       mounted = false
-      cancelled = true
       unsubscribers.forEach((unsub) => unsub())
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

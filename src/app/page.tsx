@@ -42,10 +42,27 @@ export default function Home() {
       setAuthChecked(true)
       if (currentUser) {
         try {
-          // فحص سلامة البيانات
+          // فحص سلامة البيانات + استرجاع تلقائي لو فقدت
           const integrity = await checkDataIntegrity()
           if (integrity.lost) {
-            console.error(`[App] DATA LOSS: had ${integrity.lastKnownCount} records, now ${integrity.currentCount}`)
+            console.error(`[App] DATA LOSS DETECTED! had ${integrity.lastKnownCount}, now ${integrity.currentCount} — attempting auto-restore from cache`)
+            try {
+              const { autoBackupService } = await import('@/lib/db/auto-backup')
+              const cachedBackup = await autoBackupService.getLastCacheBackup()
+              if (cachedBackup?.data) {
+                const { reportRepository } = await import('@/lib/db/repositories')
+                await reportRepository.importAll(cachedBackup)
+                console.log('[App] ✅ Auto-restore from cache backup successful!')
+                // reload stats after restore
+                const restoredStats = await getDBStats()
+                const restoredCount = Object.values(restoredStats).reduce((a: number, b: number) => a + Math.max(0, b), 0)
+                console.log(`[App] After restore: ${restoredCount} records`)
+              } else {
+                console.warn('[App] No cache backup available for restore')
+              }
+            } catch (restoreErr) {
+              console.error('[App] Auto-restore failed:', restoreErr)
+            }
           }
 
           const stats = await getDBStats()

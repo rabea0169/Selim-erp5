@@ -46,6 +46,7 @@ interface FactoryDBSchema extends DBSchema {
 }
 
 let dbInstance: IDBPDatabase<FactoryDBSchema> | null = null
+let dbOpenPromise: Promise<IDBPDatabase<FactoryDBSchema>> | null = null
 
 // حفظ عدد السجلات الأخير للكشف عن فقدان البيانات
 const LAST_KNOWN_COUNT_KEY = 'db_last_known_count'
@@ -63,7 +64,10 @@ export async function getDB(): Promise<IDBPDatabase<FactoryDBSchema>> {
     }
   }
 
-  dbInstance = await openDB<FactoryDBSchema>(DB_NAME, DB_VERSION, {
+  // تجنب فتح اتصالات متعددة في نفس الوقت (مهم مع React StrictMode)
+  if (dbOpenPromise) return dbOpenPromise
+
+  dbOpenPromise = openDB<FactoryDBSchema>(DB_NAME, DB_VERSION, {
     upgrade(db, oldVersion, newVersion, transaction) {
       console.log(`[DB] Upgrade: ${oldVersion} → ${newVersion}, stores: [${Array.from(db.objectStoreNames).join(', ')}]`)
 
@@ -209,14 +213,17 @@ export async function getDB(): Promise<IDBPDatabase<FactoryDBSchema>> {
 
   // استمع لأحداث إغلاق قاعدة البيانات لاكتشاف المشاكل
   dbInstance.addEventListener('versionchange', (event) => {
-    console.warn(`[DB] ⚠️ versionchange event: old=${event.oldVersion} new=${event.newVersion} — closing current connection`)
-    dbInstance?.close()
+    console.warn(`[DB] ⚠️ versionchange event: old=${event.oldVersion} new=${event.newVersion}`)
+    // لا تستدعِ close() هنا! الـ browser هيقفل الاتصال تلقائياً
+    // استدعاء close() يدوياً كان سبباً في فقدان البيانات مع React StrictMode
     dbInstance = null
+    dbOpenPromise = null
   })
 
   dbInstance.addEventListener('close', () => {
     console.warn('[DB] ⚠️ Database connection closed by browser/system')
     dbInstance = null
+    dbOpenPromise = null
   })
 
   // تحقق سريع أن قاعدة البيانات تعمل
