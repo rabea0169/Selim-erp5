@@ -64,28 +64,51 @@ export async function login(username: string, password: string): Promise<{ succe
     }
 
     // 2. لو السيرفر رفض (بيانات خاطئة) أو مش متاح، نحاول محلياً
-    const user = await userRepository.verifyPassword(username, password)
-    if (!user) {
-      // لو السيرفر كان متاح ورفض، يبقى البيانات فعلاً غلط
-      if (serverReachable) {
-        return { success: false, error: 'اسم المستخدم أو كلمة المرور غير صحيحة' }
+    try {
+      const user = await userRepository.verifyPassword(username, password)
+      if (!user) {
+        // لو السيرفر كان متاح ورفض، يبقى البيانات فعلاً غلط
+        if (serverReachable) {
+          return { success: false, error: 'اسم المستخدم أو كلمة المرور غير صحيحة' }
+        }
+        // لو السيرفر مش متاح والمحلي فاضي، ممكن يكون حدث مسح للبيانات المحلية
+        console.warn('[Auth] Both server and local login failed. Server was unreachable and local user not found.')
+        return { success: false, error: 'لا يمكن تسجيل الدخول حالياً. تأكد من اتصالك بالإنترنت أو أنشئ حساباً جديداً.' }
       }
-      // لو السيرفر مش متاح والمحلي فاضی، ممكن يكون حدث مسح للبيانات المحلية
-      console.warn('[Auth] Both server and local login failed. Server was unreachable and local user not found.')
-      return { success: false, error: 'لا يمكن تسجيل الدخول حالياً. تأكد من اتصالك بالإنترنت أو أنشئ حساباً جديداً.' }
-    }
 
-    const sessionUser: SessionUser = {
-      id: user.id,
-      username: user.username,
-      name: user.name,
-      role: user.role,
-    }
+      const sessionUser: SessionUser = {
+        id: user.id,
+        username: user.username,
+        name: user.name,
+        role: user.role,
+      }
 
-    localStorage.setItem(SESSION_KEY, JSON.stringify(sessionUser))
-    return { success: true, user: sessionUser }
-  } catch (e: any) {
-    return { success: false, error: e.message }
+      localStorage.setItem(SESSION_KEY, JSON.stringify(sessionUser))
+      return { success: true, user: sessionUser }
+    } catch (dbErr: any) {
+      // خطأ في قاعدة البيانات المحلية — نعيد المحاولة مرة واحدة
+      console.error('[Auth] Local DB login failed, retrying...', dbErr.message)
+      try {
+        const user = await userRepository.verifyPassword(username, password)
+        if (!user) {
+          if (serverReachable) {
+            return { success: false, error: 'اسم المستخدم أو كلمة المرور غير صحيحة' }
+          }
+          return { success: false, error: 'لا يمكن تسجيل الدخول حالياً. تأكد من اتصالك بالإنترنت.' }
+        }
+        const sessionUser: SessionUser = {
+          id: user.id,
+          username: user.username,
+          name: user.name,
+          role: user.role,
+        }
+        localStorage.setItem(SESSION_KEY, JSON.stringify(sessionUser))
+        return { success: true, user: sessionUser }
+      } catch (retryErr: any) {
+        console.error('[Auth] Local DB login retry also failed:', retryErr.message)
+        return { success: false, error: 'حدث خطأ في قاعدة البيانات المحلية. حاول تحديث الصفحة.' }
+      }
+    }
   }
 }
 
@@ -184,12 +207,22 @@ export async function logout(): Promise<void> {
   }
 }
 
-// التحقق من وجود مستخدمين - يفحص السيرفر أولاً
+// التحقق من وجود مستخدمين - يفحص السيرفر أولاً ثم المحلي
 export async function hasAnyUser(): Promise<boolean> {
   // 1. فحص السيرفر
-  const serverHas = await checkServerHasUsers()
-  if (serverHas) return true
+  try {
+    const serverHas = await checkServerHasUsers()
+    if (serverHas) return true
+  } catch {
+    // السيرفر مش متاح، نكمل محلياً
+  }
 
-  // 2. فحص محلي
-  return userRepository.hasAnyUser()
+  // 2. فحص محلي مع معالجة الأخطاء
+  try {
+    return await userRepository.hasAnyUser()
+  } catch (e: any) {
+    console.error('[Auth] hasAnyUser local check failed:', e.message)
+    // لو المحلي فشل، نفترض مفيش مستخدمين عشان نعرض شاشة التسجيل
+    return false
+  }
 }

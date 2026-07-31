@@ -61,11 +61,25 @@ export async function getDB(): Promise<IDBPDatabase<FactoryDBSchema>> {
       if (names && names.length > 0) return instance
     } catch {
       dbInstance = null
+      dbOpenPromise = null
     }
   }
 
   // تجنب فتح اتصالات متعددة في نفس الوقت (مهم مع React StrictMode)
-  if (dbOpenPromise) return dbOpenPromise
+  if (dbOpenPromise) {
+    try {
+      const db = await dbOpenPromise
+      // تحقق أن الاتصال اللي سبق فتحه لا يزال صالحاً
+      const names = db.objectStoreNames
+      if (names && names.length > 0) {
+        dbInstance = db
+        return db
+      }
+    } catch {
+      // الاتصال السابق فشل أو اتمسح، نحاول من جديد
+      dbOpenPromise = null
+    }
+  }
 
   dbOpenPromise = openDB<FactoryDBSchema>(DB_NAME, DB_VERSION, {
     upgrade(db, oldVersion, newVersion, transaction) {
@@ -201,21 +215,21 @@ export async function getDB(): Promise<IDBPDatabase<FactoryDBSchema>> {
       console.log(`[DB] Upgrade complete. Total stores: ${db.objectStoreNames.length}`)
     },
     blocked(currentVersion, requestedVersion, event) {
-      // لو حدث تعارض في إصدار DB، لا تحظر - اسمح بالتحديث
       console.warn(`[DB] Version blocked: ${currentVersion} < ${requestedVersion}, allowing upgrade`)
     },
     terminated() {
-      // قاعدة البيانات اتقفلت بشكل غير متوقع (مثلاً تخزين المتصفح اتمسح)
       console.error('[DB] ⚠️ Database connection terminated unexpectedly!')
       dbInstance = null
+      dbOpenPromise = null
     },
   })
+
+  // ★ الإصلاح الجذري: انتظر حتى تفتح قاعدة البيانات فعلاً قبل استخدامها
+  dbInstance = await dbOpenPromise
 
   // استمع لأحداث إغلاق قاعدة البيانات لاكتشاف المشاكل
   dbInstance.addEventListener('versionchange', (event) => {
     console.warn(`[DB] ⚠️ versionchange event: old=${event.oldVersion} new=${event.newVersion}`)
-    // لا تستدعِ close() هنا! الـ browser هيقفل الاتصال تلقائياً
-    // استدعاء close() يدوياً كان سبباً في فقدان البيانات مع React StrictMode
     dbInstance = null
     dbOpenPromise = null
   })

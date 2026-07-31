@@ -75,6 +75,7 @@ export default function Home() {
           // Sync معطّل افتراضياً - لا يُفعّل تلقائياً لحماية البيانات
           // syncService.start() تم تعطيله لتجنب أي مشاكل محتملة
           warehouseRepository.seedDefaults().catch(() => {})
+          expenseCategoryRepository.seedDefaults().catch(() => {})
           auditLogRepository.log({
             userId: currentUser.id,
             userName: currentUser.name,
@@ -83,13 +84,9 @@ export default function Home() {
             description: `تسجيل دخول: ${currentUser.username}`,
           })
         } catch (e) {
-          console.error('Failed to load factory settings:', e)
+          console.error('[App] Initialization error (non-fatal):', e)
         }
       }
-    })
-
-    expenseCategoryRepository.seedDefaults().catch((e) => {
-      console.error('Failed to seed expense categories:', e)
     })
 
     return () => {
