@@ -109,6 +109,8 @@ export async function login(username: string, password: string): Promise<{ succe
         return { success: false, error: 'حدث خطأ في قاعدة البيانات المحلية. حاول تحديث الصفحة.' }
       }
     }
+  } catch (e: any) {
+    return { success: false, error: e.message || 'خطأ غير متوقع في تسجيل الدخول' }
   }
 }
 

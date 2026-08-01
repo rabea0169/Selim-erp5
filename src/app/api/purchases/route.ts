@@ -79,10 +79,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'أضف صنفاً صحيحاً واحداً على الأقل' }, { status: 400 })
     }
 
-    const total = validItems.reduce(
+    const subtotal = validItems.reduce(
       (sum: number, it: any) => sum + Number(it.quantity) * Number(it.unitPrice),
       0
     )
+    const discountType = body.discountType || null
+    const discountValue = Number(body.discountValue) || 0
+    const discountAmount = Number(body.discountAmount) || 0
+    const taxRate = Number(body.taxRate) || 0
+    const taxAmount = Number(body.taxAmount) || 0
+    const extraFees = Number(body.extraFees) || 0
+    const total = Number(body.total) || (subtotal - discountAmount + taxAmount + extraFees)
     const paidAmount = Number(paid) || 0
 
     const purchase = await db.$transaction(async (tx) => {
@@ -109,6 +116,13 @@ export async function POST(req: NextRequest) {
           supplierId_ref: supplierId_ref || null,
           invoiceNo: invoiceNo?.trim() || null,
           date: dateObj,
+          subtotal,
+          discountType,
+          discountValue,
+          discountAmount,
+          taxRate,
+          taxAmount,
+          extraFees,
           total,
           paid: paidAmount,
           notes: notes?.trim() || null,
