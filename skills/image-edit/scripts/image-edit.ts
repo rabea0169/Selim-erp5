@@ -5,7 +5,7 @@ async function main(imageSource: string, prompt: string, size: '1024x1024' | '76
 	try {
 		const zai = await ZAI.create();
 
-		const response = await zai.images.generations.edit({
+		const response = await (zai.images.generations as any).edit({
 			prompt,
 			images: [{ url: imageSource }],  // Array of objects with url property
 			size

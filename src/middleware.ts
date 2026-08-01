@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { verifySessionToken } from '@/lib/auth'
+import { verifySessionToken } from '@/lib/session'
 import { rateLimit, getClientIP } from '@/lib/rate-limit'
 
 // Routes عامة لا تحتاج مصادقة
