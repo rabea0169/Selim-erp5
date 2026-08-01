@@ -33,7 +33,7 @@ const ALLOWED_FIELDS: Record<string, string[]> = {
   payment: ['id', 'partyId', 'partyName', 'type', 'amount', 'date', 'referenceType', 'referenceId', 'notes', 'createdAt'],
   saleReturn: ['id', 'saleId', 'customerId_ref', 'customerName', 'date', 'total', 'notes', 'items', 'createdAt'],
   purchaseReturn: ['id', 'purchaseId', 'supplierId_ref', 'supplierName', 'date', 'total', 'notes', 'items', 'createdAt'],
-  auditLog: ['id', 'action', 'entity', 'entityId', 'details', 'userId', 'createdAt'],
+  auditLog: ['id', 'action', 'entityType', 'entityId', 'description', 'userId', 'userName', 'metadata', 'timestamp'],
 }
 
 // POST /api/sync/push - رفع بيانات من IndexedDB للسيرفر (admin فقط)

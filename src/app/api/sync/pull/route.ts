@@ -33,7 +33,7 @@ const EXPORT_SELECT: Record<string, any> = {
   payment: { id: true, partyId: true, partyName: true, type: true, amount: true, date: true, referenceType: true, referenceId: true, notes: true, createdAt: true },
   saleReturn: { id: true, saleId: true, customerId_ref: true, customerName: true, date: true, total: true, notes: true, items: true, createdAt: true },
   purchaseReturn: { id: true, purchaseId: true, supplierId_ref: true, supplierName: true, date: true, total: true, notes: true, items: true, createdAt: true },
-  auditLog: { id: true, action: true, entity: true, entityId: true, details: true, userId: true, createdAt: true },
+  auditLog: { id: true, action: true, entityType: true, entityId: true, description: true, userId: true, userName: true, timestamp: true },
 }
 
 // GET /api/sync/pull - تحميل بيانات من السيرفر لـ IndexedDB (admin فقط)
@@ -48,8 +48,10 @@ export async function GET() {
 
     for (const [table, select] of Object.entries(EXPORT_SELECT)) {
       try {
+        // auditLog يستخدم timestamp بدل createdAt
+        const orderByField = table === 'auditLog' ? { timestamp: 'asc' as const } : { createdAt: 'asc' as const }
         const records = await (db as any)[table].findMany({
-          orderBy: { createdAt: 'asc' },
+          orderBy: orderByField,
           select,
         })
         // تحويل التواريخ لـ ISO string
