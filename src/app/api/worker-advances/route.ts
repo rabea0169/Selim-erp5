@@ -69,15 +69,33 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const advance = await db.workerAdvance.create({
-      data: {
-        workerId,
-        companyId: companyId || null,
-        amount: amt,
-        date: new Date(date),
-        notes: notes?.trim() || null,
-      },
-      include: { worker: true },
+    const advance = await db.$transaction(async (tx) => {
+      const adv = await tx.workerAdvance.create({
+        data: {
+          workerId,
+          companyId: companyId || null,
+          amount: amt,
+          date: new Date(date),
+          notes: notes?.trim() || null,
+        },
+        include: { worker: true },
+      })
+
+      // إنشاء حركة سحب في الخزينة لسلفة الموظف
+      await tx.treasuryTransaction.create({
+        data: {
+          type: 'withdrawal',
+          amount: amt,
+          date: new Date(date),
+          description: `سلفة موظف: ${worker.name}`,
+          category: 'سلف موظفين',
+          referenceType: 'worker_advance',
+          referenceId: adv.id,
+          notes: notes?.trim() || null,
+        },
+      })
+
+      return adv
     })
     return NextResponse.json({ advance })
   } catch (e) {

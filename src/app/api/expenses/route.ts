@@ -70,15 +70,33 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const expense = await db.expense.create({
-      data: {
-        categoryId,
-        categoryName: cat.name, // تخزين اسم الفئة لسرعة العرض
-        amount: amt,
-        date: new Date(date),
-        notes: notes?.trim() || null,
-      },
-      include: { category: true },
+    const expense = await db.$transaction(async (tx) => {
+      const exp = await tx.expense.create({
+        data: {
+          categoryId,
+          categoryName: cat.name, // تخزين اسم الفئة لسرعة العرض
+          amount: amt,
+          date: new Date(date),
+          notes: notes?.trim() || null,
+        },
+        include: { category: true },
+      })
+
+      // إنشاء حركة سحب في الخزينة للمصروف
+      await tx.treasuryTransaction.create({
+        data: {
+          type: 'withdrawal',
+          amount: amt,
+          date: new Date(date),
+          description: `مصروف: ${cat.name}`,
+          category: 'مصاريف',
+          referenceType: 'expense',
+          referenceId: exp.id,
+          notes: notes?.trim() || null,
+        },
+      })
+
+      return exp
     })
     return NextResponse.json({ expense })
   } catch (e) {
