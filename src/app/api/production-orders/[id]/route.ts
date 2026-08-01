@@ -82,6 +82,13 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
       // 2) عند إكمال أمر التشغيل: إضافة الكمية المنتهية لمنتج المخزن
       if (newStatus === 'completed' && existing.status !== 'completed') {
+        // F3-03 fix: منع إكمال بكمية أكبر من المطلوب
+        if (finalCompletedQuantity > existing.quantity) {
+          throw new Error(`الكمية المنتهية (${finalCompletedQuantity}) تتجاوز الكمية المطلوبة (${existing.quantity})`)
+        }
+        if (finalCompletedQuantity <= 0) {
+          throw new Error('الكمية المنتهية يجب أن تكون أكبر من صفر')
+        }
         if (finalCompletedQuantity > 0) {
           await tx.product.update({
             where: { id: existing.productId },
@@ -149,6 +156,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     })
     return NextResponse.json({ productionOrder: order })
   } catch (e) {
+    if (e instanceof Error && (e.message.includes('غير موجود') || e.message.includes('أقل من المطلوب') || e.message.includes('تتجاوز') || e.message.includes('أكبر من صفر'))) {
+      return NextResponse.json({ error: e.message }, { status: 400 })
+    }
     const { error, status } = safeError(e, 500)
     return NextResponse.json({ error }, { status })
   }

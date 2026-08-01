@@ -2,12 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
 import { safeError } from '@/lib/safe-error'
 
+// GET /api/purchases?from=&to=&q=&page=1&limit=50
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url)
     const from = searchParams.get('from')
     const to = searchParams.get('to')
     const q = searchParams.get('q') || ''
+    const page = Math.max(1, Number(searchParams.get('page')) || 1)
+    const limit = Math.min(200, Math.max(1, Number(searchParams.get('limit')) || 50))
 
     const where: any = {}
     if (from || to) {
@@ -32,13 +35,21 @@ export async function GET(req: NextRequest) {
       ]
     }
 
-    const purchases = await db.purchase.findMany({
-      where,
-      include: { items: true },
-      orderBy: { date: 'desc' },
-    })
+    const [purchases, total] = await Promise.all([
+      db.purchase.findMany({
+        where,
+        include: { items: true },
+        orderBy: { date: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      db.purchase.count({ where }),
+    ])
 
-    return NextResponse.json({ purchases })
+    return NextResponse.json({
+      purchases,
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    })
   } catch (e) {
     const { error, status } = safeError(e)
     return NextResponse.json({ error }, { status })
@@ -79,18 +90,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'أضف صنفاً صحيحاً واحداً على الأقل' }, { status: 400 })
     }
 
-    const subtotal = validItems.reduce(
+    const total = validItems.reduce(
       (sum: number, it: any) => sum + Number(it.quantity) * Number(it.unitPrice),
       0
     )
-    const discountType = body.discountType || null
-    const discountValue = Number(body.discountValue) || 0
-    const discountAmount = Number(body.discountAmount) || 0
-    const taxRate = Number(body.taxRate) || 0
-    const taxAmount = Number(body.taxAmount) || 0
-    const extraFees = Number(body.extraFees) || 0
-    const total = Number(body.total) || (subtotal - discountAmount + taxAmount + extraFees)
     const paidAmount = Number(paid) || 0
+
+    // F5-02 fix: التحقق من أن المدفوع لا يتجاوز الإجمالي ولا يكون سالباً
+    if (paidAmount < 0) {
+      return NextResponse.json({ error: 'المبلغ المدفوع لا يمكن أن يكون سالباً' }, { status: 400 })
+    }
+    if (paidAmount > total) {
+      return NextResponse.json({ error: `المبلغ المدفوع (${paidAmount}) يتجاوز إجمالي الفاتورة (${total})` }, { status: 400 })
+    }
 
     const purchase = await db.$transaction(async (tx) => {
       // فحص المواد والعميل داخل الـ transaction (TOCTOU fix)
@@ -116,13 +128,6 @@ export async function POST(req: NextRequest) {
           supplierId_ref: supplierId_ref || null,
           invoiceNo: invoiceNo?.trim() || null,
           date: dateObj,
-          subtotal,
-          discountType,
-          discountValue,
-          discountAmount,
-          taxRate,
-          taxAmount,
-          extraFees,
           total,
           paid: paidAmount,
           notes: notes?.trim() || null,

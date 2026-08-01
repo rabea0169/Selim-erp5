@@ -3,7 +3,7 @@ import { db } from '@/lib/db-server'
 import { safeError } from '@/lib/safe-error'
 
 // GET /api/reports?from=&to=
-// returns aggregated totals for all transaction types in the date range
+// uses Prisma aggregation to avoid loading all records into memory (PERF fix)
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url)
@@ -20,101 +20,110 @@ export async function GET(req: NextRequest) {
 
     const dateFilter = from || to ? { date: dateRange } : {}
 
-    // Sales totals
-    const sales = await db.sale.findMany({
+    // Sales aggregation (PERF fix: aggregate instead of loading all)
+    const salesAgg = await db.sale.aggregate({
       where: dateFilter,
-      include: { items: true },
-      orderBy: { date: 'desc' },
+      _sum: { total: true, paid: true },
+      _count: true,
     })
-    const salesTotal = sales.reduce((s, x) => s + x.total, 0)
-    const salesPaid = sales.reduce((s, x) => s + x.paid, 0)
+    const salesTotal = salesAgg._sum.total || 0
+    const salesPaid = salesAgg._sum.paid || 0
     const salesRemaining = salesTotal - salesPaid
 
-    // Purchases totals
-    const purchases = await db.purchase.findMany({
+    // Purchases aggregation
+    const purchasesAgg = await db.purchase.aggregate({
       where: dateFilter,
-      include: { items: true },
-      orderBy: { date: 'desc' },
+      _sum: { total: true, paid: true },
+      _count: true,
     })
-    const purchasesTotal = purchases.reduce((s, x) => s + x.total, 0)
-    const purchasesPaid = purchases.reduce((s, x) => s + x.paid, 0)
+    const purchasesTotal = purchasesAgg._sum.total || 0
+    const purchasesPaid = purchasesAgg._sum.paid || 0
     const purchasesRemaining = purchasesTotal - purchasesPaid
 
-    // Worker advances
-    const advances = await db.workerAdvance.findMany({
+    // Worker advances aggregation
+    const advancesAgg = await db.workerAdvance.aggregate({
       where: dateFilter,
-      include: { worker: true },
-      orderBy: { date: 'desc' },
+      _sum: { amount: true },
+      _count: true,
     })
-    const advancesTotal = advances.reduce((s, x) => s + x.amount, 0)
+    const advancesTotal = advancesAgg._sum.amount || 0
 
-    // Worker receipts
-    const receipts = await db.workerReceipt.findMany({
+    // Worker receipts aggregation
+    const receiptsAgg = await db.workerReceipt.aggregate({
       where: dateFilter,
-      include: { worker: true },
-      orderBy: { date: 'desc' },
+      _sum: { amount: true },
+      _count: true,
     })
-    const receiptsTotal = receipts.reduce((s, x) => s + x.amount, 0)
+    const receiptsTotal = receiptsAgg._sum.amount || 0
 
-    // Worker production (piece-rate)
-    const productions = await db.production.findMany({
+    // Worker production aggregation
+    const productionAgg = await db.production.aggregate({
       where: dateFilter,
-      include: { worker: true },
-      orderBy: { date: 'desc' },
+      _sum: { total: true, quantity: true },
+      _count: true,
     })
-    const productionTotal = productions.reduce((s, x) => s + x.total, 0)
-    const productionPieces = productions.reduce((s, x) => s + x.quantity, 0)
+    const productionTotal = productionAgg._sum.total || 0
+    const productionPieces = productionAgg._sum.quantity || 0
 
-    // Worker attendance
-    const attendance = await db.workerAttendance.findMany({
+    // Worker attendance count
+    const attendanceCount = await db.workerAttendance.count({ where: dateFilter })
+
+    // Expenses aggregation
+    const expensesAgg = await db.expense.aggregate({
       where: dateFilter,
-      include: { worker: true },
-      orderBy: { date: 'desc' },
+      _sum: { amount: true },
+      _count: true,
     })
+    const expensesTotal = expensesAgg._sum.amount || 0
 
-    // Expenses
-    const expenses = await db.expense.findMany({
+    // Expenses grouped by category (efficient groupBy)
+    const expensesByCategoryRaw = await db.expense.groupBy({
+      by: ['categoryName'],
       where: dateFilter,
-      include: { category: true },
-      orderBy: { date: 'desc' },
+      _sum: { amount: true },
     })
-    const expensesTotal = expenses.reduce((s, x) => s + x.amount, 0)
-
-    // Expenses grouped by category
     const expensesByCategory: Record<string, number> = {}
-    for (const e of expenses) {
-      const key = e.categoryName
-      expensesByCategory[key] = (expensesByCategory[key] || 0) + e.amount
+    for (const e of expensesByCategoryRaw) {
+      expensesByCategory[e.categoryName || 'غير مصنف'] = e._sum.amount || 0
     }
 
-    // Top selling items
-    const itemAgg: Record<string, { qty: number; total: number }> = {}
-    for (const s of sales) {
-      for (const it of s.items) {
-        if (!itemAgg[it.itemName]) itemAgg[it.itemName] = { qty: 0, total: 0 }
-        itemAgg[it.itemName].qty += it.quantity
-        itemAgg[it.itemName].total += it.total
-      }
-    }
-    const topItems = Object.entries(itemAgg)
-      .map(([name, v]) => ({ name, ...v }))
-      .sort((a, b) => b.total - a.total)
-      .slice(0, 10)
+    // Top selling items (using groupBy on saleItem with sale date filter)
+    const saleIds = await db.sale.findMany({
+      where: dateFilter,
+      select: { id: true },
+    })
+    const saleIdSet = saleIds.map(s => s.id)
 
-    // Production by model
-    const prodByModel: Record<string, { qty: number; total: number }> = {}
-    for (const p of productions) {
-      if (!prodByModel[p.modelName]) prodByModel[p.modelName] = { qty: 0, total: 0 }
-      prodByModel[p.modelName].qty += p.quantity
-      prodByModel[p.modelName].total += p.total
-    }
-    const topModels = Object.entries(prodByModel)
-      .map(([name, v]) => ({ name, ...v }))
-      .sort((a, b) => b.total - a.total)
-      .slice(0, 10)
+    const topItemsRaw = saleIdSet.length > 0
+      ? await db.saleItem.groupBy({
+          by: ['itemName'],
+          where: { saleId: { in: saleIdSet } },
+          _sum: { quantity: true, total: true },
+          orderBy: { _sum: { total: 'desc' } },
+          take: 10,
+        })
+      : []
+    const topItems = topItemsRaw.map(r => ({
+      name: r.itemName,
+      qty: r._sum.quantity || 0,
+      total: r._sum.total || 0,
+    }))
+
+    // Production by model (efficient groupBy)
+    const topModelsRaw = await db.production.groupBy({
+      by: ['modelName'],
+      where: dateFilter,
+      _sum: { quantity: true, total: true },
+      orderBy: { _sum: { total: 'desc' } },
+      take: 10,
+    })
+    const topModels = topModelsRaw.map(r => ({
+      name: r.modelName,
+      qty: r._sum.quantity || 0,
+      total: r._sum.total || 0,
+    }))
 
     // Net calculation
-    // الإنتاج بالقطعة يُعتبر مصروف لأنه يستحق للموظف
     const netProfit =
       salesTotal - purchasesTotal - expensesTotal - advancesTotal + receiptsTotal - productionTotal
 
@@ -134,13 +143,6 @@ export async function GET(req: NextRequest) {
         expensesTotal,
         netProfit,
       },
-      sales,
-      purchases,
-      advances,
-      receipts,
-      productions,
-      attendance,
-      expenses,
       expensesByCategory,
       topItems,
       topModels,

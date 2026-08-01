@@ -55,7 +55,9 @@ export async function POST(req: NextRequest) {
     const results: Record<string, { success: number; failed: number }> = {}
 
     const tableMap: Record<string, any> = {
-      users: 'user',
+      // ⚠️ users و auditLogs مستثنيان من المزامنة لحماية الصلاحيات وسجل التدقيق
+      // users: 'user',          // GAP-01 fix: لا يسمح بمزامنة بيانات المستخدمين (يمنع تصعيد الصلاحيات)
+      // auditLogs: 'auditLog',  // GAP-01 fix: لا يسمح بمزامنة سجل التدقيق
       factorySettings: 'factorySettings',
       workers: 'worker',
       workerAdvances: 'workerAdvance',
@@ -79,7 +81,6 @@ export async function POST(req: NextRequest) {
       payments: 'payment',
       saleReturns: 'saleReturn',
       purchaseReturns: 'purchaseReturn',
-      auditLogs: 'auditLog',
     }
 
     for (const [localTable, modelName] of Object.entries(tableMap)) {

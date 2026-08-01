@@ -29,7 +29,7 @@ export async function requireAdmin(): Promise<
       return { ok: false, error: 'المستخدم غير موجود', status: 401 }
     }
 
-    if (user.role !== 'admin') {
+    if (user.role !== 'admin' && user.role !== 'owner') {
       return { ok: false, error: 'غير مصرح — يتطلب صلاحيات مدير', status: 403 }
     }
 

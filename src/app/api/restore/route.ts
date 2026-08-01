@@ -12,13 +12,19 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json()
-    const { data } = body
+    const { data, confirm } = body
+
+    // GAP-02 fix: يتطلب تأكيد صريح لمنع المسح العرضي
+    if (confirm !== 'WIPE_AND_RESTORE') {
+      return NextResponse.json({ error: 'يجب تمرير confirm: "WIPE_AND_RESTORE" للتأكيد' }, { status: 400 })
+    }
 
     if (!data) {
       return NextResponse.json({ error: 'بيانات النسخة الاحتياطية غير صحيحة' }, { status: 400 })
     }
 
     // استخدام transaction لضمان إتمام العملية بالكامل أو فشلها بالكامل
+    // ⚠️ ملاحظة: جدول users و auditLogs لا يتم مسحهما أو استرجاعهما (حماية الصلاحيات وسجل التدقيق)
     await db.$transaction(async (tx) => {
       // حذف كل البيانات الحالية بالترتيب الصحيح (للعلاقات)
       await tx.expense.deleteMany()

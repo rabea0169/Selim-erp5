@@ -15,16 +15,16 @@ if (!TOKEN_SECRET) {
 const _tokenSecret = TOKEN_SECRET || 'dev-only-fallback-never-use-in-prod'
 
 // إنشاء session token ببيانات المستخدم + توقيع HMAC
-function createSessionToken(userId: string, username: string): string {
+function createSessionToken(userId: string, username: string, role: string = 'user'): string {
   const expires = Date.now() + SESSION_EXPIRY_DAYS * 24 * 60 * 60 * 1000
-  const payload = JSON.stringify({ userId, username, expires })
+  const payload = JSON.stringify({ userId, username, role, expires })
   const signature = crypto.createHmac('sha256', _tokenSecret).update(payload).digest('hex')
   const tokenData = JSON.stringify({ payload, sig: signature })
   return Buffer.from(tokenData).toString('base64')
 }
 
 // التحقق من session token مع التحقق من التوقيع
-export function verifySessionToken(token: string | undefined): { userId: string; username: string } | null {
+export function verifySessionToken(token: string | undefined): { userId: string; username: string; role: string } | null {
   if (!token) return null
   try {
     const tokenData = JSON.parse(Buffer.from(token, 'base64').toString())
@@ -33,7 +33,7 @@ export function verifySessionToken(token: string | undefined): { userId: string;
     if (sig !== expectedSig) return null
     const data = JSON.parse(payload)
     if (data.expires < Date.now()) return null
-    return { userId: data.userId, username: data.username }
+    return { userId: data.userId, username: data.username, role: data.role || 'user' }
   } catch {
     return null
   }
@@ -80,7 +80,7 @@ export async function loginUser(username: string, password: string): Promise<{
     return { success: false, error: 'كلمة المرور غير صحيحة' }
   }
 
-  const token = createSessionToken(user.id, user.username)
+  const token = createSessionToken(user.id, user.username, user.role)
   const cookieStore = await cookies()
   cookieStore.set(SESSION_COOKIE, token, {
     httpOnly: true,
@@ -146,7 +146,7 @@ export async function registerUser(
   })
 
   // تسجيل الدخول تلقائياً بعد التسجيل
-  const token = createSessionToken(user.id, user.username)
+  const token = createSessionToken(user.id, user.username, user.role)
   const cookieStore = await cookies()
   cookieStore.set(SESSION_COOKIE, token, {
     httpOnly: true,

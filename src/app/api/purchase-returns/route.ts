@@ -70,9 +70,11 @@ export async function POST(req: NextRequest) {
           if (it.materialId) {
             const mat = await tx.material.findFirst({ where: { id: it.materialId } })
             if (mat) {
+              // F2-04 fix: منع المخزون السالب
+              const newQty = Math.max(0, mat.quantity - (Number(it.quantity) || 0))
               await tx.material.update({
                 where: { id: mat.id },
-                data: { quantity: { decrement: Math.max(0, Number(it.quantity) || 0) } },
+                data: { quantity: newQty, updatedAt: new Date() },
               })
             }
           }

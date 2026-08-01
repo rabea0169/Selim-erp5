@@ -15,23 +15,37 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     }
 
     await db.$transaction(async (tx) => {
-      // 1) إرجاع كميات المواد الخام (خصم مما تم إضافته)
+      // 1) إرجاع كميات المواد الخام مع إعادة حساب متوسط التكلفة المرجح (GAP-04 fix)
       for (const item of purchase.items) {
         if (item.materialId) {
-          await tx.material.update({
-            where: { id: item.materialId },
-            data: { quantity: { decrement: item.quantity }, updatedAt: new Date() },
-          })
-          // تسجيل حركة مرتجع للمادة
           const mat = await tx.material.findUnique({ where: { id: item.materialId } })
           if (mat) {
+            const removedValue = item.quantity * item.unitPrice
+            const totalOldValue = mat.quantity * mat.unitCost
+            const remainingQuantity = mat.quantity - item.quantity
+
+            // إعادة حساب تكلفة الوحدة المرجحة بعد إزالة قيمة الصنف المحذوف
+            const newUnitCost = remainingQuantity > 0
+              ? Math.max(0, (totalOldValue - removedValue)) / remainingQuantity
+              : 0
+
+            await tx.material.update({
+              where: { id: item.materialId },
+              data: {
+                quantity: Math.max(0, mat.quantity - item.quantity),
+                unitCost: newUnitCost,
+                updatedAt: new Date(),
+              },
+            })
+
+            // تسجيل حركة مرتجع للمادة
             await tx.materialTransaction.create({
               data: {
                 materialId: item.materialId,
                 warehouseId: mat.warehouseId,
                 type: 'out',
                 quantity: item.quantity,
-                unitCost: mat.unitCost,
+                unitCost: item.unitCost,
                 date: new Date(),
                 reason: `حذف فاتورة شراء${purchase.invoiceNo ? ` ${purchase.invoiceNo}` : ''}`,
                 referenceType: 'purchase_delete',

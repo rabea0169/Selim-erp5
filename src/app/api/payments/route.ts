@@ -122,10 +122,20 @@ export async function POST(req: NextRequest) {
           if (!sale) {
             throw new Error('فاتورة البيع المحددة غير موجودة')
           }
+          // F4-01 fix: منع الدفع من تجاوز الرصيد المتبقي
+          const remaining = sale.total - sale.paid
+          if (amountNumber > remaining) {
+            throw new Error(`المبلغ (${amountNumber}) يتجاوز الرصيد المتبقي (${remaining})`)
+          }
         } else {
           purchase = await tx.purchase.findUnique({ where: { id: invoiceId.trim() } })
           if (!purchase) {
             throw new Error('فاتورة الشراء المحددة غير موجودة')
+          }
+          // F4-01 fix: منع الدفع من تجاوز الرصيد المتبقي
+          const remaining = purchase.total - purchase.paid
+          if (amountNumber > remaining) {
+            throw new Error(`المبلغ (${amountNumber}) يتجاوز الرصيد المتبقي (${remaining})`)
           }
         }
       }
@@ -198,6 +208,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ payment })
   } catch (e) {
     // رسائل الأخطاء الصادرة من داخل الـ transaction بالعربية
+    if (e instanceof Error && e.message.includes('يتجاوز الرصيد المتبقي')) {
+      return NextResponse.json({ error: e.message }, { status: 400 })
+    }
+    if (e instanceof Error && (e.message.includes('غير موجودة') || e.message.includes('غير صالح'))) {
+      return NextResponse.json({ error: e.message }, { status: 400 })
+    }
     const { error, status } = safeError(e); return NextResponse.json({ error }, { status })
   }
 }
