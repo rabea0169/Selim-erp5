@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: selim
+      POSTGRES_PASSWORD: selim_password
+      POSTGRES_DB: selim_erp
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  app:
+    build: .
+    environment:
+      DATABASE_URL: "postgresql://selim:selim_password@postgres:5432/selim_erp"
+      NODE_ENV: "production"
+      TOKEN_SECRET: "change-this-to-a-random-secret-key-min-32-chars"
+    ports:
+      - "3000:3000"
+    depends_on:
+      - postgres
+    volumes:
+      - ./src:/app/src
+
+volumes:
+  postgres_data:

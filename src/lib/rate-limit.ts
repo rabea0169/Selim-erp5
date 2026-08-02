@@ -1,6 +1,6 @@
 /**
- * Rate Limiter بسيط في الذاكرة لتقييد الطلبات
- * يستخدم Map مع cleanup تلقائي
+ * In-memory rate limiting for auth endpoints
+ * Prevents brute force and user enumeration attacks
  */
 
 interface RateLimitEntry {
@@ -8,59 +8,65 @@ interface RateLimitEntry {
   resetAt: number
 }
 
-const store = new Map<string, RateLimitEntry>()
+class RateLimiter {
+  private attempts = new Map<string, RateLimitEntry>()
 
-// تنظيف دوري كل دقيقة
-let cleanupTimer: ReturnType<typeof setInterval> | null = null
-if (typeof globalThis !== 'undefined' && typeof globalThis.setTimeout === 'function') {
-  cleanupTimer = setInterval(() => {
+  constructor(
+    private maxAttempts: number,
+    private windowMs: number // milliseconds
+  ) {}
+
+  check(key: string): { allowed: boolean; remaining: number } {
     const now = Date.now()
-    for (const [key, entry] of store) {
-      if (entry.resetAt <= now) store.delete(key)
+    const entry = this.attempts.get(key)
+
+    // Expired entry, create new one
+    if (!entry || entry.resetAt < now) {
+      this.attempts.set(key, { count: 1, resetAt: now + this.windowMs })
+      return { allowed: true, remaining: this.maxAttempts - 1 }
     }
-  }, 60_000)
-  // عدم منع exit في tests
-  if (cleanupTimer.unref) cleanupTimer.unref()
-}
 
-/**
- * التحقق من rate limit
- * @param key مفتاح التقييد (مثلاً IP أو IP+endpoint)
- * @param maxRequests الحد الأقصى للطلبات
- * @param windowMs نافذة الوقت بالمللي ثانية
- * @returns { limited: boolean, retryAfter: number }
- */
-export function rateLimit(
-  key: string,
-  maxRequests: number,
-  windowMs: number = 60_000
-): { limited: boolean; retryAfter: number } {
-  const now = Date.now()
-  const entry = store.get(key)
+    // Still within window
+    entry.count++
+    const allowed = entry.count <= this.maxAttempts
+    const remaining = Math.max(0, this.maxAttempts - entry.count)
 
-  if (!entry || entry.resetAt <= now) {
-    store.set(key, { count: 1, resetAt: now + windowMs })
-    return { limited: false, retryAfter: 0 }
+    if (!allowed) {
+      console.warn(`[RateLimit] Key "${key}" exceeded limit (${entry.count}/${this.maxAttempts})`)
+    }
+
+    return { allowed, remaining }
   }
 
-  entry.count++
-  if (entry.count > maxRequests) {
-    return {
-      limited: true,
-      retryAfter: Math.ceil((entry.resetAt - now) / 1000),
-    }
+  reset(key: string): void {
+    this.attempts.delete(key)
   }
 
-  return { limited: false, retryAfter: 0 }
+  // Cleanup old entries every hour to prevent memory leak
+  cleanup(): void {
+    const now = Date.now()
+    for (const [key, entry] of this.attempts.entries()) {
+      if (entry.resetAt < now - 60 * 60 * 1000) {
+        this.attempts.delete(key)
+      }
+    }
+  }
 }
 
-/**
- * الحصول على IP العميل من الطلب
- */
-export function getClientIP(request: Request): string {
-  const forwarded = request.headers.get('x-forwarded-for')
-  if (forwarded) return forwarded.split(',')[0].trim()
-  const realIP = request.headers.get('x-real-ip')
-  if (realIP) return realIP.trim()
-  return 'unknown'
+// Login rate limiter: 10 attempts per 5 minutes per IP+username
+export const loginLimiter = new RateLimiter(10, 5 * 60 * 1000)
+
+// Password recovery rate limiter: 10 attempts per 5 minutes for question lookup
+export const passwordRecoveryLookupLimiter = new RateLimiter(10, 5 * 60 * 1000)
+
+// Password reset rate limiter: 5 attempts per 15 minutes for actual reset
+export const passwordResetLimiter = new RateLimiter(5, 15 * 60 * 1000)
+
+// Run cleanup periodically
+if (typeof setInterval !== 'undefined') {
+  setInterval(() => {
+    loginLimiter.cleanup()
+    passwordRecoveryLookupLimiter.cleanup()
+    passwordResetLimiter.cleanup()
+  }, 60 * 60 * 1000) // Every hour
 }
