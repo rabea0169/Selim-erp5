@@ -94,7 +94,7 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void })
             <button
               type="button"
               onClick={() => setMode('login')}
-              disabled={!hasUsers && mode === 'register'}
+              disabled={!hasUsers && mode === 'login'}
               className={`py-2.5 rounded-lg text-sm font-bold transition-all ${
                 mode === 'login'
                   ? 'bg-white text-emerald-600 shadow-sm'

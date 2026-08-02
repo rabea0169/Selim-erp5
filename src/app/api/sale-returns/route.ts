@@ -45,14 +45,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'بيانات المرتجع غير مكتملة' }, { status: 400 })
     }
 
-    const sale = await db.sale.findFirst({ where: { id: saleId }, include: { items: true } })
-    if (!sale) return NextResponse.json({ error: 'الفاتورة غير موجودة' }, { status: 404 })
-
     // إنشاء رقم المرتجع
     const retNum = returnNumber || `RET-${Date.now()}`
-    const cName = customerName || sale.customerName || ''
 
+    // Fix H + Fix T: Move sale fetch inside transaction + use findUnique + atomic inventory
     const ret = await db.$transaction(async (tx) => {
+      const sale = await tx.sale.findUnique({ where: { id: saleId }, include: { items: true } })
+      if (!sale) throw new Error('الفاتورة غير موجودة')
+
+      const cName = customerName || sale.customerName || ''
+
       const saleReturn = await tx.saleReturn.create({
         data: {
           returnNumber: retNum,
@@ -71,10 +73,11 @@ export async function POST(req: NextRequest) {
       if (Array.isArray(items)) {
         for (const item of items) {
           if (item.productId && item.quantity > 0) {
-            const product = await tx.product.findFirst({ where: { id: item.productId } })
-            if (product) {
-              await tx.product.update({ where: { id: product.id }, data: { quantity: product.quantity + Number(item.quantity) } })
-            }
+            // Fix H: Atomic increment instead of read-then-write
+            await tx.product.update({
+              where: { id: item.productId },
+              data: { quantity: { increment: Number(item.quantity) } },
+            })
           }
         }
       }
@@ -95,6 +98,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ return: ret })
   } catch (e) {
+    if (e instanceof Error && e.message.includes('غير موجودة')) {
+      return NextResponse.json({ error: e.message }, { status: 404 })
+    }
     const { error, status } = safeError(e); return NextResponse.json({ error }, { status })
   }
 }

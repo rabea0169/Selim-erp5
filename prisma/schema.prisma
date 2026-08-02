@@ -1,10 +1,59 @@
 // Prisma schema for Selim ERP - Neon PostgreSQL
 generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
 }
 
 datasource db {
   provider = "postgresql"
+}
+
+enum UserRole {
+  admin
+  user
+}
+
+enum WorkerType {
+  monthly
+  production
+  hourly
+}
+
+enum AttendanceStatus {
+  present
+  absent
+  leave
+}
+
+enum TreasuryTransactionType {
+  deposit
+  withdrawal
+  transfer
+}
+
+enum WarehouseType {
+  raw_materials
+  finished_goods
+  general
+}
+
+enum MaterialTransactionType {
+  in
+  out
+  transfer
+  adjustment
+}
+
+enum ProductionOrderStatus {
+  draft
+  in_progress
+  completed
+  cancelled
+}
+
+enum PaymentType {
+  customer_payment
+  supplier_payment
 }
 
 // ====== المستخدمون ======
@@ -13,7 +62,7 @@ model User {
   username     String   @unique
   passwordHash String
   name         String
-  role         String   @default("admin")
+  role         UserRole @default(admin)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -65,7 +114,7 @@ model Worker {
   name            String
   phone           String?
   job             String?
-  type            String   @default("monthly")
+  type            WorkerType @default(monthly)
   hourlyRate      Float?
   overtimeRate    Float?
   workStartTime   String?
@@ -121,7 +170,7 @@ model WorkerAttendance {
   date          DateTime
   checkIn       DateTime?
   checkOut      DateTime?
-  status        String   @default("present")
+  status        AttendanceStatus @default(present)
   notes         String?
   workHours     Float?
   overtimeHours Float?
@@ -135,20 +184,24 @@ model WorkerAttendance {
 }
 
 model Production {
-  id         String   @id @default(cuid())
-  workerId   String
-  date       DateTime
-  modelName  String
-  quantity   Float
-  unitPrice  Float
-  total      Float
-  notes      String?
-  createdAt  DateTime @default(now())
+  id             String   @id @default(cuid())
+  workerId       String
+  date           DateTime
+  modelName      String
+  quantity       Float
+  unitPrice      Float
+  total          Float
+  productId      String?
+  addToInventory Boolean  @default(true)
+  notes          String?
+  createdAt      DateTime @default(now())
 
-  worker Worker @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  worker  Worker  @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
 
   @@index([workerId])
   @@index([date])
+  @@index([productId])
 }
 
 // ====== العملاء والموردون ======
@@ -298,7 +351,7 @@ model Expense {
 // ====== الخزينة ======
 model TreasuryTransaction {
   id            String   @id @default(cuid())
-  type          String
+  type          TreasuryTransactionType
   amount        Float
   date          DateTime
   description   String
@@ -316,7 +369,7 @@ model TreasuryTransaction {
 model Warehouse {
   id        String   @id @default(cuid())
   name      String
-  type      String
+  type      WarehouseType
   location  String?
   notes     String?
   createdAt DateTime @default(now())
@@ -348,7 +401,7 @@ model MaterialTransaction {
   id            String   @id @default(cuid())
   materialId    String
   warehouseId   String
-  type          String
+  type          MaterialTransactionType
   quantity      Float
   unitCost      Float?
   date          DateTime
@@ -384,6 +437,8 @@ model Product {
 
   warehouse Warehouse? @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
 
+  productions Production[]
+
   @@index([name])
   @@index([warehouseId])
 }
@@ -397,7 +452,7 @@ model ProductionOrder {
   quantity          Float
   completedQuantity Float    @default(0)
   unit              String
-  status            String   @default("draft")
+  status            ProductionOrderStatus @default(draft)
   materials         Json
   stages            Json
   date              DateTime
@@ -410,12 +465,13 @@ model ProductionOrder {
   @@index([date])
   @@index([status])
   @@index([productId])
+  @@unique([orderNumber])
 }
 
 // ====== السدادات ======
 model Payment {
   id         String   @id @default(cuid())
-  type       String
+  type       PaymentType
   partyId    String
   partyName  String
   invoiceId  String?

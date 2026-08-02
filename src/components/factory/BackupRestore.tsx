@@ -94,6 +94,8 @@ export function BackupRestore({ open, onOpenChange }: { open: boolean; onOpenCha
       } else {
         toast({ title: 'فشل', description: result.error, variant: 'destructive' })
       }
+    } catch (e: any) {
+      toast({ title: 'خطأ في الرفع', description: e.message || 'حدث خطأ أثناء رفع البيانات', variant: 'destructive' })
     } finally {
       setSyncing(false)
     }

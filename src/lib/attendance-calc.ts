@@ -73,6 +73,11 @@ export function calculateAttendance(
   const lateMinutes = calculateLateMinutes(attendance.checkIn, worker.workStartTime)
   const requiredHours = worker.workHoursPerDay || 8
 
+  // حد أقصى معقول لساعات العمل (24 ساعة)
+  if (workHours > 24) {
+    return { ...empty, workHours: 0 }
+  }
+
   // الساعات العادية = الحد الأدنى من (ساعات العمل، الساعات المطلوبة)
   const regularHours = Math.min(workHours, requiredHours)
   // الساعات الإضافية = ما يزيد عن المطلوب

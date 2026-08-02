@@ -90,11 +90,11 @@ export function ProductsView() {
   const totalValue = productsList.reduce((s, p) => s + p.quantity * p.cost, 0)
   const totalRetailValue = productsList.reduce((s, p) => s + p.quantity * p.retailPrice, 0)
   const totalUnits = productsList.reduce((s, p) => s + p.quantity, 0)
-  const avgProfitMargin = productsList.length > 0
-    ? productsList.reduce((s, p) => {
-        if (p.cost <= 0) return s
+  const productsWithCost = productsList.filter((p) => p.cost > 0)
+  const avgProfitMargin = productsWithCost.length > 0
+    ? productsWithCost.reduce((s, p) => {
         return s + ((p.retailPrice - p.cost) / p.cost) * 100
-      }, 0) / productsList.filter((p) => p.cost > 0).length
+      }, 0) / productsWithCost.length
     : 0
 
   const handleDelete = async (id: string) => {

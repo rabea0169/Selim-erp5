@@ -125,25 +125,35 @@ export async function registerUser(
     return { success: false, error: 'الاسم مطلوب' }
   }
 
-  const canRegister = await isRegistrationAllowed()
-  if (!canRegister) {
-    return { success: false, error: 'التسجيل مغلق — يرجى التواصل مع المدير' }
-  }
+  // Fix M: Use interactive transaction to prevent race condition
+  let user: any
+  try {
+    user = await db.$transaction(async (tx) => {
+      const count = await tx.user.count()
+      if (count > 0) throw new Error('التسجيل مغلق')
 
-  const existing = await db.user.findUnique({ where: { username } })
-  if (existing) {
-    return { success: false, error: 'اسم المستخدم موجود بالفعل' }
-  }
+      const existing = await tx.user.findUnique({ where: { username } })
+      if (existing) throw new Error('اسم المستخدم موجود بالفعل')
 
-  const passwordHash = await bcrypt.hash(password, 10)
-  const user = await db.user.create({
-    data: {
-      username: username.trim(),
-      passwordHash,
-      name: name.trim(),
-      role: 'admin',
-    },
-  })
+      const passwordHash = await bcrypt.hash(password, 12)
+      return tx.user.create({
+        data: {
+          username: username.trim(),
+          passwordHash,
+          name: name.trim(),
+          role: 'admin',
+        },
+      })
+    })
+  } catch (e: any) {
+    if (e.message === 'التسجيل مغلق') {
+      return { success: false, error: 'التسجيل مغلق — يرجى التواصل مع المدير' }
+    }
+    if (e.message === 'اسم المستخدم موجود بالفعل') {
+      return { success: false, error: 'اسم المستخدم موجود بالفعل' }
+    }
+    throw e
+  }
 
   // تسجيل الدخول تلقائياً بعد التسجيل
   const token = createSessionToken(user.id, user.username, user.role)

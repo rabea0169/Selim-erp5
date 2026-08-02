@@ -19,20 +19,18 @@ export function useTheme() {
   const [theme, setTheme] = useState<Theme>('light')
 
   useEffect(() => {
-    Promise.resolve().then(() => {
-      // تحميل التيمة المحفوظة
-      const saved = localStorage.getItem(THEME_KEY) as Theme | null
-      if (saved) {
-        setTheme(saved)
-        applyTheme(saved)
-      } else {
-        // فحص تفضيل النظام
-        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-        const initial = prefersDark ? 'dark' : 'light'
-        setTheme(initial)
-        applyTheme(initial)
-      }
-    })
+    // تحميل التيمة المحفوظة
+    const saved = localStorage.getItem(THEME_KEY) as Theme | null
+    if (saved) {
+      setTheme(saved)
+      applyTheme(saved)
+    } else {
+      // فحص تفضيل النظام
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+      const initial = prefersDark ? 'dark' : 'light'
+      setTheme(initial)
+      applyTheme(initial)
+    }
   }, [])
 
   const toggleTheme = useCallback(() => {

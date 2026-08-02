@@ -10,13 +10,18 @@ export async function GET(req: NextRequest) {
     const categoryId = searchParams.get('categoryId')
     const q = searchParams.get('q') || ''
 
+    // Fix Q: Date validation
+    const fromDate = from ? new Date(from) : undefined
+    const toDate = to ? new Date(to) : undefined
+    if (from && isNaN(fromDate!.getTime())) return NextResponse.json({ error: 'تاريخ غير صالح' }, { status: 400 })
+    if (to && isNaN(toDate!.getTime())) return NextResponse.json({ error: 'تاريخ غير صالح' }, { status: 400 })
+
     const where: any = {}
     if (from || to) {
       where.date = {}
-      if (from) where.date.gte = new Date(from)
+      if (from) where.date.gte = fromDate
       if (to) {
-        const toDate = new Date(to)
-        toDate.setHours(23, 59, 59, 999)
+        toDate!.setHours(23, 59, 59, 999)
         where.date.lte = toDate
       }
     }
@@ -38,7 +43,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { categoryId, amount, date, notes } = body
+    const { categoryId, amount, date, description, notes } = body
 
     // التحقق من البيانات
     if (!categoryId) {
@@ -61,27 +66,44 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // التحقق من وجود الفئة
-    const cat = await db.expenseCategory.findUnique({ where: { id: categoryId } })
-    if (!cat) {
-      return NextResponse.json(
-        { error: 'فئة المصروف غير موجودة' },
-        { status: 404 }
-      )
-    }
+    // Fix C: Wrap in transaction with treasury withdrawal
+    const expense = await db.$transaction(async (tx) => {
+      // التحقق من وجود الفئة
+      const cat = await tx.expenseCategory.findUnique({ where: { id: categoryId } })
+      if (!cat) {
+        throw new Error('فئة المصروف غير موجودة')
+      }
 
-    const expense = await db.expense.create({
-      data: {
-        categoryId,
-        categoryName: cat.name, // تخزين اسم الفئة لسرعة العرض
-        amount: amt,
-        date: new Date(date),
-        notes: notes?.trim() || null,
-      },
-      include: { category: true },
+      const newExpense = await tx.expense.create({
+        data: {
+          categoryId,
+          categoryName: cat.name,
+          amount: amt,
+          date: new Date(date),
+          notes: notes?.trim() || null,
+        },
+        include: { category: true },
+      })
+
+      // Create corresponding treasury withdrawal
+      await tx.treasuryTransaction.create({
+        data: {
+          type: 'withdrawal',
+          amount: amt,
+          description: `مصروف: ${description || cat.name}`,
+          referenceType: 'expense',
+          referenceId: newExpense.id,
+          date: newExpense.date,
+        },
+      })
+
+      return newExpense
     })
     return NextResponse.json({ expense })
   } catch (e) {
+    if (e instanceof Error && e.message.includes('غير موجودة')) {
+      return NextResponse.json({ error: e.message }, { status: 404 })
+    }
     const { error, status } = safeError(e); return NextResponse.json({ error }, { status })
   }
 }

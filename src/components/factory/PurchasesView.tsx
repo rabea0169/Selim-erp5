@@ -5,6 +5,7 @@ import { Plus, X, Search, Package, Truck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { useToast } from '@/hooks/use-toast'
 import { formatCurrency } from '@/lib/format'
 import {
   purchaseRepository,
@@ -24,6 +25,7 @@ export function PurchasesView() {
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const [showSuppliers, setShowSuppliers] = useState(false)
+  const { toast } = useToast()
 
   // تحميل المشتريات مع التحديث الفوري عند تغير البيانات
   const { data: purchases, loading, reload: reloadPurchases } = useLiveData<Purchase[]>(
@@ -49,6 +51,7 @@ export function PurchasesView() {
       dataChangeEmitter.notifyDelete('purchases')
     } catch (e: any) {
       console.error(e)
+      toast({ title: 'خطأ في حذف الفاتورة', description: e.message, variant: 'destructive' })
     }
   }
 

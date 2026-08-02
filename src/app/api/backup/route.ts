@@ -25,6 +25,18 @@ export async function GET() {
       purchaseItems,
       expenseCategories,
       expenses,
+      // Fix D: Missing tables
+      products,
+      warehouses,
+      materials,
+      materialTransactions,
+      treasuryTransactions,
+      productionOrders,
+      payments,
+      saleReturns,
+      purchaseReturns,
+      factorySettings,
+      auditLogs,
     ] = await Promise.all([
       db.worker.findMany(),
       db.workerAdvance.findMany(),
@@ -39,10 +51,22 @@ export async function GET() {
       db.purchaseItem.findMany(),
       db.expenseCategory.findMany(),
       db.expense.findMany(),
+      // Fix D: Missing tables
+      db.product.findMany(),
+      db.warehouse.findMany(),
+      db.material.findMany(),
+      db.materialTransaction.findMany(),
+      db.treasuryTransaction.findMany(),
+      db.productionOrder.findMany(),
+      db.payment.findMany(),
+      db.saleReturn.findMany(),
+      db.purchaseReturn.findMany(),
+      db.factorySettings.findMany(),
+      db.auditLog.findMany(),
     ])
 
     const backup = {
-      version: 2,
+      version: 3,
       app: 'clothing-factory-management',
       exportedAt: new Date().toISOString(),
       data: {
@@ -59,6 +83,18 @@ export async function GET() {
         purchaseItems,
         expenseCategories,
         expenses,
+        // Fix D: Missing tables
+        products,
+        warehouses,
+        materials,
+        materialTransactions,
+        treasuryTransactions,
+        productionOrders,
+        payments,
+        saleReturns,
+        purchaseReturns,
+        factorySettings,
+        auditLogs,
       },
     }
 

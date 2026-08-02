@@ -52,8 +52,8 @@ export function CustomersView({ onBack }: { onBack: () => void }) {
       await customerRepository.delete(id)
       dataChangeEmitter.notifyDelete('customers')
       toast({ title: 'تم الحذف' })
-    } catch {
-      toast({ title: 'خطأ', variant: 'destructive' })
+    } catch (e: any) {
+      toast({ title: 'خطأ', description: e.message, variant: 'destructive' })
     }
   }
 

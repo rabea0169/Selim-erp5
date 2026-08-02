@@ -22,7 +22,6 @@ export interface SearchResult {
 class GlobalSearchService {
   async search(query: string): Promise<SearchResult[]> {
     if (!query.trim()) return []
-    const q = query.toLowerCase()
     const results: SearchResult[] = []
 
     try {

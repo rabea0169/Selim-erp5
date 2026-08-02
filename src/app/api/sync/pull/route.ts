@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
 import { requireAdmin } from '@/lib/admin-check'
 import { safeError } from '@/lib/safe-error'
@@ -15,7 +15,7 @@ const EXPORT_SELECT: Record<string, any> = {
   workerAdvance: { id: true, workerId: true, amount: true, date: true, notes: true, createdAt: true },
   workerReceipt: { id: true, workerId: true, amount: true, date: true, notes: true, createdAt: true },
   workerAttendance: { id: true, workerId: true, date: true, checkIn: true, checkOut: true, status: true, notes: true, createdAt: true },
-  production: { id: true, workerId: true, date: true, modelName: true, quantity: true, unitPrice: true, total: true, notes: true, createdAt: true },
+  production: { id: true, workerId: true, date: true, modelName: true, quantity: true, unitPrice: true, total: true, notes: true, createdAt: true, productId: true, addToInventory: true },
   customer: { id: true, name: true, phone: true, address: true, notes: true, createdAt: true },
   supplier: { id: true, name: true, phone: true, address: true, notes: true, createdAt: true },
   sale: { id: true, invoiceNo: true, customerName: true, customerId_ref: true, date: true, total: true, paid: true, notes: true, createdAt: true, updatedAt: true },
@@ -36,8 +36,8 @@ const EXPORT_SELECT: Record<string, any> = {
   auditLog: { id: true, action: true, entityType: true, entityId: true, description: true, userId: true, userName: true, timestamp: true },
 }
 
-// GET /api/sync/pull - تحميل بيانات من السيرفر لـ IndexedDB (admin فقط)
-export async function GET() {
+// Fix O: Changed from GET to POST
+export async function POST(_req: NextRequest) {
   try {
     const admin = await requireAdmin()
     if (!admin.ok) {

@@ -50,7 +50,8 @@ async function fetchWorkers(search: string): Promise<WorkerWithStats[]> {
           balance: w.balance || 0,
         }
       }
-      // search() path: fetch stats
+      // search() path: fetch stats individually (N queries in parallel)
+      // TODO: Add workerRepository.searchWithStats() batch method to avoid N queries
       const stats = await workerRepository.getWithStats(w.id)
       return {
         id: w.id,

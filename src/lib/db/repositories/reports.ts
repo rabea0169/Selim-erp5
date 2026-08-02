@@ -159,6 +159,11 @@ class ReportRepository {
       data[table] = await db.getAll(table)
     }
 
+    // Strip passwordHash from users before exporting
+    if (data.users) {
+      data.users = (data.users as any[]).map(({ passwordHash, ...rest }: any) => rest)
+    }
+
     return {
       version: 5,
       app: 'clothing-factory-management',

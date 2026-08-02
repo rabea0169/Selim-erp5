@@ -56,7 +56,7 @@ export function PrintSettingsDialog({
 
   useEffect(() => {
     setSettings(getSavedPrintSettings())
-    isBluetoothSupported().then(setBluetoothSupported)
+    isBluetoothSupported().then(setBluetoothSupported).catch(() => setBluetoothSupported(false))
     setConnected(isPrinterConnected())
   }, [open])
 

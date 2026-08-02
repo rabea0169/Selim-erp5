@@ -2,6 +2,7 @@
 
 import jsPDF from 'jspdf'
 import html2canvas from 'html2canvas'
+import { escapeHtml } from '@/lib/escape-html'
 
 /**
  * تحويل عنصر HTML إلى ملف PDF وتنزيله
@@ -111,7 +112,7 @@ export function createReportContainer(title: string, contentHtml: string): HTMLE
   container.innerHTML = `
     <div style="border-bottom: 3px solid #059669; padding-bottom: 16px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center;">
       <div>
-        <h1 style="color: #1e293b; margin: 0; font-size: 24px;">${title}</h1>
+        <h1 style="color: #1e293b; margin: 0; font-size: 24px;">${escapeHtml(title)}</h1>
         <p style="color: #64748b; margin: 4px 0 0; font-size: 12px;">تاريخ التقرير: ${new Date().toLocaleString('ar-EG')}</p>
       </div>
       <div style="text-align: left;">

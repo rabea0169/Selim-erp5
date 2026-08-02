@@ -56,7 +56,12 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const validType = type === 'production' ? 'production' : 'monthly'
+    // Fix S: Validate worker type strictly
+    const VALID_WORKER_TYPES = ['monthly', 'production', 'hourly']
+    if (type && !VALID_WORKER_TYPES.includes(type)) {
+      return NextResponse.json({ error: 'نوع العامل غير صالح' }, { status: 400 })
+    }
+    const validType = type || 'monthly'
 
     const worker = await db.worker.create({
       data: {

@@ -12,15 +12,20 @@ export async function GET(req: NextRequest) {
     const page = Math.max(1, Number(searchParams.get('page')) || 1)
     const limit = Math.min(100, Math.max(1, Number(searchParams.get('limit')) || 50))
 
+    // Fix Q: Date validation
+    const fromDate = from ? new Date(from) : undefined
+    const toDate = to ? new Date(to) : undefined
+    if (from && isNaN(fromDate!.getTime())) return NextResponse.json({ error: 'تاريخ غير صالح' }, { status: 400 })
+    if (to && isNaN(toDate!.getTime())) return NextResponse.json({ error: 'تاريخ غير صالح' }, { status: 400 })
+
     const where: any = {}
     if (type) where.type = type
     if (category) where.category = category
     if (from || to) {
       where.date = {}
-      if (from) where.date.gte = new Date(from)
+      if (from) where.date.gte = fromDate
       if (to) {
-        const toDate = new Date(to)
-        toDate.setHours(23, 59, 59, 999)
+        toDate!.setHours(23, 59, 59, 999)
         where.date.lte = toDate
       }
     }

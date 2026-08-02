@@ -52,8 +52,8 @@ export function SuppliersView({ onBack }: { onBack: () => void }) {
       await supplierRepository.delete(id)
       dataChangeEmitter.notifyDelete('suppliers')
       toast({ title: 'تم الحذف' })
-    } catch {
-      toast({ title: 'خطأ', variant: 'destructive' })
+    } catch (e: any) {
+      toast({ title: 'خطأ', description: e.message, variant: 'destructive' })
     }
   }
 

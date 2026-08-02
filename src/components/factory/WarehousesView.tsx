@@ -55,12 +55,14 @@ async function fetchWarehousesData(): Promise<WarehousesData> {
     warehouseRepository.getAll(),
     materialTransactionRepository.getAll(),
   ])
-  // اجلب كل المواد
-  const materials: Material[] = []
-  for (const w of warehouses) {
-    const ms = await materialRepository.getByWarehouse(w.id)
-    materials.push(...ms)
-  }
+  // Fetch materials for all warehouses in parallel
+  const materialsByWarehouse = await Promise.all(
+    warehouses.map(async (w) => ({
+      warehouseId: w.id,
+      materials: await materialRepository.getByWarehouse(w.id),
+    }))
+  )
+  const materials: Material[] = materialsByWarehouse.flatMap((m) => m.materials)
   return {
     warehouses: warehouses.sort((a, b) => a.name.localeCompare(b.name, 'ar')),
     materials,

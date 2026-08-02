@@ -40,7 +40,8 @@ class AlertsService {
       // 2. عمال لم يحضروا اليوم
       const todayAttendance = await workerAttendanceRepository.getByDate(today)
       const allWorkers = await workerRepository.getAll()
-      const absentWorkers = allWorkers.length - todayAttendance.length
+      const uniqueAttendedWorkers = new Set(todayAttendance.map((a: any) => a.workerId))
+      const absentWorkers = allWorkers.length - uniqueAttendedWorkers.size
       if (absentWorkers > 0 && allWorkers.length > 0) {
         alerts.push({
           id: 'absent-workers',

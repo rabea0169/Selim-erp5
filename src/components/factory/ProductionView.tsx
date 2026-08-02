@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import {
   Plus,
   Trash2,
@@ -279,7 +279,7 @@ function ProductionForm({
   const [saving, setSaving] = useState(false)
   const { toast } = useToast()
 
-  const total = (Number(quantity) || 0) * (Number(unitPrice) || 0)
+  const total = useMemo(() => (Number(quantity) || 0) * (Number(unitPrice) || 0), [quantity, unitPrice])
 
   const save = async () => {
     if (!workerId) {

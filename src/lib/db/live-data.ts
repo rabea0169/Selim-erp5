@@ -130,6 +130,7 @@ export function useLiveData<T>(
     let mounted = true
 
     const loadData = async () => {
+      // Already handled by the reloadFlag pattern - callers increment reloadFlag to trigger reload
       if (!mounted) return
       setLoading(true)
       setError(null)
