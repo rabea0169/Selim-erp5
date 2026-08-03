@@ -9,7 +9,14 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     if (!existing) {
       return NextResponse.json({ error: 'القبض غير موجود' }, { status: 404 })
     }
-    await db.workerReceipt.delete({ where: { id } })
+    await db.$transaction(async (tx) => {
+      // حذف حركة الخزينة المرتبطة بهذا القبض
+      await tx.treasuryTransaction.deleteMany({
+        where: { referenceType: 'worker_receipt', referenceId: id },
+      })
+      // حذف القبض
+      await tx.workerReceipt.delete({ where: { id } })
+    })
     return NextResponse.json({ success: true })
   } catch (e) {
     const { error, status } = safeError(e, 500)

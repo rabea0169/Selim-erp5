@@ -35,7 +35,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
 
       // 3) حذف المدفوعات المرتبطة بالفاتورة
       await tx.payment.deleteMany({
-        where: { referenceType: 'sale', referenceId: id },
+        where: { invoiceId: id },
       })
 
       // 4) حذف المرتجعات المرتبطة

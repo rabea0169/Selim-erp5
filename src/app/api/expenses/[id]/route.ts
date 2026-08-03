@@ -18,15 +18,27 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: 'المبلغ يجب أن يكون رقماً موجباً' }, { status: 400 })
     }
 
-    const expense = await db.expense.update({
-      where: { id },
-      data: {
-        amount: amt,
-        date: date ? new Date(date) : existing.date,
-        categoryId: categoryId || existing.categoryId,
-        categoryName: categoryName || existing.categoryName,
-        notes: notes !== undefined ? (notes?.trim() || null) : existing.notes,
-      },
+    const expense = await db.$transaction(async (tx) => {
+      const exp = await tx.expense.update({
+        where: { id },
+        data: {
+          amount: amt,
+          date: date ? new Date(date) : existing.date,
+          categoryId: categoryId || existing.categoryId,
+          categoryName: categoryName || existing.categoryName,
+          notes: notes !== undefined ? (notes?.trim() || null) : existing.notes,
+        },
+      })
+      // تحديث حركة الخزينة المرتبطة بهذا المصروف
+      await tx.treasuryTransaction.updateMany({
+        where: { referenceType: 'expense', referenceId: id },
+        data: {
+          amount: amt,
+          date: date ? new Date(date) : existing.date,
+          description: `مصروف: ${exp.categoryName}`,
+        },
+      })
+      return exp
     })
     return NextResponse.json({ expense })
   } catch (e) {
