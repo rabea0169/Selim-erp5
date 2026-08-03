@@ -28,6 +28,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'نوع المخزن مطلوب' }, { status: 400 })
     }
 
+    // Fix R: Validate warehouse type
+    const VALID_WAREHOUSE_TYPES = ['raw_materials', 'finished_goods', 'general']
+    if (!VALID_WAREHOUSE_TYPES.includes(type.trim())) {
+      return NextResponse.json({ error: 'نوع المستودع غير صالح' }, { status: 400 })
+    }
+
     const warehouse = await db.warehouse.create({
       data: {
         name: name.trim(),

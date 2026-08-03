@@ -6,15 +6,23 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   try {
     const { id } = await params
 
-    const production = await db.production.findUnique({ where: { id } })
-    if (!production) {
-      return NextResponse.json({ error: 'سجل الإنتاج غير موجود' }, { status: 404 })
-    }
+    const tx = await db.$transaction(async (tx) => {
+      const prod = await tx.production.findUnique({ where: { id }, include: { product: true } })
+      if (!prod) return NextResponse.json({ error: 'السجل غير موجود' }, { status: 404 })
 
-    // لا حاجة لعمل transaction معقد هنا لان الإنتاج لا يؤثر على المخزون مباشرة
-    // (التأثير يكون عبر أوامر التشغيل فقط)
-    await db.production.delete({ where: { id } })
+      // Revert inventory if it was added
+      if (prod.addToInventory !== false && prod.productId && prod.product) {
+        await tx.product.update({
+          where: { id: prod.productId },
+          data: { quantity: { decrement: prod.quantity } },
+        })
+      }
 
+      await tx.production.delete({ where: { id } })
+      return prod
+    })
+
+    if (tx instanceof NextResponse) return tx
     return NextResponse.json({ success: true })
   } catch (e) {
     const { error, status } = safeError(e, 500)

@@ -43,23 +43,17 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   try {
     const { id } = await params
 
-    // التحقق من وجود العميل
-    const existing = await db.customer.findUnique({ where: { id } })
-    if (!existing) {
-      return NextResponse.json(
-        { error: 'العميل غير موجود' },
-        { status: 404 }
-      )
-    }
+    // Fix F: Wrap in transaction
+    await db.$transaction(async (tx) => {
+      // فصل المبيعات المرتبطة بهذا العميل (SetNull بسبب العلاقة الاختيارية)
+      await tx.sale.updateMany({
+        where: { customerId_ref: id },
+        data: { customerId_ref: null },
+      })
 
-    // فصل المبيعات المرتبطة بهذا العميل (SetNull بسبب العلاقة الاختيارية)
-    // لكن نحتفظ باسم العميل في customerName للفواتير القديمة
-    await db.sale.updateMany({
-      where: { customerId_ref: id },
-      data: { customerId_ref: null },
+      await tx.customer.delete({ where: { id } })
     })
 
-    await db.customer.delete({ where: { id } })
     return NextResponse.json({ success: true })
   } catch (e) {
     const { error, status } = safeError(e); return NextResponse.json({ error }, { status })

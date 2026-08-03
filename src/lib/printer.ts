@@ -1,5 +1,7 @@
 'use client'
 
+import { escapeHtml } from '@/lib/escape-html'
+
 /**
  * نظام الطباعة الاحترافي
  * يدعم:
@@ -285,7 +287,7 @@ export async function printViaBrowser(
     <html lang="ar" dir="rtl">
     <head>
       <meta charset="UTF-8">
-      <title>${title}</title>
+      <title>${escapeHtml(title)}</title>
       <style>
         ${pageCss}
         body {

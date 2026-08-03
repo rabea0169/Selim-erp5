@@ -10,11 +10,16 @@ export async function GET(req: NextRequest) {
     const from = searchParams.get('from')
     const to = searchParams.get('to')
 
+    // Fix Q: Date validation
+    const fromDate = from ? new Date(from) : undefined
+    const toDate = to ? new Date(to) : undefined
+    if (from && isNaN(fromDate!.getTime())) return NextResponse.json({ error: 'تاريخ غير صالح' }, { status: 400 })
+    if (to && isNaN(toDate!.getTime())) return NextResponse.json({ error: 'تاريخ غير صالح' }, { status: 400 })
+
     const dateRange: any = {}
-    if (from) dateRange.gte = new Date(from)
+    if (from) dateRange.gte = fromDate
     if (to) {
-      const toDate = new Date(to)
-      toDate.setHours(23, 59, 59, 999)
+      toDate!.setHours(23, 59, 59, 999)
       dateRange.lte = toDate
     }
 

@@ -14,7 +14,7 @@ import {
   ResponsiveContainer,
   Legend,
 } from 'recharts'
-import { TrendingUp, PieChart as PieIcon, Scissors, Loader2 } from 'lucide-react'
+import { TrendingUp, PieChart as PieIcon, Scissors, BarChart3 } from 'lucide-react'
 import { reportRepository, type ReportData } from '@/lib/db'
 import { formatCurrency, formatNumber } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -420,7 +420,7 @@ function ChartCard({
 function EmptyChart({ text }: { text: string }) {
   return (
     <div className="h-[200px] flex flex-col items-center justify-center text-center gap-2">
-      <Loader2 className="w-5 h-5 text-slate-300" />
+      <BarChart3 className="w-5 h-5 text-slate-300" />
       <p className="text-xs text-slate-400">{text}</p>
     </div>
   )

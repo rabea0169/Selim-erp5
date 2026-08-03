@@ -256,7 +256,14 @@ export function generateId(): string {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
     return crypto.randomUUID()
   }
-  return `${Date.now()}-${Math.random().toString(36).substring(2, 11)}-${Math.random().toString(36).substring(2, 11)}`
+  // Fallback using crypto.getRandomValues
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+    const arr = new Uint8Array(16)
+    crypto.getRandomValues(arr)
+    return Array.from(arr, b => b.toString(16).padStart(2, '0')).join('')
+  }
+  // Last resort fallback
+  return Date.now().toString(36) + Math.random().toString(36).slice(2)
 }
 
 // التاريخ الحالي بصيغة ISO

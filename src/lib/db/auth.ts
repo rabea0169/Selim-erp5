@@ -21,7 +21,11 @@ async function checkServerUser(username: string, password: string): Promise<{ us
       body: JSON.stringify({ username, password }),
     })
     if (!response.ok) {
-      // السيرفر رد لكن بيها مشكلة
+      // Fix V: For non-auth errors (not 401/403), treat server as unreachable
+      // to allow fallback to local auth instead of showing credential error
+      if (response.status !== 401 && response.status !== 403) {
+        return { user: null, serverReachable: false }
+      }
       return { user: null, serverReachable: true }
     }
     const res = await response.json()
@@ -54,7 +58,7 @@ export async function login(username: string, password: string): Promise<{ succe
       try {
         const existingLocal = await userRepository.getByUsername(username)
         if (!existingLocal) {
-          await userRepository.createWithPassword({ username, password, name: serverUser.name })
+          await userRepository.createWithPassword({ username, password: '', name: serverUser.name, role: serverUser.role })
           console.log('[Auth] Server login OK — user synced to local IndexedDB')
         }
       } catch (localErr: any) {
@@ -142,9 +146,13 @@ export async function register(username: string, password: string, name: string)
       const res = await response.json()
 
       if (res.error) {
+        // Fix W: Check for duplicate user errors in Arabic and English
+        const isDuplicateUser = res.error.includes('موجود بالفعل')
+          || res.error.includes('already exists')
+          || res.error.includes('Unique constraint')
         // لو السيرفر says المستخدم موجود، ممكن يكون هو نفسه المستخدم اللي بيفقد بياناته المحلية
         // في حالة التسجيل بنفس البيانات، محاولة تسجيل الدخول بدلاً من ذلك
-        if (res.error.includes('موجود بالفعل')) {
+        if (isDuplicateUser) {
           console.log('[Auth] User already exists on server, attempting login instead of register')
           const loginResult = await login(username, password)
           if (loginResult.success) {

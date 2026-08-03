@@ -21,14 +21,10 @@ class AutoBackupService {
     if (typeof window === 'undefined') return
 
     // فحص فوري عند البدء (بعد 30 ثانية من فتح التطبيق)
-    setTimeout(() => {
-      Promise.resolve().then(() => this.checkAndDownload())
-    }, 30000)
+    setTimeout(() => this.checkAndDownload(), 30000)
 
     // فحص كل ساعة
-    this.intervalId = setInterval(() => {
-      Promise.resolve().then(() => this.checkAndDownload())
-    }, 60 * 60 * 1000)
+    this.intervalId = setInterval(() => this.checkAndDownload(), 60 * 60 * 1000)
   }
 
   stop() {
@@ -208,8 +204,9 @@ class AutoBackupService {
 
       if (keys.length <= 7) return
 
-      // ترتيب من الأقدم للأحدث
-      const sorted = [...keys].sort((a, b) => {
+      // ترتيب من الأقدم للأحدث (استبعاد /auto-backup-latest لأنه لا يحتوي على timestamp رقمي)
+      const sortableKeys = keys.filter(k => !k.url.includes('auto-backup-latest'))
+      const sorted = [...sortableKeys].sort((a, b) => {
         const timeA = Number(a.url.split('auto-backup-')[1] || 0)
         const timeB = Number(b.url.split('auto-backup-')[1] || 0)
         return timeA - timeB

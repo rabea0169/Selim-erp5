@@ -46,10 +46,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'بيانات مطلوبة ناقصة' }, { status: 400 })
     }
 
-    const purchase = await db.purchase.findFirst({ where: { id: purchaseId } })
-    if (!purchase) return NextResponse.json({ error: 'فاتورة الشراء غير موجودة' }, { status: 404 })
-
     const purchaseReturn = await db.$transaction(async (tx) => {
+      // Fix I + Fix U: Move purchase fetch inside transaction + use findUnique
+      const purchase = await tx.purchase.findUnique({ where: { id: purchaseId } })
+      if (!purchase) throw new Error('فاتورة الشراء غير موجودة')
+
       const ret = await tx.purchaseReturn.create({
         data: {
           returnNumber: `PR-${Date.now()}`,
@@ -68,18 +69,20 @@ export async function POST(req: NextRequest) {
       if (restockItems !== false && Array.isArray(items)) {
         for (const it of items) {
           if (it.materialId) {
-            const mat = await tx.material.findFirst({ where: { id: it.materialId } })
-            if (mat) {
-              // F2-04 fix: منع المخزون السالب
-              const newQty = Math.max(0, mat.quantity - (Number(it.quantity) || 0))
-              await tx.material.update({
-                where: { id: mat.id },
-                data: { quantity: newQty, updatedAt: new Date() },
-              })
-            }
+            // Fix I: Atomic decrement instead of read-then-write
+            await tx.material.update({
+              where: { id: it.materialId },
+              data: { quantity: { decrement: Number(it.quantity) }, updatedAt: new Date() },
+            })
           }
         }
       }
+
+      // Fix B: Update purchase.paid to reduce it
+      await tx.purchase.update({
+        where: { id: purchaseId },
+        data: { paid: { decrement: ret.total } },
+      })
 
       if (ret.total > 0) {
         await tx.treasuryTransaction.create({
@@ -101,6 +104,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ return: purchaseReturn })
   } catch (e) {
+    if (e instanceof Error && e.message.includes('غير موجودة')) {
+      return NextResponse.json({ error: e.message }, { status: 404 })
+    }
     const { error, status } = safeError(e); return NextResponse.json({ error }, { status })
   }
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { Factory, Database, LogOut, Printer, Search, Bell, Sun, Moon, Wifi, WifiOff, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -44,22 +44,26 @@ export function Header({
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<SearchResult[]>([])
   const [searching, setSearching] = useState(false)
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const handleSearch = async (q: string) => {
     setSearchQuery(q)
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current)
     if (q.trim().length < 2) {
       setSearchResults([])
       return
     }
-    setSearching(true)
-    try {
-      const results = await globalSearchService.search(q)
-      setSearchResults(results)
-    } catch (e) {
-      console.error('Search error:', e)
-    } finally {
-      setSearching(false)
-    }
+    searchTimeoutRef.current = setTimeout(async () => {
+      setSearching(true)
+      try {
+        const results = await globalSearchService.search(q)
+        setSearchResults(results)
+      } catch (e) {
+        console.error('Search error:', e)
+      } finally {
+        setSearching(false)
+      }
+    }, 300)
   }
 
   const handleResultClick = (result: SearchResult) => {
@@ -97,7 +101,7 @@ export function Header({
           <div className={cn(
             'w-2 h-2 rounded-full shrink-0',
             isOnline ? 'bg-emerald-500' : 'bg-rose-500'
-          )} title={isOnline ? 'متصل' : 'غير متصل'} />
+          )} title={isOnline ? 'متصل' : 'غير متصل'} aria-label={isOnline ? 'اتصال بالإنترنت متاح' : 'غير متصل بالإنترنت'} />
 
           {/* Action Buttons */}
           <div className="flex items-center gap-1 shrink-0">
@@ -202,9 +206,9 @@ export function Header({
               {!searching && searchQuery.length >= 2 && searchResults.length === 0 && (
                 <div className="text-center py-8 text-sm text-slate-400">لا توجد نتائج</div>
               )}
-              {!searching && searchResults.map((result, i) => (
+              {!searching && searchResults.map((result) => (
                 <button
-                  key={i}
+                  key={result.type + '-' + result.id}
                   onClick={() => handleResultClick(result)}
                   className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-50 transition-colors text-right"
                 >

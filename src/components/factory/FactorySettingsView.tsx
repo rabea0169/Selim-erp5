@@ -30,6 +30,7 @@ import {
 } from '@/components/ui/dialog'
 import { useToast } from '@/hooks/use-toast'
 import { factorySettingsRepository, dataChangeEmitter } from '@/lib/db'
+import { clearSettingsCache } from '@/lib/factory-header'
 import type { FactorySettings } from '@/lib/db/types'
 
 export function FactorySettingsView({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
@@ -118,6 +119,9 @@ export function FactorySettingsView({ open, onOpenChange }: { open: boolean; onO
 
       // بث حدث التحديث
       dataChangeEmitter.notifyUpdate('factorySettings')
+
+      // تنظيف الكاش
+      clearSettingsCache()
 
       toast({ title: 'تم الحفظ', description: 'تم حفظ بيانات المصنع بنجاح' })
       onOpenChange(false)

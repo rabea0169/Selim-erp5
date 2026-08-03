@@ -61,15 +61,6 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // التحقق من وجود الموظف
-    const worker = await db.worker.findUnique({ where: { id: workerId } })
-    if (!worker) {
-      return NextResponse.json(
-        { error: 'الموظف غير موجود' },
-        { status: 404 }
-      )
-    }
-
     // التحقق من الحالة
     const validStatus = ['present', 'absent', 'leave'].includes(status)
       ? status
@@ -81,43 +72,57 @@ export async function POST(req: NextRequest) {
     const dayEnd = new Date(dayStart)
     dayEnd.setDate(dayEnd.getDate() + 1)
 
-    // البحث عن سجل موجود لنفس الموظف في نفس اليوم
-    const existing = await db.workerAttendance.findFirst({
-      where: {
-        workerId,
-        date: { gte: dayStart, lt: dayEnd },
-      },
-    })
+    // Fix J: Wrap check+create in transaction to prevent race condition
+    const result = await db.$transaction(async (tx) => {
+      // التحقق من وجود الموظف
+      const worker = await tx.worker.findUnique({ where: { id: workerId } })
+      if (!worker) {
+        throw new Error('الموظف غير موجود')
+      }
 
-    if (existing) {
-      // تحديث السجل الموجود
-      const updated = await db.workerAttendance.update({
-        where: { id: existing.id },
+      // البحث عن سجل موجود لنفس الموظف في نفس اليوم
+      const existing = await tx.workerAttendance.findFirst({
+        where: {
+          workerId,
+          date: { gte: dayStart, lt: dayEnd },
+        },
+      })
+
+      if (existing) {
+        // تحديث السجل الموجود
+        const updated = await tx.workerAttendance.update({
+          where: { id: existing.id },
+          data: {
+            checkIn: checkIn ? new Date(checkIn) : existing.checkIn,
+            checkOut: checkOut ? new Date(checkOut) : existing.checkOut,
+            status: validStatus,
+            notes: notes !== undefined ? (notes?.trim() || null) : existing.notes,
+          },
+          include: { worker: true },
+        })
+        return { attendance: updated, updated: true }
+      }
+
+      // إنشاء سجل جديد
+      const record = await tx.workerAttendance.create({
         data: {
-          checkIn: checkIn ? new Date(checkIn) : existing.checkIn,
-          checkOut: checkOut ? new Date(checkOut) : existing.checkOut,
+          workerId,
+          date: new Date(date),
+          checkIn: checkIn ? new Date(checkIn) : null,
+          checkOut: checkOut ? new Date(checkOut) : null,
           status: validStatus,
-          notes: notes !== undefined ? (notes?.trim() || null) : existing.notes,
+          notes: notes?.trim() || null,
         },
         include: { worker: true },
       })
-      return NextResponse.json({ attendance: updated, updated: true })
-    }
-
-    // إنشاء سجل جديد
-    const record = await db.workerAttendance.create({
-      data: {
-        workerId,
-        date: new Date(date),
-        checkIn: checkIn ? new Date(checkIn) : null,
-        checkOut: checkOut ? new Date(checkOut) : null,
-        status: validStatus,
-        notes: notes?.trim() || null,
-      },
-      include: { worker: true },
+      return { attendance: record, created: true }
     })
-    return NextResponse.json({ attendance: record, created: true })
+
+    return NextResponse.json(result)
   } catch (e) {
+    if (e instanceof Error && e.message.includes('غير موجود')) {
+      return NextResponse.json({ error: e.message }, { status: 404 })
+    }
     const { error, status } = safeError(e); return NextResponse.json({ error }, { status })
   }
 }

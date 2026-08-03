@@ -76,10 +76,17 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
   const [isMobile, setIsMobile] = useState(false)
 
   useEffect(() => {
-    const check = () => setIsMobile(window.innerWidth < 640)
+    let resizeTimeout: ReturnType<typeof setTimeout>
+    const check = () => {
+      clearTimeout(resizeTimeout)
+      resizeTimeout = setTimeout(() => setIsMobile(window.innerWidth < 640), 150)
+    }
     check()
     window.addEventListener('resize', check)
-    return () => window.removeEventListener('resize', check)
+    return () => {
+      window.removeEventListener('resize', check)
+      clearTimeout(resizeTimeout)
+    }
   }, [])
 
   // على الموبايل: 4 أساسي + زر "المزيد"
@@ -93,7 +100,7 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
 
   return (
     <>
-      <nav className="fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-slate-200 shadow-lg">
+      <nav className="fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-slate-200 shadow-lg" aria-label="التنقل الرئيسي">
         {/* Safe area for iPhone */}
         <div className="h-[env(safe-area-inset-bottom)] bg-white" />
 

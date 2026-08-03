@@ -41,16 +41,17 @@ export function InstallPrompt() {
     }
 
     window.addEventListener('beforeinstallprompt', handler)
-    window.addEventListener('appinstalled', () => {
-      Promise.resolve().then(() => {
-        setInstalled(true)
-        setShowPrompt(false)
-      })
+
+    const installedHandler = () => {
+      setInstalled(true)
+      setShowPrompt(false)
       console.log('✅ تم تثبيت التطبيق')
-    })
+    }
+    window.addEventListener('appinstalled', installedHandler)
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handler)
+      window.removeEventListener('appinstalled', installedHandler)
     }
   }, [])
 

@@ -45,7 +45,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
                 warehouseId: mat.warehouseId,
                 type: 'out',
                 quantity: item.quantity,
-                unitCost: item.unitCost,
+                unitCost: item.unitPrice,
                 date: new Date(),
                 reason: `حذف فاتورة شراء${purchase.invoiceNo ? ` ${purchase.invoiceNo}` : ''}`,
                 referenceType: 'purchase_delete',
@@ -65,7 +65,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
 
       // 3) حذف المدفوعات المرتبطة
       await tx.payment.deleteMany({
-        where: { referenceType: 'purchase', referenceId: id },
+        where: { invoiceId: id },
       })
 
       // 4) حذف المرتجعات المرتبطة

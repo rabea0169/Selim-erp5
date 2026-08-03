@@ -3,6 +3,8 @@
 import { reportRepository } from './repositories'
 import { dataChangeEmitter } from './live-data'
 
+// TODO: Implement incremental sync with lastSyncTimestamp per entity type to avoid exporting all data on every change
+
 const SYNC_STATUS_KEY = 'lastServerSync'
 const SYNC_ENABLED_KEY = 'serverSyncEnabled'
 
@@ -101,7 +103,11 @@ class SyncService {
       // 2. Pull - تحميل البيانات من السيرفر
       // فقط إذا كان Push ناجح أو كان هناك بيانات على السيرفر
       try {
-        const pullResponse = await fetch('/api/sync/pull')
+        // Fix O: Use POST instead of GET
+        const pullResponse = await fetch('/api/sync/pull', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        })
         if (!pullResponse.ok) throw new Error(`Pull failed: ${pullResponse.status}`)
         const pullRes = await pullResponse.json()
 
@@ -121,6 +127,16 @@ class SyncService {
             // importAll الآن يعمل merge (لا يمسح البيانات المحلية)
             await reportRepository.importAll({ data: pullRes.data })
             console.log('✅ Sync pull complete:', { pulled })
+
+            // Fix P: Notify UI of data changes after pull
+            const allTypes = [
+              'sales', 'purchases', 'workers', 'workerAdvances', 'workerReceipts',
+              'workerAttendance', 'production', 'customers', 'suppliers', 'expenses',
+              'expenseCategories', 'factorySettings', 'treasuryTransactions',
+              'warehouses', 'materials', 'materialTransactions', 'products',
+              'productionOrders', 'payments', 'saleReturns', 'purchaseReturns',
+            ]
+            allTypes.forEach((t) => dataChangeEmitter.notifyUpdate(t as any))
           } else {
             console.log('⏭️ Sync pull skipped: server has no data, preserving local data')
           }
@@ -150,11 +166,14 @@ class SyncService {
 
     try {
       const localData = await reportRepository.exportAll()
-      const res = await fetch('/api/sync/push', {
+      // Fix N: Check HTTP response status
+      const r = await fetch('/api/sync/push', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ data: localData.data }),
-      }).then((r) => r.json())
+      })
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      const res = await r.json()
 
       if (!res.success) {
         throw new Error(res.error)
@@ -179,7 +198,13 @@ class SyncService {
     }
 
     try {
-      const res = await fetch('/api/sync/pull').then((r) => r.json())
+      // Fix N + Fix O: Check HTTP status and use POST
+      const r = await fetch('/api/sync/pull', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      const res = await r.json()
 
       if (!res.success) {
         throw new Error(res.error)
@@ -201,12 +226,13 @@ class SyncService {
         if (res.data) {
           // importAll الآن يعمل merge (لا يمسح البيانات المحلية)
           await reportRepository.importAll({ data: res.data })
+          // Fix X: Removed 'reports' from allTypes - it's a virtual entity not stored in DB
           const allTypes = [
             'sales', 'purchases', 'workers', 'workerAdvances', 'workerReceipts',
             'workerAttendance', 'production', 'customers', 'suppliers', 'expenses',
             'expenseCategories', 'factorySettings', 'treasuryTransactions',
             'warehouses', 'materials', 'materialTransactions', 'products',
-            'productionOrders', 'payments', 'saleReturns', 'purchaseReturns', 'reports',
+            'productionOrders', 'payments', 'saleReturns', 'purchaseReturns',
           ]
           allTypes.forEach((t) => dataChangeEmitter.notifyUpdate(t as any))
         }
@@ -225,7 +251,10 @@ class SyncService {
   // حالة السيرفر
   async checkStatus(): Promise<{ connected: boolean; counts?: Record<string, number> }> {
     try {
-      const res = await fetch('/api/sync/status').then((r) => r.json())
+      // Fix N: Check HTTP response status
+      const r = await fetch('/api/sync/status')
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      const res = await r.json()
       return { connected: res.connected, counts: res.counts }
     } catch {
       return { connected: false }

@@ -58,68 +58,78 @@ export async function POST(req: NextRequest) {
     const hasMaterials = parsedMaterials.length > 0 && parsedMaterials.every((m) => m.materialId)
     const orderStatus = hasMaterials ? 'in_progress' : 'draft'
 
-    const order = await db.$transaction(async (tx) => {
-      const product = await tx.product.findUnique({ where: { id: productId } })
-      if (!product) {
-        throw new Error('المنتج غير موجود')
-      }
-
-      // توليد رقم الأمر داخل transaction لمنع التكرار
-      const count = await tx.productionOrder.count()
-      const orderNumber = `PO-${String(count + 1).padStart(5, '0')}`
-
-      const newOrder = await tx.productionOrder.create({
-        data: {
-          orderNumber,
-          productId,
-          productName: productName.trim(),
-          quantity: Number(quantity),
-          unit: unit || product.unit,
-          status: orderStatus,
-          materials: materials || [],
-          stages: stages || [],
-          date: dateObj,
-          expectedEndDate: expectedEndDate ? new Date(expectedEndDate) : null,
-          notes: notes?.trim() || null,
-        },
-      })
-
-      if (hasMaterials) {
-        for (const mat of parsedMaterials) {
-          if (!mat.materialId) continue
-
-          const material = await tx.material.findUnique({ where: { id: mat.materialId } })
-          if (!material) {
-            throw new Error(`المادة ${mat.materialName} غير موجودة`)
-          }
-          if (material.quantity < mat.quantity) {
-            throw new Error(`الكمية المتاحة من ${mat.materialName} (${material.quantity}) أقل من المطلوب (${mat.quantity})`)
+    // Fix L: Retry loop for order number collision
+    let orderNumber: string
+    let attempts = 0
+    let order: any
+    while (attempts < 3) {
+      const count = await db.productionOrder.count()
+      orderNumber = `PO-${String(count + 1).padStart(5, '0')}`
+      try {
+        order = await db.$transaction(async (tx) => {
+          const product = await tx.product.findUnique({ where: { id: productId } })
+          if (!product) {
+            throw new Error('المنتج غير موجود')
           }
 
-          await tx.material.update({
-            where: { id: mat.materialId },
-            data: { quantity: { decrement: mat.quantity }, updatedAt: new Date() },
-          })
-
-          await tx.materialTransaction.create({
+          const newOrder = await tx.productionOrder.create({
             data: {
-              materialId: mat.materialId,
-              warehouseId: material.warehouseId,
-              type: 'out',
-              quantity: mat.quantity,
-              unitCost: material.unitCost,
+              orderNumber,
+              productId,
+              productName: productName.trim(),
+              quantity: Number(quantity),
+              unit: unit || product.unit,
+              status: orderStatus,
+              materials: materials || [],
+              stages: stages || [],
               date: dateObj,
-              reason: `أمر تشغيل ${orderNumber}`,
-              referenceType: 'production_order',
-              referenceId: newOrder.id,
-              notes: `سحب لإنتاج ${productName.trim()}`,
+              expectedEndDate: expectedEndDate ? new Date(expectedEndDate) : null,
+              notes: notes?.trim() || null,
             },
           })
-        }
-      }
 
-      return newOrder
-    })
+          if (hasMaterials) {
+            for (const mat of parsedMaterials) {
+              if (!mat.materialId) continue
+
+              const material = await tx.material.findUnique({ where: { id: mat.materialId } })
+              if (!material) {
+                throw new Error(`المادة ${mat.materialName} غير موجودة`)
+              }
+              if (material.quantity < mat.quantity) {
+                throw new Error(`الكمية المتاحة من ${mat.materialName} (${material.quantity}) أقل من المطلوب (${mat.quantity})`)
+              }
+
+              await tx.material.update({
+                where: { id: mat.materialId },
+                data: { quantity: { decrement: mat.quantity }, updatedAt: new Date() },
+              })
+
+              await tx.materialTransaction.create({
+                data: {
+                  materialId: mat.materialId,
+                  warehouseId: material.warehouseId,
+                  type: 'out',
+                  quantity: mat.quantity,
+                  unitCost: material.unitCost,
+                  date: dateObj,
+                  reason: `أمر تشغيل ${orderNumber}`,
+                  referenceType: 'production_order',
+                  referenceId: newOrder.id,
+                  notes: `سحب لإنتاج ${productName.trim()}`,
+                },
+              })
+            }
+          }
+
+          return newOrder
+        })
+        break
+      } catch (e: any) {
+        if (e.code === 'P2002' && attempts < 2) { attempts++; continue }
+        throw e
+      }
+    }
 
     return NextResponse.json({ order })
   } catch (e) {

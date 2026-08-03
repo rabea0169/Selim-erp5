@@ -81,16 +81,20 @@ export function ReturnsView({ onBack }: { onBack?: () => void }) {
     if (!confirm('حذف هذا المرتجع؟ سيتم عكس كل التأثيرات على المخزون والخزينة.')) return
     try {
       await saleReturnRepository.delete(id)
+      dataChangeEmitter.notifyDelete('saleReturns')
     } catch (e: any) {
       console.error(e)
+      toast({ title: 'خطأ في حذف المرتجع', description: e.message, variant: 'destructive' })
     }
   }
   const handleDeletePurchase = async (id: string) => {
     if (!confirm('حذف هذا المرتجع؟ سيتم عكس كل التأثيرات على المخزون والخزينة.')) return
     try {
       await purchaseReturnRepository.delete(id)
+      dataChangeEmitter.notifyDelete('purchaseReturns')
     } catch (e: any) {
       console.error(e)
+      toast({ title: 'خطأ في حذف المرتجع', description: e.message, variant: 'destructive' })
     }
   }
 

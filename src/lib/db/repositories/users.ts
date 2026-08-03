@@ -17,17 +17,13 @@ class UserRepository extends BaseRepository<User> {
     return count > 0
   }
 
-  async createWithPassword(data: {
-    username: string
-    password: string
-    name: string
-  }): Promise<User> {
+  async createWithPassword(data: { username: string; password: string; name: string; role?: string }): Promise<User> {
     const passwordHash = await bcrypt.hash(data.password, 10)
     return this.create({
       username: data.username,
       passwordHash,
       name: data.name,
-      role: 'admin',
+      role: data.role || 'admin',
     })
   }
 

@@ -44,22 +44,21 @@ export async function middleware(req: NextRequest) {
 
   // توصية 5: حماية العمليات الحساسة (admin/owner فقط)
   // backup, restore, sync, delete عمليات لا يمكن الوصول إليها إلا للمدير
-  const sensitiveWriteOps = [
+  const sensitiveOps = [
     '/api/restore',
     '/api/sync/push',
     '/api/sync/pull',
     '/api/backup',
     '/api/seed',
   ]
-  const isSensitiveWrite =
-    (req.method === 'POST' || req.method === 'PUT' || req.method === 'DELETE') &&
-    sensitiveWriteOps.some(p => pathname.startsWith(p))
-
-  if (isSensitiveWrite && session.role !== 'admin' && session.role !== 'owner') {
-    return NextResponse.json(
-      { error: 'غير مصرح — يتطلب صلاحيات مدير' },
-      { status: 403 }
-    )
+  // All sync/backup operations require admin for any HTTP method
+  if (sensitiveOps.some(p => pathname.startsWith(p))) {
+    if (session.role !== 'admin' && session.role !== 'owner') {
+      return NextResponse.json(
+        { error: 'غير مصرح — يتطلب صلاحيات مدير' },
+        { status: 403 }
+      )
+    }
   }
 
   return NextResponse.next()

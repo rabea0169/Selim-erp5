@@ -13,6 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { useToast } from '@/hooks/use-toast'
 import { formatCurrency, formatDate } from '@/lib/format'
 import {
   saleRepository,
@@ -35,6 +36,7 @@ export function SalesView() {
   const [to, setTo] = useState('')
   const [showCustomers, setShowCustomers] = useState(false)
   const [paymentFilter, setPaymentFilter] = useState<string>('all')
+  const { toast } = useToast()
 
   // تحميل المبيعات مع التحديث الفوري
   const { data: sales, loading, reload: reloadSales } = useLiveData<Sale[]>(
@@ -59,6 +61,7 @@ export function SalesView() {
       dataChangeEmitter.notifyDelete('sales')
     } catch (e: any) {
       console.error(e)
+      toast({ title: 'خطأ في حذف الفاتورة', description: e.message, variant: 'destructive' })
     }
   }
 

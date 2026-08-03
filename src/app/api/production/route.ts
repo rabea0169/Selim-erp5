@@ -9,14 +9,19 @@ export async function GET(req: NextRequest) {
     const to = searchParams.get('to')
     const workerId = searchParams.get('workerId')
 
+    // Fix Q: Date validation
+    const fromDate = from ? new Date(from) : undefined
+    const toDate = to ? new Date(to) : undefined
+    if (from && isNaN(fromDate!.getTime())) return NextResponse.json({ error: 'تاريخ غير صالح' }, { status: 400 })
+    if (to && isNaN(toDate!.getTime())) return NextResponse.json({ error: 'تاريخ غير صالح' }, { status: 400 })
+
     const where: any = {}
     if (workerId) where.workerId = workerId
     if (from || to) {
       where.date = {}
-      if (from) where.date.gte = new Date(from)
+      if (from) where.date.gte = fromDate
       if (to) {
-        const toDate = new Date(to)
-        toDate.setHours(23, 59, 59, 999)
+        toDate!.setHours(23, 59, 59, 999)
         where.date.lte = toDate
       }
     }
@@ -72,29 +77,24 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // التحقق من وجود الموظف
-    const worker = await db.worker.findUnique({ where: { id: workerId } })
-    if (!worker) {
-      return NextResponse.json(
-        { error: 'الموظف غير موجود' },
-        { status: 404 }
-      )
-    }
-
-    // ===== ربط إنتاج العمال بالمخزون =====
-    // إذا تم تحديد منتج وطلب إضافته للمخزون
+    // Fix K: Move all checks inside transaction
     let targetProductId = productId || null
-    if (targetProductId) {
-      const product = await db.product.findUnique({ where: { id: targetProductId } })
-      if (!product) {
-        return NextResponse.json(
-          { error: 'المنتج المحدد غير موجود' },
-          { status: 404 }
-        )
-      }
-    }
 
     const production = await db.$transaction(async (tx) => {
+      // التحقق من وجود الموظف
+      const worker = await tx.worker.findUnique({ where: { id: workerId } })
+      if (!worker) {
+        throw new Error('الموظف غير موجود')
+      }
+
+      // التحقق من وجود المنتج
+      if (targetProductId) {
+        const product = await tx.product.findUnique({ where: { id: targetProductId } })
+        if (!product) {
+          throw new Error('المنتج المحدد غير موجود')
+        }
+      }
+
       const newProduction = await tx.production.create({
         data: {
           workerId,
@@ -103,6 +103,8 @@ export async function POST(req: NextRequest) {
           quantity: qty,
           unitPrice: price,
           total: qty * price,
+          productId: targetProductId,
+          addToInventory: addToInventory !== false,
           notes: notes?.trim() || null,
         },
         include: { worker: true },
@@ -124,6 +126,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ production })
   } catch (e) {
+    if (e instanceof Error && (e.message.includes('غير موجود'))) {
+      return NextResponse.json({ error: e.message }, { status: 404 })
+    }
     const { error, status } = safeError(e); return NextResponse.json({ error }, { status })
   }
 }

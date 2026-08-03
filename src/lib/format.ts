@@ -1,17 +1,19 @@
 // دوال مساعدة عامة للنظام
 
 // تنسيق العملة بالجنيه المصري
-export function formatCurrency(amount: number): string {
-  const num = Number(amount) || 0
-  return num.toLocaleString('ar-EG', {
+export function formatCurrency(amount: number, currency?: string): string {
+  const formatted = new Intl.NumberFormat('ar-EG', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  }) + ' ج.م'
+  }).format(amount || 0)
+  const suffix = currency || 'ج.م'
+  return `${formatted} ${suffix}`
 }
 
 // تنسيق التاريخ بالعربي
 export function formatDate(date: Date | string): string {
   const d = typeof date === 'string' ? new Date(date) : date
+  if (isNaN(d.getTime())) return '—'
   return d.toLocaleDateString('ar-EG', {
     year: 'numeric',
     month: '2-digit',

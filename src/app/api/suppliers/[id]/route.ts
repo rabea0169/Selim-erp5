@@ -42,21 +42,17 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   try {
     const { id } = await params
 
-    const existing = await db.supplier.findUnique({ where: { id } })
-    if (!existing) {
-      return NextResponse.json(
-        { error: 'المورد غير موجود' },
-        { status: 404 }
-      )
-    }
+    // Fix G: Wrap in transaction
+    await db.$transaction(async (tx) => {
+      // فصل المشتريات المرتبطة بهذا المورد
+      await tx.purchase.updateMany({
+        where: { supplierId_ref: id },
+        data: { supplierId_ref: null },
+      })
 
-    // فصل المشتريات المرتبطة بهذا المورد
-    await db.purchase.updateMany({
-      where: { supplierId_ref: id },
-      data: { supplierId_ref: null },
+      await tx.supplier.delete({ where: { id } })
     })
 
-    await db.supplier.delete({ where: { id } })
     return NextResponse.json({ success: true })
   } catch (e) {
     const { error, status } = safeError(e); return NextResponse.json({ error }, { status })

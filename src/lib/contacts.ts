@@ -48,7 +48,7 @@ export async function pickContactFromPhone(): Promise<SelectedContact | null> {
       phone: String(phone).trim(),
     }
   } catch (err: any) {
-    if (err.name === 'SecurityError' || err.name === 'AbortError') {
+    if (err.name === 'SecurityError' || err.name === 'AbortError' || err.name === 'NotAllowedError') {
       return null
     }
     throw err

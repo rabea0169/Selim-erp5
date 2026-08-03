@@ -35,6 +35,7 @@ import { CategoryManager } from './expenses/CategoryManager'
 import type { Expense, ExpenseCategory } from './expenses/types'
 
 // جلب المصاريف + البنود + إحصائيات عدد المصاريف لكل بند
+// TODO: Derive category counts from search results when no global filter is applied to avoid fetching all expenses
 async function fetchExpensesAndCategories(
   search: string,
   from: string,
@@ -90,8 +91,8 @@ export function ExpensesView() {
       await expenseRepository.delete(id)
       dataChangeEmitter.notifyDelete('expenses')
       toast({ title: 'تم الحذف' })
-    } catch {
-      toast({ title: 'خطأ', variant: 'destructive' })
+    } catch (e: any) {
+      toast({ title: 'خطأ', description: e.message, variant: 'destructive' })
     }
   }
 

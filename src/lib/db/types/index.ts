@@ -67,6 +67,7 @@ export interface WorkerAttendance {
 export interface WorkerAdvance {
   id: string
   workerId: string
+  companyId?: string
   amount: number
   date: string
   notes?: string
@@ -76,6 +77,7 @@ export interface WorkerAdvance {
 export interface WorkerReceipt {
   id: string
   workerId: string
+  companyId?: string
   amount: number
   date: string
   notes?: string

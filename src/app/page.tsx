@@ -96,6 +96,7 @@ export default function Home() {
   }, [reloadKey])
 
   const handleLogout = async () => {
+    // TODO: Replace confirm() with a custom confirmation dialog component
     if (!confirm('هل تريد تسجيل الخروج؟')) return
     await logout()
     setUser(null)

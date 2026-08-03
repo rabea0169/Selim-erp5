@@ -69,6 +69,7 @@ export function AlertsPanel({ onNavigate, className }: AlertsPanelProps) {
   const [alerts, setAlerts] = useState<SmartAlert[]>([])
   const [loading, setLoading] = useState(false)
   const [dismissed, setDismissed] = useState<Set<string>>(new Set())
+  const [lastUpdated, setLastUpdated] = useState<string>('')
 
   // تحميل التنبيهات
   const loadAlerts = useCallback(async () => {
@@ -76,6 +77,7 @@ export function AlertsPanel({ onNavigate, className }: AlertsPanelProps) {
     try {
       const r = await alertsService.getAlerts()
       setAlerts(r)
+      setLastUpdated(new Date().toLocaleTimeString('ar-EG'))
     } catch (e) {
       console.error('Failed to load alerts:', e)
       setAlerts([])
@@ -280,7 +282,7 @@ export function AlertsPanel({ onNavigate, className }: AlertsPanelProps) {
           {/* تذييل */}
           {visibleAlerts.length > 0 && (
             <div className="border-t border-slate-200 dark:border-slate-700 px-4 py-2 flex items-center justify-between text-[10px] text-slate-500">
-              <span>آخر تحديث: {new Date().toLocaleTimeString('ar-EG')}</span>
+              <span>آخر تحديث: {lastUpdated}</span>
               <button
                 type="button"
                 onClick={() => setDismissed(new Set(visibleAlerts.map((a) => a.id)))}

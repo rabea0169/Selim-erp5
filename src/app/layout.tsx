@@ -46,15 +46,7 @@ export default function RootLayout({
           href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap"
           rel="stylesheet"
         />
-        <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-        <meta name="apple-mobile-web-app-title" content="Selim ERP" />
-        <meta name="application-name" content="Selim ERP" />
-        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-        <link rel="icon" type="image/png" href="/favicon.png" sizes="32x32" />
-        <link rel="icon" type="image/png" href="/icon-192.png" sizes="192x192" />
-        <link rel="icon" type="image/png" href="/icon-512.png" sizes="512x512" />
         <meta name="msapplication-TileColor" content="#0f172a" />
         <meta name="msapplication-tap-highlight" content="no" />
       </head>
