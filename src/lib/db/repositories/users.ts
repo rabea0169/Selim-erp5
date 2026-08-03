@@ -23,7 +23,7 @@ class UserRepository extends BaseRepository<User> {
       username: data.username,
       passwordHash,
       name: data.name,
-      role: data.role || 'admin',
+      role: (data.role as 'admin' | 'user') || 'admin',
     })
   }
 

@@ -282,8 +282,6 @@ export async function POST(req: NextRequest) {
               quantity: Number(p.quantity),
               unitPrice: Number(p.unitPrice),
               total: Number(p.total),
-              productId: p.productId || null,
-              addToInventory: p.addToInventory !== false,
               notes: p.notes ?? null,
               createdAt: new Date(p.createdAt),
             },

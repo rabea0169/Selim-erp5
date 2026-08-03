@@ -103,8 +103,6 @@ export async function POST(req: NextRequest) {
           quantity: qty,
           unitPrice: price,
           total: qty * price,
-          productId: targetProductId,
-          addToInventory: addToInventory !== false,
           notes: notes?.trim() || null,
         },
         include: { worker: true },

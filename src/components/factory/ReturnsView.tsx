@@ -63,6 +63,7 @@ interface ReturnItem {
 }
 
 export function ReturnsView({ onBack }: { onBack?: () => void }) {
+  const { toast } = useToast()
   const [tab, setTab] = useState<ReturnType>('sale')
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
