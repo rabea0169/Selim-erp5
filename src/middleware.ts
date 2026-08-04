@@ -34,7 +34,7 @@ export async function middleware(req: NextRequest) {
 
   // توصية 5: التحقق من الـ session cookie
   const sessionCookie = req.cookies.get('factory_session')?.value
-  const session = verifySessionToken(sessionCookie)
+  const session = await verifySessionToken(sessionCookie)
   if (!session) {
     return NextResponse.json(
       { error: 'غير مصرح — يجب تسجيل الدخول أولاً' },
