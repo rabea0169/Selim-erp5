@@ -5,7 +5,7 @@ nixPkgs = ['nodejs_22']
 cmds = ['npm install --legacy-peer-deps']
 
 [phases.build]
-cmds = ['npx prisma generate', 'npx next build', 'mkdir -p .next/standalone/.next', 'cp -r .next/static .next/standalone/.next/', 'cp -r public .next/standalone/']
+cmds = ['npx prisma db push --accept-data-loss', 'npx prisma generate', 'npx next build', 'mkdir -p .next/standalone/.next', 'cp -r .next/static .next/standalone/.next/', 'cp -r public .next/standalone/']
 
 [start]
 cmd = 'HOSTNAME=0.0.0.0 node .next/standalone/server.js'
