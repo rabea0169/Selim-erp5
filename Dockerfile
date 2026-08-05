@@ -31,8 +31,8 @@ COPY --from=builder --chown=1001:1001 /app/.next/standalone ./.next/standalone/
 COPY --from=builder --chown=1001:1001 /app/.next/static ./.next/standalone/.next/static/
 COPY --from=builder /app/public ./.next/standalone/public/
 
-# Wrapper scripts for Railway: use installed Prisma 6 CLI (--no-install) to avoid fetching incompatible Prisma 7
-RUN printf '#!/bin/sh\nexport HOSTNAME="0.0.0.0"\n(npx --no-install prisma db push --schema=./prisma/schema.prisma --accept-data-loss || true)\nexec node "$@"\n' > /usr/local/bin/bun && chmod +x /usr/local/bin/bun
+# Wrapper scripts for Railway
+RUN printf '#!/bin/sh\nexport HOSTNAME="0.0.0.0"\n(./node_modules/.bin/prisma db push --schema=./prisma/schema.prisma --accept-data-loss || true)\nexec node "$@"\n' > /usr/local/bin/bun && chmod +x /usr/local/bin/bun
 RUN printf '#!/bin/sh\nexec cat\n' > /usr/local/bin/tee && chmod +x /usr/local/bin/tee
 
 RUN addgroup --system --gid 1001 nodejs
@@ -42,4 +42,4 @@ USER nextjs
 
 EXPOSE 8080
 
-CMD ["sh", "-c", "npx --no-install prisma db push --schema=./prisma/schema.prisma --accept-data-loss || true; node .next/standalone/server.js"]
+CMD ["sh", "-c", "./node_modules/.bin/prisma db push --schema=./prisma/schema.prisma --accept-data-loss || true; node .next/standalone/server.js"]
