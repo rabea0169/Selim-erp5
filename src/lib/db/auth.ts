@@ -75,9 +75,12 @@ export async function login(username: string, password: string): Promise<{ succe
         if (serverReachable) {
           return { success: false, error: 'اسم المستخدم أو كلمة المرور غير صحيحة' }
         }
-        // لو السيرفر مش متاح والمحلي فاضي، ممكن يكون حدث مسح للبيانات المحلية
-        console.warn('[Auth] Both server and local login failed. Server was unreachable and local user not found.')
-        return { success: false, error: 'لا يمكن تسجيل الدخول حالياً. تأكد من اتصالك بالإنترنت أو أنشئ حساباً جديداً.' }
+        // لو السيرفر مش متاح والمحلي فاضي، أو الحساب غير موجود في قاعدة بيانات السيرفر
+        console.warn('[Auth] Both server and local login failed. Local user not found.')
+        return {
+          success: false,
+          error: 'الحساب غير موجود على السيرفر السحابي. اضغط على تبويب "حساب جديد" لتسجيل الحساب على السيرفر ليعمل من كافة الأجهزة.',
+        }
       }
 
       const sessionUser: SessionUser = {
