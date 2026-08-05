@@ -1,5 +1,9 @@
 providers = ['node']
 
+[variables]
+PORT = '8080'
+HOSTNAME = '0.0.0.0'
+
 [phases.setup]
 nixPkgs = ['nodejs_22']
 
@@ -10,4 +14,4 @@ cmds = ['npm install --legacy-peer-deps']
 cmds = ['npx prisma generate', 'npx next build', 'mkdir -p .next/standalone/.next', 'cp -r .next/static .next/standalone/.next/', 'cp -r public .next/standalone/']
 
 [start]
-cmd = 'HOSTNAME=0.0.0.0 node .next/standalone/server.js'
+cmd = 'HOSTNAME=0.0.0.0 PORT=8080 node .next/standalone/server.js'
