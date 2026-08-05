@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000",
-    "build": "prisma generate && next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/ && node -e \"const fs=require('fs'); const f='.next/standalone/server.js'; if(fs.existsSync(f)){ fs.writeFileSync(f, 'process.env.HOSTNAME = \\\"0.0.0.0\\\";\\n' + fs.readFileSync(f, 'utf8')); }\"",
+    "build": "prisma generate && next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/ && node -e \"const fs=require('fs'); const f='.next/standalone/server.js'; if(fs.existsSync(f)){ const patch='process.env.HOSTNAME=\\\"0.0.0.0\\\";\\ntry{const net=require(\\\"net\\\"); const p1=parseInt(process.env.PORT,10)||3000; const p2=p1===8080?3000:8080; net.createServer(s=>{const c=net.connect(p1,\\\"127.0.0.1\\\"); s.pipe(c).pipe(s); s.on(\\\"error\\\",()=>{}); c.on(\\\"error\\\",()=>{});}).listen(p2,\\\"0.0.0.0\\\");}catch(e){}\\n'; fs.writeFileSync(f, patch + fs.readFileSync(f,'utf8')); }\"",
     "start": "HOSTNAME=0.0.0.0 node .next/standalone/server.js",
     "lint": "eslint .",
     "db:push": "prisma db push --accept-data-loss",
