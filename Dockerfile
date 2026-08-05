@@ -10,7 +10,7 @@ FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-ENV NEXT_TELEMETRY_DISABLED 1
+ENV NEXT_TELEMETRY_DISABLED=1
 RUN npx prisma generate
 RUN npx next build
 RUN mkdir -p .next/standalone/.next && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/
@@ -22,6 +22,10 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV HOSTNAME="0.0.0.0"
 ENV PORT=3000
+
+# Create wrapper scripts for bun and tee to interlace Railway UI overrides automatically
+RUN printf '#!/bin/sh\nexport HOSTNAME="0.0.0.0"\nexec node "$@"\n' > /usr/local/bin/bun && chmod +x /usr/local/bin/bun
+RUN printf '#!/bin/sh\nexec cat\n' > /usr/local/bin/tee && chmod +x /usr/local/bin/tee
 
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
