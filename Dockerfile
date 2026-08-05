@@ -4,8 +4,8 @@ FROM base AS deps
 WORKDIR /app
 COPY package.json ./
 COPY prisma ./prisma/
-RUN npm install --legacy-peer-deps --ignore-scripts
-RUN npm rebuild
+RUN npm install --legacy-peer-deps
+RUN npx prisma generate
 
 FROM base AS builder
 WORKDIR /app
@@ -24,7 +24,6 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV HOSTNAME="0.0.0.0"
 ENV PORT=3000
 
-# Create wrapper scripts for bun and tee to interlace Railway UI overrides automatically
 RUN printf '#!/bin/sh\nexport HOSTNAME="0.0.0.0"\nexec node "$@"\n' > /usr/local/bin/bun && chmod +x /usr/local/bin/bun
 RUN printf '#!/bin/sh\nexec cat\n' > /usr/local/bin/tee && chmod +x /usr/local/bin/tee
 
