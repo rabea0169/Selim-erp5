@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const user = await getCurrentUser()
     const { id } = await params
 
-    // جلب الفاتورة مع أصنافها
-    const sale = await db.sale.findUnique({
-      where: { id },
+    // جلب الفاتورة والتحقق من تبعيتها لشركة المستخدم للحماية من ثغرات IDOR
+    const sale = await db.sale.findFirst({
+      where: { id, ...(user?.companyId ? { companyId: user.companyId } : {}) },
       include: { items: true },
     })
     if (!sale) {

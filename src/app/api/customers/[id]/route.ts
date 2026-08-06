@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const user = await getCurrentUser()
     const { id } = await params
     const body = await req.json()
     const { name, phone, address, notes } = body
@@ -15,8 +17,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       )
     }
 
-    // التحقق من وجود العميل
-    const existing = await db.customer.findUnique({ where: { id } })
+    // التحقق من وجود العميل ومدى تبعيته للشركة للحماية من ثغرة IDOR
+    const existing = await db.customer.findFirst({
+      where: { id, ...(user?.companyId ? { companyId: user.companyId } : {}) },
+    })
     if (!existing) {
       return NextResponse.json(
         { error: 'العميل غير موجود' },
@@ -41,11 +45,18 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const user = await getCurrentUser()
     const { id } = await params
 
-    // Fix F: Wrap in transaction
+    const existing = await db.customer.findFirst({
+      where: { id, ...(user?.companyId ? { companyId: user.companyId } : {}) },
+    })
+    if (!existing) {
+      return NextResponse.json({ error: 'العميل غير موجود' }, { status: 404 })
+    }
+
     await db.$transaction(async (tx) => {
-      // فصل المبيعات المرتبطة بهذا العميل (SetNull بسبب العلاقة الاختيارية)
+      // فصل المبيعات المرتبطة بهذا العميل
       await tx.sale.updateMany({
         where: { customerId_ref: id },
         data: { customerId_ref: null },

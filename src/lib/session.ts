@@ -16,9 +16,14 @@ async function hmacSha256(message: string, secret: string): Promise<string> {
     .join('')
 }
 
-export async function createSessionToken(userId: string, username: string, role: string = 'user'): Promise<string> {
+export async function createSessionToken(
+  userId: string,
+  username: string,
+  role: string = 'user',
+  companyId?: string
+): Promise<string> {
   const expires = Date.now() + 30 * 24 * 60 * 60 * 1000
-  const payload = JSON.stringify({ userId, username, role, expires })
+  const payload = JSON.stringify({ userId, username, role, companyId, expires })
   const signature = await hmacSha256(payload, TOKEN_SECRET)
   const tokenData = JSON.stringify({ payload, sig: signature })
   return Buffer.from(tokenData).toString('base64')
@@ -26,7 +31,7 @@ export async function createSessionToken(userId: string, username: string, role:
 
 export async function verifySessionToken(
   token: string | undefined
-): Promise<{ userId: string; username: string; role: string } | null> {
+): Promise<{ userId: string; username: string; role: string; companyId?: string } | null> {
   if (!token) return null
   try {
     const tokenData = JSON.parse(Buffer.from(token, 'base64').toString())
@@ -35,7 +40,7 @@ export async function verifySessionToken(
     if (sig !== expectedSig) return null
     const data = JSON.parse(payload)
     if (data.expires < Date.now()) return null
-    return { userId: data.userId, username: data.username, role: data.role || 'user' }
+    return { userId: data.userId, username: data.username, role: data.role || 'user', companyId: data.companyId }
   } catch {
     return null
   }

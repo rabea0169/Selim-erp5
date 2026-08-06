@@ -56,9 +56,40 @@ enum PaymentType {
   supplier_payment
 }
 
+// ====== الشركات (Multi-Tenancy) ======
+model Company {
+  id        String   @id @default(cuid())
+  name      String
+  code      String?  @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users                User[]
+  factorySettings      FactorySettings[]
+  customers            Customer[]
+  suppliers            Supplier[]
+  products             Product[]
+  materials            Material[]
+  warehouses           Warehouse[]
+  sales                Sale[]
+  purchases            Purchase[]
+  expenses             Expense[]
+  expenseCategories    ExpenseCategory[]
+  treasuryTransactions TreasuryTransaction[]
+  workers              Worker[]
+  productionOrders     ProductionOrder[]
+  payments             Payment[]
+  saleReturns          SaleReturn[]
+  purchaseReturns      PurchaseReturn[]
+  productions          Production[]
+  workerAttendances    WorkerAttendance[]
+  materialTransactions MaterialTransaction[]
+}
+
 // ====== المستخدمون ======
 model User {
   id           String   @id @default(cuid())
+  companyId    String?
   username     String   @unique
   passwordHash String
   name         String
@@ -66,12 +97,16 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  company   Company?   @relation(fields: [companyId], references: [id], onDelete: Cascade)
   auditLogs AuditLog[]
+
+  @@index([companyId])
 }
 
 // ====== سجل العمليات ======
 model AuditLog {
   id          String   @id @default(cuid())
+  companyId   String?
   userId      String?
   userName    String
   action      String
@@ -83,6 +118,7 @@ model AuditLog {
 
   user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
+  @@index([companyId])
   @@index([entityType])
   @@index([timestamp])
 }
@@ -90,6 +126,7 @@ model AuditLog {
 // ====== إعدادات المصنع ======
 model FactorySettings {
   id                  String   @id @default("singleton")
+  companyId           String?  @unique
   factoryName         String
   factoryNameEn       String?
   slogan              String?
@@ -106,11 +143,16 @@ model FactorySettings {
   defaultPaperSize    String?  @default("A4")
   taxRate             Float?   @default(0)
   updatedAt           DateTime @updatedAt
+
+  company Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
 }
 
 // ====== الموظفون ======
 model Worker {
   id              String   @id @default(cuid())
+  companyId       String?
   name            String
   phone           String?
   job             String?
@@ -124,18 +166,20 @@ model Worker {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  advances     WorkerAdvance[]
-  receipts     WorkerReceipt[]
-  attendance   WorkerAttendance[]
-  productions  Production[]
+  company     Company?           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  advances    WorkerAdvance[]
+  receipts    WorkerReceipt[]
+  attendance  WorkerAttendance[]
+  productions Production[]
 
+  @@index([companyId])
   @@index([name])
 }
 
 model WorkerAdvance {
   id        String   @id @default(cuid())
   workerId  String
-  companyId  String?
+  companyId String?
   amount    Float
   date      DateTime
   notes     String?
@@ -151,7 +195,7 @@ model WorkerAdvance {
 model WorkerReceipt {
   id        String   @id @default(cuid())
   workerId  String
-  companyId  String?
+  companyId String?
   amount    Float
   date      DateTime
   notes     String?
@@ -166,6 +210,7 @@ model WorkerReceipt {
 
 model WorkerAttendance {
   id            String   @id @default(cuid())
+  companyId     String?
   workerId      String
   date          DateTime
   checkIn       DateTime?
@@ -177,14 +222,17 @@ model WorkerAttendance {
   lateMinutes   Int?
   createdAt     DateTime @default(now())
 
-  worker Worker @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  company Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  worker  Worker   @relation(fields: [workerId], references: [id], onDelete: Cascade)
 
+  @@index([companyId])
   @@index([workerId])
   @@index([date])
 }
 
 model Production {
   id             String   @id @default(cuid())
+  companyId      String?
   workerId       String
   date           DateTime
   modelName      String
@@ -196,9 +244,11 @@ model Production {
   notes          String?
   createdAt      DateTime @default(now())
 
-  worker  Worker  @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  company Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  worker  Worker   @relation(fields: [workerId], references: [id], onDelete: Cascade)
   product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
 
+  @@index([companyId])
   @@index([workerId])
   @@index([date])
   @@index([productId])
@@ -207,6 +257,7 @@ model Production {
 // ====== العملاء والموردون ======
 model Customer {
   id             String   @id @default(cuid())
+  companyId      String?
   name           String
   phone          String?
   address        String?
@@ -216,14 +267,17 @@ model Customer {
   openingBalance Float?   @default(0)
   createdAt      DateTime @default(now())
 
+  company  Company?  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   sales    Sale[]
   payments Payment[] @relation("PaymentCustomer")
 
+  @@index([companyId])
   @@index([name])
 }
 
 model Supplier {
   id             String   @id @default(cuid())
+  companyId      String?
   name           String
   phone          String?
   address        String?
@@ -232,15 +286,18 @@ model Supplier {
   openingBalance Float?   @default(0)
   createdAt      DateTime @default(now())
 
-  purchases      Purchase[]
-  payments       Payment[] @relation("PaymentSupplier")
+  company   Company?   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  purchases Purchase[]
+  payments  Payment[]  @relation("PaymentSupplier")
 
+  @@index([companyId])
   @@index([name])
 }
 
 // ====== المبيعات ======
 model Sale {
   id             String   @id @default(cuid())
+  companyId      String?
   invoiceNo      String?
   customerName   String
   customerId_ref String?
@@ -258,23 +315,25 @@ model Sale {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  customer Customer? @relation(fields: [customerId_ref], references: [id], onDelete: SetNull)
+  company  Company?    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  customer Customer?   @relation(fields: [customerId_ref], references: [id], onDelete: SetNull)
   items    SaleItem[]
   returns  SaleReturn[]
 
+  @@index([companyId])
   @@index([date])
   @@index([customerId_ref])
 }
 
 model SaleItem {
-  id         String  @id @default(cuid())
-  saleId     String
-  itemName   String
-  productId  String?
-  priceType  String?
-  quantity   Float
-  unitPrice  Float
-  total      Float
+  id        String  @id @default(cuid())
+  saleId    String
+  itemName  String
+  productId String?
+  priceType String?
+  quantity  Float
+  unitPrice Float
+  total     Float
 
   sale Sale @relation(fields: [saleId], references: [id], onDelete: Cascade)
 
@@ -284,6 +343,7 @@ model SaleItem {
 // ====== المشتريات ======
 model Purchase {
   id             String   @id @default(cuid())
+  companyId      String?
   invoiceNo      String?
   supplierName   String
   supplierId_ref String?
@@ -301,22 +361,24 @@ model Purchase {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  supplier Supplier? @relation(fields: [supplierId_ref], references: [id], onDelete: SetNull)
+  company  Company?         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  supplier Supplier?        @relation(fields: [supplierId_ref], references: [id], onDelete: SetNull)
   items    PurchaseItem[]
   returns  PurchaseReturn[]
 
+  @@index([companyId])
   @@index([date])
   @@index([supplierId_ref])
 }
 
 model PurchaseItem {
-  id          String  @id @default(cuid())
-  purchaseId  String
-  itemName    String
-  materialId  String?
-  quantity    Float
-  unitPrice   Float
-  total       Float
+  id         String  @id @default(cuid())
+  purchaseId String
+  itemName   String
+  materialId String?
+  quantity   Float
+  unitPrice  Float
+  total      Float
 
   purchase Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
 
@@ -326,15 +388,20 @@ model PurchaseItem {
 // ====== المصاريف ======
 model ExpenseCategory {
   id        String   @id @default(cuid())
+  companyId String?
   name      String
   notes     String?
   createdAt DateTime @default(now())
 
+  company  Company?  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   expenses Expense[]
+
+  @@index([companyId])
 }
 
 model Expense {
   id           String   @id @default(cuid())
+  companyId    String?
   categoryId   String
   categoryName String
   amount       Float
@@ -342,15 +409,18 @@ model Expense {
   notes        String?
   createdAt    DateTime @default(now())
 
+  company  Company?        @relation(fields: [companyId], references: [id], onDelete: Cascade)
   category ExpenseCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
 
+  @@index([companyId])
   @@index([date])
   @@index([categoryId])
 }
 
 // ====== الخزينة ======
 model TreasuryTransaction {
-  id            String   @id @default(cuid())
+  id            String                  @id @default(cuid())
+  companyId     String?
   type          TreasuryTransactionType
   amount        Float
   date          DateTime
@@ -359,46 +429,57 @@ model TreasuryTransaction {
   referenceType String?
   referenceId   String?
   notes         String?
-  createdAt     DateTime @default(now())
+  createdAt     DateTime                @default(now())
 
+  company Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
   @@index([date])
   @@index([type])
 }
 
 // ====== المخازن ======
 model Warehouse {
-  id        String   @id @default(cuid())
+  id        String        @id @default(cuid())
+  companyId String?
   name      String
   type      WarehouseType
   location  String?
   notes     String?
-  createdAt DateTime @default(now())
+  createdAt DateTime      @default(now())
 
+  company   Company?   @relation(fields: [companyId], references: [id], onDelete: Cascade)
   materials Material[]
   products  Product[]
+
+  @@index([companyId])
 }
 
 model Material {
-  id            String   @id @default(cuid())
-  name          String
-  unit          String
-  warehouseId   String
-  quantity      Float    @default(0)
-  unitCost      Float    @default(0)
-  reorderLevel  Float?
-  notes         String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id           String   @id @default(cuid())
+  companyId    String?
+  name         String
+  unit         String
+  warehouseId  String
+  quantity     Float    @default(0)
+  unitCost     Float    @default(0)
+  reorderLevel Float?
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  warehouse           Warehouse             @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  company              Company?              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  warehouse            Warehouse             @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
   materialTransactions MaterialTransaction[]
 
+  @@index([companyId])
   @@index([warehouseId])
   @@index([name])
 }
 
 model MaterialTransaction {
-  id            String   @id @default(cuid())
+  id            String                  @id @default(cuid())
+  companyId     String?
   materialId    String
   warehouseId   String
   type          MaterialTransactionType
@@ -409,10 +490,12 @@ model MaterialTransaction {
   referenceType String?
   referenceId   String?
   notes         String?
-  createdAt     DateTime @default(now())
+  createdAt     DateTime                @default(now())
 
-  material Material @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  company  Company?  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  material Material  @relation(fields: [materialId], references: [id], onDelete: Cascade)
 
+  @@index([companyId])
   @@index([materialId])
   @@index([date])
   @@index([warehouseId])
@@ -420,37 +503,40 @@ model MaterialTransaction {
 
 // ====== المنتجات ======
 model Product {
-  id                  String   @id @default(cuid())
-  name                String
-  category            String?
-  unit                String
-  wholesalePrice      Float    @default(0)
-  halfWholesalePrice  Float    @default(0)
-  retailPrice         Float    @default(0)
-  cost                Float    @default(0)
-  warehouseId         String?
-  quantity            Float    @default(0)
-  reorderLevel        Float?
-  notes               String?
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  id                 String   @id @default(cuid())
+  companyId          String?
+  name               String
+  category           String?
+  unit               String
+  wholesalePrice     Float    @default(0)
+  halfWholesalePrice Float    @default(0)
+  retailPrice        Float    @default(0)
+  cost               Float    @default(0)
+  warehouseId        String?
+  quantity           Float    @default(0)
+  reorderLevel       Float?
+  notes              String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
-  warehouse Warehouse? @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
-
+  company     Company?     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  warehouse   Warehouse?   @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
   productions Production[]
 
+  @@index([companyId])
   @@index([name])
   @@index([warehouseId])
 }
 
 // ====== أوامر التشغيل ======
 model ProductionOrder {
-  id                String   @id @default(cuid())
+  id                String                @id @default(cuid())
+  companyId         String?
   orderNumber       String
   productId         String
   productName       String
   quantity          Float
-  completedQuantity Float    @default(0)
+  completedQuantity Float                 @default(0)
   unit              String
   status            ProductionOrderStatus @default(draft)
   materials         Json
@@ -459,9 +545,12 @@ model ProductionOrder {
   expectedEndDate   DateTime?
   completedDate     DateTime?
   notes             String?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
 
+  company Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
   @@index([date])
   @@index([status])
   @@index([productId])
@@ -470,21 +559,24 @@ model ProductionOrder {
 
 // ====== السدادات ======
 model Payment {
-  id         String   @id @default(cuid())
-  type       PaymentType
-  partyId    String
-  partyName  String
-  invoiceId  String?
-  invoiceNo  String?
-  amount     Float
-  date       DateTime
-  method     String?
-  notes      String?
-  createdAt  DateTime @default(now())
+  id        String      @id @default(cuid())
+  companyId String?
+  type      PaymentType
+  partyId   String
+  partyName String
+  invoiceId String?
+  invoiceNo String?
+  amount    Float
+  date      DateTime
+  method    String?
+  notes     String?
+  createdAt DateTime    @default(now())
 
+  company  Company?  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   customer Customer? @relation("PaymentCustomer", fields: [partyId], references: [id], onDelete: SetNull, map: "payment_customer_fk")
   supplier Supplier? @relation("PaymentSupplier", fields: [partyId], references: [id], onDelete: SetNull, map: "payment_supplier_fk")
 
+  @@index([companyId])
   @@index([date])
   @@index([partyId])
   @@index([type])
@@ -492,22 +584,25 @@ model Payment {
 
 // ====== مرتجع المبيعات ======
 model SaleReturn {
-  id            String   @id @default(cuid())
-  returnNumber  String
-  saleId        String
-  invoiceNo     String?
-  customerName  String
+  id             String   @id @default(cuid())
+  companyId      String?
+  returnNumber   String
+  saleId         String
+  invoiceNo      String?
+  customerName   String
   customerId_ref String?
-  date          DateTime
-  total         Float
-  reason        String?
-  restockItems  Boolean  @default(true)
-  items         Json
-  notes         String?
-  createdAt     DateTime @default(now())
+  date           DateTime
+  total          Float
+  reason         String?
+  restockItems   Boolean  @default(true)
+  items          Json
+  notes          String?
+  createdAt      DateTime @default(now())
 
-  sale Sale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  company Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  sale    Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
 
+  @@index([companyId])
   @@index([date])
   @@index([saleId])
 }
@@ -515,6 +610,7 @@ model SaleReturn {
 // ====== مرتجع المشتريات ======
 model PurchaseReturn {
   id             String   @id @default(cuid())
+  companyId      String?
   returnNumber   String
   purchaseId     String
   invoiceNo      String?
@@ -528,8 +624,10 @@ model PurchaseReturn {
   notes          String?
   createdAt      DateTime @default(now())
 
+  company  Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
   purchase Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
 
+  @@index([companyId])
   @@index([date])
   @@index([purchaseId])
 }
