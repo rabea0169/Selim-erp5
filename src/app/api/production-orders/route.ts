@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
 
 export async function GET(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
     const { searchParams } = new URL(req.url)
     const status = searchParams.get('status')
     const q = searchParams.get('q') || ''
@@ -11,7 +13,7 @@ export async function GET(req: NextRequest) {
     const limit = Math.min(200, Math.max(1, Number(searchParams.get('limit')) || 50))
 
     const validStatuses = ['draft', 'in_progress', 'completed', 'cancelled']
-    const where: any = {}
+    const where: any = user?.companyId ? { companyId: user.companyId } : {}
     if (status && validStatuses.includes(status)) where.status = status
     if (q) where.orderNumber = { contains: q }
 
@@ -37,6 +39,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
     const body = await req.json()
     const { productId, productName, quantity, unit, materials, stages, date, expectedEndDate, notes } = body
 
@@ -58,22 +61,26 @@ export async function POST(req: NextRequest) {
     const hasMaterials = parsedMaterials.length > 0 && parsedMaterials.every((m) => m.materialId)
     const orderStatus = hasMaterials ? 'in_progress' : 'draft'
 
-    // Fix L: Retry loop for order number collision
     let orderNumber: string
     let attempts = 0
     let order: any
     while (attempts < 3) {
-      const count = await db.productionOrder.count()
+      const count = await db.productionOrder.count({
+        where: user?.companyId ? { companyId: user.companyId } : {},
+      })
       orderNumber = `PO-${String(count + 1).padStart(5, '0')}`
       try {
         order = await db.$transaction(async (tx) => {
-          const product = await tx.product.findUnique({ where: { id: productId } })
+          const product = await tx.product.findFirst({
+            where: { id: productId, ...(user?.companyId ? { companyId: user.companyId } : {}) },
+          })
           if (!product) {
             throw new Error('المنتج غير موجود')
           }
 
           const newOrder = await tx.productionOrder.create({
             data: {
+              companyId: user?.companyId || null,
               orderNumber,
               productId,
               productName: productName.trim(),
@@ -92,7 +99,9 @@ export async function POST(req: NextRequest) {
             for (const mat of parsedMaterials) {
               if (!mat.materialId) continue
 
-              const material = await tx.material.findUnique({ where: { id: mat.materialId } })
+              const material = await tx.material.findFirst({
+                where: { id: mat.materialId, ...(user?.companyId ? { companyId: user.companyId } : {}) },
+              })
               if (!material) {
                 throw new Error(`المادة ${mat.materialName} غير موجودة`)
               }
@@ -107,6 +116,7 @@ export async function POST(req: NextRequest) {
 
               await tx.materialTransaction.create({
                 data: {
+                  companyId: user?.companyId || null,
                   materialId: mat.materialId,
                   warehouseId: material.warehouseId,
                   type: 'out',

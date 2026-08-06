@@ -1,17 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
 
 // GET /api/products?q=&warehouseId=&page=1&limit=50
 export async function GET(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
     const { searchParams } = new URL(req.url)
     const q = searchParams.get('q') || ''
     const warehouseId = searchParams.get('warehouseId')
     const page = Math.max(1, Number(searchParams.get('page')) || 1)
     const limit = Math.min(200, Math.max(1, Number(searchParams.get('limit')) || 50))
 
-    const where: any = {}
+    const where: any = user?.companyId ? { companyId: user.companyId } : {}
     if (warehouseId) where.warehouseId = warehouseId
     if (q) where.name = { contains: q }
 
@@ -39,6 +41,7 @@ export async function GET(req: NextRequest) {
 // POST /api/products
 export async function POST(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
     const body = await req.json()
     const { name, category, unit, halfWholesalePrice, warehouseId, quantity, reorderLevel, notes } = body
 
@@ -61,7 +64,9 @@ export async function POST(req: NextRequest) {
     }
 
     if (warehouseId) {
-      const warehouse = await db.warehouse.findUnique({ where: { id: warehouseId } })
+      const warehouse = await db.warehouse.findFirst({
+        where: { id: warehouseId, ...(user?.companyId ? { companyId: user.companyId } : {}) },
+      })
       if (!warehouse) {
         return NextResponse.json({ error: 'المخزن المحدد غير موجود' }, { status: 404 })
       }
@@ -69,6 +74,7 @@ export async function POST(req: NextRequest) {
 
     const product = await db.product.create({
       data: {
+        companyId: user?.companyId || null,
         name: name.trim(),
         category: category?.trim() || null,
         unit: unit.trim(),

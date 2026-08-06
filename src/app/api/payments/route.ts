@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
 
 // GET /api/payments?type=customer_payment&partyId=xxx&from=&to=&page=1&limit=50
 export async function GET(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
     const { searchParams } = new URL(req.url)
     const type = searchParams.get('type')
     const partyId = searchParams.get('partyId')
@@ -14,7 +16,7 @@ export async function GET(req: NextRequest) {
     const limit = Math.max(1, Math.min(200, Number(searchParams.get('limit')) || 50))
     const skip = (page - 1) * limit
 
-    const where: any = {}
+    const where: any = user?.companyId ? { companyId: user.companyId } : {}
     if (type) {
       where.type = type
     }
@@ -51,13 +53,15 @@ export async function GET(req: NextRequest) {
       },
     })
   } catch (e) {
-    const { error, status } = safeError(e); return NextResponse.json({ error }, { status })
+    const { error, status } = safeError(e)
+    return NextResponse.json({ error }, { status })
   }
 }
 
 // POST /api/payments
 export async function POST(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
     const body = await req.json()
     const {
       type,
@@ -71,7 +75,6 @@ export async function POST(req: NextRequest) {
       notes,
     } = body
 
-    // التحقق من نوع السداد
     if (type !== 'customer_payment' && type !== 'supplier_payment') {
       return NextResponse.json(
         { error: 'نوع السداد غير صالح (يجب أن يكون customer_payment أو supplier_payment)' },
@@ -79,7 +82,6 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // التحقق من بيانات الطرف
     if (!partyId?.trim()) {
       return NextResponse.json(
         { error: type === 'customer_payment' ? 'العميل مطلوب' : 'المورد مطلوب' },
@@ -93,7 +95,6 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // التحقق من التاريخ
     if (!date) {
       return NextResponse.json(
         { error: 'التاريخ مطلوب' },
@@ -101,7 +102,6 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // التحقق من المبلغ
     const amountNumber = Number(amount)
     if (!Number.isFinite(amountNumber) || amountNumber <= 0) {
       return NextResponse.json(
@@ -110,29 +110,29 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // تنفيذ العملية في transaction واحد
     const payment = await db.$transaction(async (tx) => {
-      // التحقق من الفاتورة وربطها حسب النوع
       let sale: any = null
       let purchase: any = null
 
       if (invoiceId?.trim()) {
         if (type === 'customer_payment') {
-          sale = await tx.sale.findUnique({ where: { id: invoiceId.trim() } })
+          sale = await tx.sale.findFirst({
+            where: { id: invoiceId.trim(), ...(user?.companyId ? { companyId: user.companyId } : {}) },
+          })
           if (!sale) {
             throw new Error('فاتورة البيع المحددة غير موجودة')
           }
-          // F4-01 fix: منع الدفع من تجاوز الرصيد المتبقي
           const remaining = sale.total - sale.paid
           if (amountNumber > remaining) {
             throw new Error(`المبلغ (${amountNumber}) يتجاوز الرصيد المتبقي (${remaining})`)
           }
         } else {
-          purchase = await tx.purchase.findUnique({ where: { id: invoiceId.trim() } })
+          purchase = await tx.purchase.findFirst({
+            where: { id: invoiceId.trim(), ...(user?.companyId ? { companyId: user.companyId } : {}) },
+          })
           if (!purchase) {
             throw new Error('فاتورة الشراء المحددة غير موجودة')
           }
-          // F4-01 fix: منع الدفع من تجاوز الرصيد المتبقي
           const remaining = purchase.total - purchase.paid
           if (amountNumber > remaining) {
             throw new Error(`المبلغ (${amountNumber}) يتجاوز الرصيد المتبقي (${remaining})`)
@@ -140,9 +140,9 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // إنشاء سجل السداد
       const newPayment = await tx.payment.create({
         data: {
+          companyId: user?.companyId || null,
           type,
           partyId: partyId.trim(),
           partyName: partyName.trim(),
@@ -155,9 +155,7 @@ export async function POST(req: NextRequest) {
         },
       })
 
-      // تحديث الفاتورة وإنشاء حركة خزينة حسب النوع
       if (type === 'customer_payment') {
-        // سداد من عميل = إيداع في الخزينة
         if (sale) {
           await tx.sale.update({
             where: { id: sale.id },
@@ -166,6 +164,7 @@ export async function POST(req: NextRequest) {
         }
         await tx.treasuryTransaction.create({
           data: {
+            companyId: user?.companyId || null,
             type: 'deposit',
             amount: amountNumber,
             date: new Date(date),
@@ -179,7 +178,6 @@ export async function POST(req: NextRequest) {
           },
         })
       } else {
-        // سداد لمورد = سحب من الخزينة
         if (purchase) {
           await tx.purchase.update({
             where: { id: purchase.id },
@@ -188,6 +186,7 @@ export async function POST(req: NextRequest) {
         }
         await tx.treasuryTransaction.create({
           data: {
+            companyId: user?.companyId || null,
             type: 'withdrawal',
             amount: amountNumber,
             date: new Date(date),
@@ -207,13 +206,13 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ payment })
   } catch (e) {
-    // رسائل الأخطاء الصادرة من داخل الـ transaction بالعربية
     if (e instanceof Error && e.message.includes('يتجاوز الرصيد المتبقي')) {
       return NextResponse.json({ error: e.message }, { status: 400 })
     }
     if (e instanceof Error && (e.message.includes('غير موجودة') || e.message.includes('غير صالح'))) {
       return NextResponse.json({ error: e.message }, { status: 400 })
     }
-    const { error, status } = safeError(e); return NextResponse.json({ error }, { status })
+    const { error, status } = safeError(e)
+    return NextResponse.json({ error }, { status })
   }
 }

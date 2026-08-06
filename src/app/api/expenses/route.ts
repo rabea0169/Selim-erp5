@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
 
 export async function GET(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
     const { searchParams } = new URL(req.url)
     const from = searchParams.get('from')
     const to = searchParams.get('to')
@@ -15,7 +17,7 @@ export async function GET(req: NextRequest) {
     if (from && isNaN(fromDate!.getTime())) return NextResponse.json({ error: 'تاريخ غير صالح' }, { status: 400 })
     if (to && isNaN(toDate!.getTime())) return NextResponse.json({ error: 'تاريخ غير صالح' }, { status: 400 })
 
-    const where: any = {}
+    const where: any = user?.companyId ? { companyId: user.companyId } : {}
     if (from || to) {
       where.date = {}
       if (from) where.date.gte = fromDate
@@ -42,6 +44,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
     const body = await req.json()
     const { categoryId, amount, date, description, notes } = body
 
@@ -57,13 +60,16 @@ export async function POST(req: NextRequest) {
     }
 
     const expense = await db.$transaction(async (tx) => {
-      const cat = await tx.expenseCategory.findUnique({ where: { id: categoryId } })
+      const cat = await tx.expenseCategory.findFirst({
+        where: { id: categoryId, ...(user?.companyId ? { companyId: user.companyId } : {}) },
+      })
       if (!cat) {
         throw new Error('فئة المصروف غير موجودة')
       }
 
       const exp = await tx.expense.create({
         data: {
+          companyId: user?.companyId || null,
           categoryId,
           categoryName: cat.name,
           amount: amt,
@@ -75,6 +81,7 @@ export async function POST(req: NextRequest) {
 
       await tx.treasuryTransaction.create({
         data: {
+          companyId: user?.companyId || null,
           type: 'withdrawal',
           amount: amt,
           date: new Date(date),
