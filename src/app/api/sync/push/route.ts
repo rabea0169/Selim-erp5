@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'لا توجد بيانات' }, { status: 400 })
     }
 
-    const results: Record<string, { success: number; failed: number }> = {}
+    const results: Record<string, { success: number; failed: number; conflicts: number }> = {}
 
     const tableMap: Record<string, any> = {
       // ⚠️ users و auditLogs مستثنيان من المزامنة لحماية الصلاحيات وسجل التدقيق
@@ -94,14 +94,15 @@ export async function POST(req: NextRequest) {
       const allowed = ALLOWED_FIELDS[modelName]
       const forbidden = FORBIDDEN_FIELDS[modelName] || []
       let successCount = 0
-      let failedCount = 0
+      let failedCount  = 0
+      let conflictCount = 0
 
       for (const record of records) {
         try {
           if (!record.id) { failedCount++; continue }
 
           // فلترة الحقول المسموحة فقط
-          const processed: any = {}
+          const processed: Record<string, unknown> = {}
           for (const [key, value] of Object.entries(record)) {
             // تجاهل الحقول المحظورة
             if (forbidden.includes(key)) continue
@@ -126,18 +127,49 @@ export async function POST(req: NextRequest) {
             processed.companyId = user.companyId
           }
 
+          // ===== Conflict Resolution: Server Wins with Timestamp Check =====
+          // إذا كان السجل موجوداً وأحدث من البيانات القادمة من العميل، نتجاهل التحديث
+          try {
+            const existing = await (db as any)[modelName].findUnique({
+              where: { id: record.id },
+              select: { updatedAt: true, companyId: true },
+            })
+
+            if (existing) {
+              // حماية عزل الشركات: لا يجوز الكتابة فوق سجل شركة أخرى
+              if (existing.companyId && processed.companyId && existing.companyId !== processed.companyId) {
+                console.warn(`[Sync] IDOR attempt: record ${record.id} belongs to different company`)
+                failedCount++
+                continue
+              }
+
+              // Conflict resolution: إذا كانت نسخة الخادم أحدث من نسخة العميل
+              const clientUpdatedAt = record.updatedAt ? new Date(record.updatedAt) : null
+              if (existing.updatedAt && clientUpdatedAt && existing.updatedAt > clientUpdatedAt) {
+                // Server data is newer — skip this record (Server Wins)
+                console.log(`[Sync] Conflict skipped (server newer): ${modelName}:${record.id}`)
+                conflictCount++
+                continue
+              }
+            }
+          } catch {
+            // إذا لم يدعم النموذج updatedAt أو findUnique، نكمل بشكل عادي
+          }
+          // =================================================================
+
           await (db as any)[modelName].upsert({
             where: { id: record.id },
             create: processed,
             update: processed,
           })
           successCount++
-        } catch (e: any) {
-          console.error(`[Sync] Error in ${modelName} record ${record.id}:`, e.message)
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : String(e)
+          console.error(`[Sync] Error in ${modelName} record ${record.id}:`, msg)
           failedCount++
         }
       }
-      results[localTable] = { success: successCount, failed: failedCount }
+      results[localTable] = { success: successCount, failed: failedCount, conflicts: conflictCount }
     }
 
     return NextResponse.json({
@@ -145,6 +177,8 @@ export async function POST(req: NextRequest) {
       message: 'تمت المزامنة بنجاح',
       results,
       syncedAt: new Date().toISOString(),
+      // إجمالي التعارضات للعرض في واجهة المستخدم
+      totalConflicts: Object.values(results).reduce((s, r) => s + r.conflicts, 0),
     })
   } catch (e) {
     const { error, status } = safeError(e)

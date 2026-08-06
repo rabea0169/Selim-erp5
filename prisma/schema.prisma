@@ -125,24 +125,24 @@ model AuditLog {
 
 // ====== إعدادات المصنع ======
 model FactorySettings {
-  id                  String   @id @default("singleton")
-  companyId           String?  @unique
-  factoryName         String
-  factoryNameEn       String?
-  slogan              String?
-  phone               String?
-  whatsapp            String?
-  email               String?
-  address             String?
-  taxNumber           String?
-  commercialRegister  String?
-  logo                String?
-  currency            String   @default("ج.م")
-  invoicePrefix       String?  @default("INV-")
-  invoiceFooter       String?
-  defaultPaperSize    String?  @default("A4")
-  taxRate             Float?   @default(0)
-  updatedAt           DateTime @updatedAt
+  id                 String   @id @default("singleton")
+  companyId          String?  @unique
+  factoryName        String
+  factoryNameEn      String?
+  slogan             String?
+  phone              String?
+  whatsapp           String?
+  email              String?
+  address            String?
+  taxNumber          String?
+  commercialRegister String?
+  logo               String?
+  currency           String   @default("ج.م")
+  invoicePrefix      String?  @default("INV-")
+  invoiceFooter      String?
+  defaultPaperSize   String?  @default("A4")
+  taxRate            Float?   @default(0)
+  updatedAt          DateTime @updatedAt
 
   company Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
@@ -151,7 +151,7 @@ model FactorySettings {
 
 // ====== الموظفون ======
 model Worker {
-  id              String   @id @default(cuid())
+  id              String     @id @default(cuid())
   companyId       String?
   name            String
   phone           String?
@@ -163,8 +163,8 @@ model Worker {
   workHoursPerDay Float?
   monthlySalary   Float?
   notes           String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
 
   company     Company?           @relation(fields: [companyId], references: [id], onDelete: Cascade)
   advances    WorkerAdvance[]
@@ -209,7 +209,7 @@ model WorkerReceipt {
 }
 
 model WorkerAttendance {
-  id            String   @id @default(cuid())
+  id            String           @id @default(cuid())
   companyId     String?
   workerId      String
   date          DateTime
@@ -220,7 +220,7 @@ model WorkerAttendance {
   workHours     Float?
   overtimeHours Float?
   lateMinutes   Int?
-  createdAt     DateTime @default(now())
+  createdAt     DateTime         @default(now())
 
   company Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
   worker  Worker   @relation(fields: [workerId], references: [id], onDelete: Cascade)
@@ -315,14 +315,16 @@ model Sale {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  company  Company?    @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  customer Customer?   @relation(fields: [customerId_ref], references: [id], onDelete: SetNull)
+  company  Company?     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  customer Customer?    @relation(fields: [customerId_ref], references: [id], onDelete: SetNull)
   items    SaleItem[]
   returns  SaleReturn[]
 
+  @@index([companyId, date]) // composite: تسريع التقارير اليومية/الشهرية
+  @@index([companyId, customerId_ref]) // composite: تقارير العملاء
   @@index([companyId])
   @@index([date])
-  @@index([customerId_ref])
+  @@index([invoiceNo])
 }
 
 model SaleItem {
@@ -366,9 +368,11 @@ model Purchase {
   items    PurchaseItem[]
   returns  PurchaseReturn[]
 
+  @@index([companyId, date]) // composite: تسريع التقارير
+  @@index([companyId, supplierId_ref]) // composite: تقارير الموردين
   @@index([companyId])
   @@index([date])
-  @@index([supplierId_ref])
+  @@index([invoiceNo])
 }
 
 model PurchaseItem {
@@ -412,6 +416,7 @@ model Expense {
   company  Company?        @relation(fields: [companyId], references: [id], onDelete: Cascade)
   category ExpenseCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
 
+  @@index([companyId, date]) // composite: تقارير المصاريف
   @@index([companyId])
   @@index([date])
   @@index([categoryId])
@@ -433,6 +438,8 @@ model TreasuryTransaction {
 
   company Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
+  @@index([companyId, date]) // composite: تقارير الخزينة
+  @@index([companyId, type]) // composite: تصفية بالنوع
   @@index([companyId])
   @@index([date])
   @@index([type])
@@ -492,8 +499,8 @@ model MaterialTransaction {
   notes         String?
   createdAt     DateTime                @default(now())
 
-  company  Company?  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  material Material  @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  company  Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  material Material @relation(fields: [materialId], references: [id], onDelete: Cascade)
 
   @@index([companyId])
   @@index([materialId])
@@ -550,11 +557,11 @@ model ProductionOrder {
 
   company Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
+  @@unique([orderNumber])
   @@index([companyId])
   @@index([date])
   @@index([status])
   @@index([productId])
-  @@unique([orderNumber])
 }
 
 // ====== السدادات ======
@@ -602,6 +609,7 @@ model SaleReturn {
   company Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
   sale    Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
 
+  @@index([companyId, date]) // composite: تقارير المرتجعات
   @@index([companyId])
   @@index([date])
   @@index([saleId])
@@ -627,6 +635,7 @@ model PurchaseReturn {
   company  Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
   purchase Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
 
+  @@index([companyId, date]) // composite: تقارير مرتجعات المشتريات
   @@index([companyId])
   @@index([date])
   @@index([purchaseId])
