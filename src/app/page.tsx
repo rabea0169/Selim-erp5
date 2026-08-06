@@ -128,7 +128,7 @@ export default function Home() {
       />
 
       {/* Main content */}
-      <main className="flex-1 max-w-2xl mx-auto w-full px-3 sm:px-4 pb-24 pt-4">
+      <main className="flex-1 max-w-2xl md:max-w-5xl lg:max-w-7xl mx-auto w-full px-3 sm:px-4 md:px-6 lg:px-8 pb-24 pt-4">
         {tab === 'dashboard' && <Dashboard onNavigate={setTab} />}
         {tab === 'sales' && <SalesView />}
         {tab === 'purchases' && <PurchasesView />}

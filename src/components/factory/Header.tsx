@@ -85,7 +85,7 @@ export function Header({
   return (
     <>
       <header className="sticky top-0 z-20 bg-white/95 backdrop-blur-md border-b border-slate-200">
-        <div className="max-w-2xl mx-auto px-3 py-2.5 flex items-center justify-between gap-2">
+        <div className="max-w-2xl md:max-w-5xl lg:max-w-7xl mx-auto px-3 sm:px-4 md:px-6 lg:px-8 py-2.5 flex items-center justify-between gap-2">
           {/* Logo + Factory Name */}
           <div className="flex items-center gap-2 min-w-0 flex-1">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-slate-800 to-slate-900 flex items-center justify-center shadow-sm shrink-0">
