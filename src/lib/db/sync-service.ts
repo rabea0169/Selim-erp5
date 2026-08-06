@@ -14,7 +14,7 @@ class SyncService {
   isEnabled(): boolean {
     if (typeof window === 'undefined') return false
     const stored = localStorage.getItem(SYNC_ENABLED_KEY)
-    return stored === 'true'
+    return stored !== 'false' // مفعّلة افتراضياً لضمان تطابق البيانات بين الأجهزة المختلفة
   }
 
   setEnabled(enabled: boolean) {
@@ -26,15 +26,19 @@ class SyncService {
     if (typeof window === 'undefined') return
     if (!this.isEnabled()) return
 
-    // مزامنة فورية بعد 10 ثواني
-    setTimeout(() => { this.sync() }, 10000)
+    // مزامنة فورية عند التشغيل لجلب آخر البيانات من السيرفر
+    Promise.resolve().then(() => this.sync())
 
-    // مزامنة دورية كل 5 دقائق
-    this.intervalId = setInterval(() => { this.sync() }, 5 * 60 * 1000)
+    // مزامنة دورية كل دقيقتين لضمان التطابق بين الأجهزة
+    if (!this.intervalId) {
+      this.intervalId = setInterval(() => { this.sync() }, 2 * 60 * 1000)
+    }
 
     // مزامنة تلقائية عند عودة شبكة الإنترنت
-    this.onlineHandler = () => { this.sync() }
-    window.addEventListener('online', this.onlineHandler)
+    if (!this.onlineHandler) {
+      this.onlineHandler = () => { this.sync() }
+      window.addEventListener('online', this.onlineHandler)
+    }
   }
 
   stop() {

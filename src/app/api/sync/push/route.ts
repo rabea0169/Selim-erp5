@@ -87,7 +87,7 @@ export async function POST(req: NextRequest) {
     for (const [localTable, modelName] of Object.entries(tableMap)) {
       const records = data[localTable]
       if (!records || !Array.isArray(records) || records.length === 0) {
-        results[localTable] = { success: 0, failed: 0 }
+        results[localTable] = { success: 0, failed: 0, conflicts: 0 }
         continue
       }
 

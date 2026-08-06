@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
 import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
+import { saleSchema } from '@/lib/validations'
+import { logAudit } from '@/lib/audit'
 
 // GET /api/sales?from=&to=&q=&page=1&limit=50
 export async function GET(req: NextRequest) {
@@ -72,6 +74,14 @@ export async function POST(req: NextRequest) {
     const companyId = user?.companyId || null
 
     const body = await req.json()
+
+    // التحقق من البيانات باستخدام Zod
+    const validation = saleSchema.safeParse(body)
+    if (!validation.success) {
+      const errors = validation.error.issues.map((i) => i.message).join('، ')
+      return NextResponse.json({ error: errors }, { status: 400 })
+    }
+
     const {
       customerName,
       customerId_ref,
@@ -195,6 +205,14 @@ export async function POST(req: NextRequest) {
 
       return newSale
     })
+
+    logAudit({
+      action: 'CREATE',
+      entityType: 'Sale',
+      entityId: sale.id,
+      description: `إنشاء فاتورة مبيعات للعميل ${sale.customerName} بقيمة ${sale.total} ج.م`,
+      metadata: { total: sale.total, paid: sale.paid, invoiceNo: sale.invoiceNo },
+    }).catch(() => {})
 
     return NextResponse.json({ sale })
   } catch (e) {

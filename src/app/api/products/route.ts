@@ -28,10 +28,12 @@ export async function GET(req: NextRequest) {
       db.product.count({ where }),
     ])
 
-    return NextResponse.json({
+    const res = NextResponse.json({
       products,
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     })
+    res.headers.set('Cache-Control', 'private, max-age=60, stale-while-revalidate=300')
+    return res
   } catch (e) {
     const { error, status } = safeError(e)
     return NextResponse.json({ error }, { status })

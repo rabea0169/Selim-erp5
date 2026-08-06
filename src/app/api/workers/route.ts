@@ -2,12 +2,16 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
 import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
+import { workerSchema } from '@/lib/validations'
 
+// GET /api/workers?q=&page=1&limit=50
 export async function GET(req: NextRequest) {
   try {
     const user = await getCurrentUser()
     const { searchParams } = new URL(req.url)
     const q = searchParams.get('q') || ''
+    const page = Math.max(1, Number(searchParams.get('page')) || 1)
+    const limit = Math.min(100, Math.max(1, Number(searchParams.get('limit')) || 50))
 
     const where: any = user?.companyId ? { companyId: user.companyId } : {}
     if (q) {
@@ -18,14 +22,19 @@ export async function GET(req: NextRequest) {
       ]
     }
 
-    const workers = await db.worker.findMany({
-      where,
-      include: {
-        advances: { orderBy: { date: 'desc' } },
-        receipts: { orderBy: { date: 'desc' } },
-      },
-      orderBy: { createdAt: 'desc' },
-    })
+    const [workers, total] = await Promise.all([
+      db.worker.findMany({
+        where,
+        include: {
+          advances: { orderBy: { date: 'desc' } },
+          receipts: { orderBy: { date: 'desc' } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      db.worker.count({ where }),
+    ])
 
     const workersWithTotals = workers.map((w) => {
       const totalAdvances = w.advances.reduce((s, a) => s + a.amount, 0)
@@ -38,7 +47,10 @@ export async function GET(req: NextRequest) {
       }
     })
 
-    return NextResponse.json({ workers: workersWithTotals })
+    return NextResponse.json({
+      workers: workersWithTotals,
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    })
   } catch (e) {
     const { error, status } = safeError(e)
     return NextResponse.json({ error }, { status })
@@ -49,6 +61,14 @@ export async function POST(req: NextRequest) {
   try {
     const user = await getCurrentUser()
     const body = await req.json()
+
+    // التحقق من البيانات باستخدام Zod
+    const validation = workerSchema.safeParse(body)
+    if (!validation.success) {
+      const errors = validation.error.issues.map((i) => i.message).join('، ')
+      return NextResponse.json({ error: errors }, { status: 400 })
+    }
+
     const { name, phone, job, type, notes } = body
 
     if (!name?.trim()) {

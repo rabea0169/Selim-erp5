@@ -72,8 +72,8 @@ export default function Home() {
           const settings = await factorySettingsRepository.get()
           setFactorySettings(settings)
           autoBackupService.start()
-          // Sync معطّل افتراضياً - لا يُفعّل تلقائياً لحماية البيانات
-          // syncService.start() تم تعطيله لتجنب أي مشاكل محتملة
+          // تفعيل المزامنة السحابية التلقائية للتزامن الفوري بين كافة الأجهزة
+          syncService.start()
           warehouseRepository.seedDefaults().catch(() => {})
           expenseCategoryRepository.seedDefaults().catch(() => {})
           auditLogRepository.log({

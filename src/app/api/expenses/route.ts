@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
 import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
+import { expenseSchema } from '@/lib/validations'
 
 export async function GET(req: NextRequest) {
   try {
@@ -46,6 +47,14 @@ export async function POST(req: NextRequest) {
   try {
     const user = await getCurrentUser()
     const body = await req.json()
+
+    // التحقق من البيانات باستخدام Zod
+    const validation = expenseSchema.safeParse(body)
+    if (!validation.success) {
+      const errors = validation.error.issues.map((i) => i.message).join('، ')
+      return NextResponse.json({ error: errors }, { status: 400 })
+    }
+
     const { categoryId, amount, date, description, notes } = body
 
     if (!categoryId) {
