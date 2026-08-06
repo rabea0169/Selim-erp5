@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
     const page = Math.max(1, Number(searchParams.get('page')) || 1)
     const limit = Math.min(100, Math.max(1, Number(searchParams.get('limit')) || 50))
 
-    const where: any = {}
+    const where: any = user.companyId ? { companyId: user.companyId } : {}
     if (purchaseId) where.purchaseId = purchaseId
     if (from || to) {
       where.date = {}
@@ -30,7 +30,8 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ returns, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } })
   } catch (e) {
-    const { error, status } = safeError(e); return NextResponse.json({ error }, { status })
+    const { error, status } = safeError(e)
+    return NextResponse.json({ error }, { status })
   }
 }
 
@@ -47,13 +48,16 @@ export async function POST(req: NextRequest) {
     }
 
     const purchaseReturn = await db.$transaction(async (tx) => {
-      // Fix I + Fix U: Move purchase fetch inside transaction + use findUnique
-      const purchase = await tx.purchase.findUnique({ where: { id: purchaseId } })
+      // التحقق من ملكية فاتورة الشراء لنفس الشركة (حماية IDOR)
+      const purchase = await tx.purchase.findFirst({
+        where: { id: purchaseId, ...(user.companyId ? { companyId: user.companyId } : {}) },
+      })
       if (!purchase) throw new Error('فاتورة الشراء غير موجودة')
       if (Number(total) > purchase.total) throw new Error('قيمة المرتجع لا يمكن أن تتجاوز إجمالي فاتورة الشراء')
 
       const ret = await tx.purchaseReturn.create({
         data: {
+          companyId: user.companyId || null,
           returnNumber: `PR-${Date.now()}`,
           purchaseId,
           invoiceNo: invoiceNo?.trim() || null,
@@ -67,27 +71,48 @@ export async function POST(req: NextRequest) {
         },
       })
 
+      // إعادة الخامات للمخزن
       if (restockItems !== false && Array.isArray(items)) {
         for (const it of items) {
           if (it.materialId) {
-            // Fix I: Atomic decrement instead of read-then-write
             await tx.material.update({
               where: { id: it.materialId },
               data: { quantity: { decrement: Number(it.quantity) }, updatedAt: new Date() },
             })
+
+            // تسجيل حركة خروج من مخزن الخامات
+            const mat = await tx.material.findUnique({ where: { id: it.materialId } })
+            if (mat) {
+              await tx.materialTransaction.create({
+                data: {
+                  companyId: user.companyId || null,
+                  materialId: it.materialId,
+                  warehouseId: mat.warehouseId,
+                  type: 'out',
+                  quantity: Number(it.quantity),
+                  unitCost: mat.unitCost,
+                  date: new Date(date),
+                  reason: `مرتجع مشتريات PR-${Date.now()}`,
+                  referenceType: 'purchase_return',
+                  referenceId: ret.id,
+                },
+              })
+            }
           }
         }
       }
 
-      // Fix B: Update purchase.paid to reduce it
+      // تخفيض المبلغ المدفوع للمورد
       await tx.purchase.update({
         where: { id: purchaseId },
         data: { paid: { decrement: ret.total } },
       })
 
+      // إيداع قيمة المرتجع في الخزينة
       if (ret.total > 0) {
         await tx.treasuryTransaction.create({
           data: {
+            companyId: user.companyId || null,
             type: 'deposit',
             amount: ret.total,
             date: new Date(date),
@@ -105,9 +130,10 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ return: purchaseReturn })
   } catch (e) {
-    if (e instanceof Error && e.message.includes('غير موجودة')) {
-      return NextResponse.json({ error: e.message }, { status: 404 })
+    if (e instanceof Error && (e.message.includes('غير موجودة') || e.message.includes('لا يمكن'))) {
+      return NextResponse.json({ error: e.message }, { status: 400 })
     }
-    const { error, status } = safeError(e); return NextResponse.json({ error }, { status })
+    const { error, status } = safeError(e)
+    return NextResponse.json({ error }, { status })
   }
 }

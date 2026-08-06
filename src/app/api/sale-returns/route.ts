@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
     const page = Math.max(1, Number(searchParams.get('page')) || 1)
     const limit = Math.min(100, Math.max(1, Number(searchParams.get('limit')) || 50))
 
-    const where: any = {}
+    const where: any = user.companyId ? { companyId: user.companyId } : {}
     if (saleId) where.saleId = saleId
     if (from || to) {
       where.date = {}
@@ -29,7 +29,8 @@ export async function GET(req: NextRequest) {
     ])
     return NextResponse.json({ returns, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } })
   } catch (e) {
-    const { error, status } = safeError(e); return NextResponse.json({ error }, { status })
+    const { error, status } = safeError(e)
+    return NextResponse.json({ error }, { status })
   }
 }
 
@@ -45,12 +46,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'بيانات المرتجع غير مكتملة' }, { status: 400 })
     }
 
-    // إنشاء رقم المرتجع
     const retNum = returnNumber || `RET-${Date.now()}`
 
-    // Fix H + Fix T: Move sale fetch inside transaction + use findUnique + atomic inventory
     const ret = await db.$transaction(async (tx) => {
-      const sale = await tx.sale.findUnique({ where: { id: saleId }, include: { items: true } })
+      // التحقق من ملكية الفاتورة لنفس الشركة (حماية IDOR)
+      const sale = await tx.sale.findFirst({
+        where: { id: saleId, ...(user.companyId ? { companyId: user.companyId } : {}) },
+        include: { items: true },
+      })
       if (!sale) throw new Error('الفاتورة غير موجودة')
       if (Number(total) > sale.total) throw new Error('قيمة المرتجع لا يمكن أن تتجاوز إجمالي الفاتورة')
 
@@ -58,6 +61,7 @@ export async function POST(req: NextRequest) {
 
       const saleReturn = await tx.saleReturn.create({
         data: {
+          companyId: user.companyId || null,
           returnNumber: retNum,
           saleId,
           invoiceNo: sale.invoiceNo,
@@ -71,10 +75,10 @@ export async function POST(req: NextRequest) {
         },
       })
 
+      // إعادة المنتجات للمخزن
       if (Array.isArray(items)) {
         for (const item of items) {
           if (item.productId && item.quantity > 0) {
-            // Fix H: Atomic increment instead of read-then-write
             await tx.product.update({
               where: { id: item.productId },
               data: { quantity: { increment: Number(item.quantity) } },
@@ -83,14 +87,21 @@ export async function POST(req: NextRequest) {
         }
       }
 
+      // سحب من الخزينة بقيمة المرتجع
       await tx.treasuryTransaction.create({
         data: {
-          type: 'withdrawal', amount: Number(total), date: new Date(date),
+          companyId: user.companyId || null,
+          type: 'withdrawal',
+          amount: Number(total),
+          date: new Date(date),
           description: `مرتجع مبيعات - ${sale.customerName}`,
-          category: 'مرتجعات', referenceType: 'sale_return', referenceId: saleReturn.id,
+          category: 'مرتجعات',
+          referenceType: 'sale_return',
+          referenceId: saleReturn.id,
         },
       })
 
+      // تخفيض المبلغ المدفوع على الفاتورة
       const newPaid = Math.max(0, sale.paid - Number(total))
       await tx.sale.update({ where: { id: saleId }, data: { paid: newPaid } })
 
@@ -99,9 +110,10 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ return: ret })
   } catch (e) {
-    if (e instanceof Error && e.message.includes('غير موجودة')) {
-      return NextResponse.json({ error: e.message }, { status: 404 })
+    if (e instanceof Error && (e.message.includes('غير موجودة') || e.message.includes('لا يمكن'))) {
+      return NextResponse.json({ error: e.message }, { status: 400 })
     }
-    const { error, status } = safeError(e); return NextResponse.json({ error }, { status })
+    const { error, status } = safeError(e)
+    return NextResponse.json({ error }, { status })
   }
 }

@@ -1,15 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
 
 export async function GET(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
     const { searchParams } = new URL(req.url)
     const from = searchParams.get('from')
     const to = searchParams.get('to')
     const workerId = searchParams.get('workerId')
 
-    const where: any = {}
+    const where: any = user?.companyId ? { companyId: user.companyId } : {}
     if (from || to) {
       where.date = {}
       if (from) where.date.gte = new Date(from)
@@ -36,48 +38,57 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
     const body = await req.json()
-    const { workerId, companyId, amount, date, notes } = body
+    const { workerId, amount, date, notes } = body
 
-    // التحقق من البيانات
     if (!workerId) {
-      return NextResponse.json(
-        { error: 'الموظف مطلوب' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'الموظف مطلوب' }, { status: 400 })
     }
     if (!date) {
-      return NextResponse.json(
-        { error: 'التاريخ مطلوب' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'التاريخ مطلوب' }, { status: 400 })
     }
     const amt = Number(amount)
     if (isNaN(amt) || amt <= 0) {
-      return NextResponse.json(
-        { error: 'المبلغ يجب أن يكون رقماً موجباً' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'المبلغ يجب أن يكون رقماً موجباً' }, { status: 400 })
     }
 
-    // التحقق من وجود الموظف
-    const worker = await db.worker.findUnique({ where: { id: workerId } })
+    // التحقق من أن الموظف تابع لشركة المستخدم (حماية IDOR)
+    const worker = await db.worker.findFirst({
+      where: { id: workerId, ...(user?.companyId ? { companyId: user.companyId } : {}) },
+    })
     if (!worker) {
-      return NextResponse.json(
-        { error: 'الموظف غير موجود' },
-        { status: 404 }
-      )
+      return NextResponse.json({ error: 'الموظف غير موجود' }, { status: 404 })
     }
 
-    const receipt = await db.workerReceipt.create({
-      data: {
-        workerId,
-        companyId: companyId || null,
-        amount: amt,
-        date: new Date(date),
-        notes: notes?.trim() || null,
-      },
-      include: { worker: true },
+    const receipt = await db.$transaction(async (tx) => {
+      const rec = await tx.workerReceipt.create({
+        data: {
+          companyId: user?.companyId || null,
+          workerId,
+          amount: amt,
+          date: new Date(date),
+          notes: notes?.trim() || null,
+        },
+        include: { worker: true },
+      })
+
+      // إيداع تلقائي في الخزينة عند قبض من الموظف
+      await tx.treasuryTransaction.create({
+        data: {
+          companyId: user?.companyId || null,
+          type: 'deposit',
+          amount: amt,
+          date: new Date(date),
+          description: `قبض من موظف: ${worker.name}`,
+          category: 'سلف موظفين',
+          referenceType: 'worker_receipt',
+          referenceId: rec.id,
+          notes: notes?.trim() || null,
+        },
+      })
+
+      return rec
     })
     return NextResponse.json({ receipt })
   } catch (e) {
