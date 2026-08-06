@@ -45,7 +45,7 @@ class DataChangeEmitter {
     }
   }
 
-  // بث حدث تغيير + حفظ احتياطي تلقائي في Cache API
+  // بث حدث تغيير + حفظ احتياطي تلقائي في Cache API + إبلاغ المزامنة
   emit(event: DataChangeEvent) {
     // بث للمستمعين المحددين
     this.listeners.get(event.type)?.forEach((listener) => {
@@ -67,7 +67,25 @@ class DataChangeEmitter {
 
     // حفظ احتياطي تلقائي في Cache API بعد 2 ثانية من آخر تغيير
     this.scheduleCacheBackup()
+
+    // إبلاغ خدمة المزامنة بالتغيير لرفعه للسيرفر (async, non-blocking)
+    if (this._syncReady && this._syncServiceRef) {
+      this._syncServiceRef.notifyChange(event.type)
+    } else if (!this._syncLoading) {
+      // تحميل كسول لخدمة المزامنة أول مرة
+      this._syncLoading = true
+      import('./sync-service').then((mod) => {
+        this._syncServiceRef = mod.syncService
+        this._syncReady = true
+        this._syncLoading = false
+        if (mod.syncService.isEnabled()) mod.syncService.notifyChange(event.type)
+      }).catch(() => { this._syncLoading = false })
+    }
   }
+
+  private _syncReady = false
+  private _syncLoading = false
+  private _syncServiceRef: any = null
 
   // حفظ نسخة احتياطية في Cache API (debounced)
   private scheduleCacheBackup() {

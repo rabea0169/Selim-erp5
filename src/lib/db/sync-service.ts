@@ -3,6 +3,8 @@
 import { reportRepository } from './repositories'
 import { dataChangeEmitter } from './live-data'
 
+// TODO: Implement incremental sync with lastSyncTimestamp per entity type to avoid exporting all data on every change
+
 const SYNC_STATUS_KEY = 'lastServerSync'
 const SYNC_ENABLED_KEY = 'serverSyncEnabled'
 
@@ -11,34 +13,32 @@ class SyncService {
   private onlineHandler: (() => void) | null = null
   private pendingChanges: Set<string> = new Set()
 
+  // المزامنة معطّلة افتراضياً - تُفعّل يدوياً فقط بعد التأكد من عمل السيرفر
   isEnabled(): boolean {
-    if (typeof window === 'undefined') return false
     const stored = localStorage.getItem(SYNC_ENABLED_KEY)
-    return stored !== 'false' // مفعّلة افتراضياً لضمان تطابق البيانات بين الأجهزة المختلفة
+    // معطّلة افتراضياً - تحتاج تفعيل يدوي من الإعدادات
+    return stored === 'true'
   }
 
   setEnabled(enabled: boolean) {
-    if (typeof window === 'undefined') return
     localStorage.setItem(SYNC_ENABLED_KEY, String(enabled))
   }
 
+  // بدء المزامنة التلقائية
   start() {
     if (typeof window === 'undefined') return
     if (!this.isEnabled()) return
+    if (this.intervalId) return // Already running
 
-    // مزامنة فورية عند التشغيل لجلب آخر البيانات من السيرفر
-    Promise.resolve().then(() => this.sync())
+    // مزامنة فورية عند التفعيل
+    setTimeout(() => { this.sync() }, 3000)
 
-    // مزامنة دورية كل دقيقتين لضمان التطابق بين الأجهزة
-    if (!this.intervalId) {
-      this.intervalId = setInterval(() => { this.sync() }, 2 * 60 * 1000)
-    }
+    // مزامنة كل 2 دقيقة
+    this.intervalId = setInterval(() => { this.sync() }, 2 * 60 * 1000)
 
-    // مزامنة تلقائية عند عودة شبكة الإنترنت
-    if (!this.onlineHandler) {
-      this.onlineHandler = () => { this.sync() }
-      window.addEventListener('online', this.onlineHandler)
-    }
+    // مزامنة عند العودة online
+    this.onlineHandler = () => { this.sync() }
+    window.addEventListener('online', this.onlineHandler)
   }
 
   stop() {
@@ -52,9 +52,11 @@ class SyncService {
     }
   }
 
+  // تسجيل تغيير للمزامنة الفورية
   notifyChange(entityType: string) {
     this.pendingChanges.add(entityType)
-    if (typeof window !== 'undefined' && navigator.onLine) {
+    // مزامنة فورية لو متصل
+    if (navigator.onLine) {
       this.debouncedSync()
     }
   }
@@ -65,16 +67,17 @@ class SyncService {
     if (this.debounceTimer) clearTimeout(this.debounceTimer)
     this.debounceTimer = setTimeout(() => {
       Promise.resolve().then(() => this.sync())
-    }, 3000)
+    }, 3000) // مزامنة بعد 3 ثواني من آخر تغيير
   }
 
-  // مزامنة كاملة تراكمية (Incremental Push + Pull)
+  // مزامنة كاملة (push + pull) - مع حماية البيانات المحلية
   async sync(): Promise<{ success: boolean; pushed?: number; pulled?: number; error?: string }> {
-    if (typeof window === 'undefined' || !navigator.onLine) {
+    if (!navigator.onLine) {
       return { success: false, error: 'غير متصل بالإنترنت' }
     }
 
     try {
+      // 1. Push - رفع البيانات المحلية للسيرفر
       const localData = await reportRepository.exportAll()
       let pushSuccess = false
       let pushed = 0
@@ -98,13 +101,13 @@ class SyncService {
         console.warn('Sync push failed (will retry later):', pushErr.message)
       }
 
-      // 2. Incremental Pull - سحب البيانات الجديدة أو المعدلة منذ آخر مزامنة فقط
+      // 2. Pull - تحميل البيانات من السيرفر
+      // فقط إذا كان Push ناجح أو كان هناك بيانات على السيرفر
       try {
-        const lastSync = this.getLastSyncDate()
+        // Fix O: Use POST instead of GET
         const pullResponse = await fetch('/api/sync/pull', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ since: lastSync ? lastSync.toISOString() : undefined }),
         })
         if (!pullResponse.ok) throw new Error(`Pull failed: ${pullResponse.status}`)
         const pullRes = await pullResponse.json()
@@ -115,15 +118,18 @@ class SyncService {
             pulled += (records as any[]).length
           }
 
+          // حماية: لا تسحب بيانات فاضية إذا عندك بيانات محلية
           let localCount = 0
           for (const records of Object.values(localData.data || {})) {
             localCount += (records as any[]).length
           }
 
           if (pulled > 0 || localCount === 0) {
+            // importAll الآن يعمل merge (لا يمسح البيانات المحلية)
             await reportRepository.importAll({ data: pullRes.data })
-            console.log('✅ Incremental sync pull complete:', { pulled })
+            console.log('✅ Sync pull complete:', { pulled })
 
+            // Fix P: Notify UI of data changes after pull
             const allTypes = [
               'sales', 'purchases', 'workers', 'workerAdvances', 'workerReceipts',
               'workerAttendance', 'production', 'customers', 'suppliers', 'expenses',
@@ -133,7 +139,7 @@ class SyncService {
             ]
             allTypes.forEach((t) => dataChangeEmitter.notifyUpdate(t as any))
           } else {
-            console.log('⏭️ Incremental pull skipped: no new changes on server')
+            console.log('⏭️ Sync pull skipped: server has no data, preserving local data')
           }
 
           localStorage.setItem(SYNC_STATUS_KEY, String(Date.now()))
@@ -145,6 +151,7 @@ class SyncService {
         console.warn('Sync pull failed (local data preserved):', pullErr.message)
       }
 
+      // Push أو Pull فشل - البيانات المحلية محفوظة
       return { success: true, pushed, pulled: 0 }
     } catch (e: any) {
       console.error('Sync error:', e)
@@ -152,13 +159,15 @@ class SyncService {
     }
   }
 
+  // رفع البيانات للسيرفر فقط
   async pushOnly(): Promise<{ success: boolean; count?: number; error?: string }> {
-    if (typeof window === 'undefined' || !navigator.onLine) {
+    if (!navigator.onLine) {
       return { success: false, error: 'غير متصل بالإنترنت' }
     }
 
     try {
       const localData = await reportRepository.exportAll()
+      // Fix N: Check HTTP response status
       const r = await fetch('/api/sync/push', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -183,17 +192,17 @@ class SyncService {
     }
   }
 
+  // تحميل البيانات من السيرفر فقط - مع حماية البيانات المحلية
   async pullOnly(): Promise<{ success: boolean; count?: number; error?: string }> {
-    if (typeof window === 'undefined' || !navigator.onLine) {
+    if (!navigator.onLine) {
       return { success: false, error: 'غير متصل بالإنترنت' }
     }
 
     try {
-      const lastSync = this.getLastSyncDate()
+      // Fix N + Fix O: Check HTTP status and use POST
       const r = await fetch('/api/sync/pull', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ since: lastSync ? lastSync.toISOString() : undefined }),
       })
       if (!r.ok) throw new Error(`HTTP ${r.status}`)
       const res = await r.json()
@@ -207,6 +216,7 @@ class SyncService {
         count += (records as any[]).length
       }
 
+      // حماية: لا تسحب بيانات فاضية إذا عندك بيانات محلية
       const localData = await reportRepository.exportAll()
       let localCount = 0
       for (const records of Object.values(localData.data || {})) {
@@ -215,7 +225,9 @@ class SyncService {
 
       if (count > 0 || localCount === 0) {
         if (res.data) {
+          // importAll الآن يعمل merge (لا يمسح البيانات المحلية)
           await reportRepository.importAll({ data: res.data })
+          // Fix X: Removed 'reports' from allTypes - it's a virtual entity not stored in DB
           const allTypes = [
             'sales', 'purchases', 'workers', 'workerAdvances', 'workerReceipts',
             'workerAttendance', 'production', 'customers', 'suppliers', 'expenses',
@@ -237,18 +249,20 @@ class SyncService {
     }
   }
 
-  checkStatus(): Promise<{ connected: boolean; counts?: Record<string, number> }> {
-    return fetch('/api/sync/status')
-      .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`)
-        return r.json()
-      })
-      .then((res) => ({ connected: res.connected, counts: res.counts }))
-      .catch(() => ({ connected: false }))
+  // حالة السيرفر
+  async checkStatus(): Promise<{ connected: boolean; counts?: Record<string, number> }> {
+    try {
+      // Fix N: Check HTTP response status
+      const r = await fetch('/api/sync/status')
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      const res = await r.json()
+      return { connected: res.connected, counts: res.counts }
+    } catch {
+      return { connected: false }
+    }
   }
 
   getLastSyncDate(): Date | null {
-    if (typeof window === 'undefined') return null
     const ts = localStorage.getItem(SYNC_STATUS_KEY)
     return ts ? new Date(Number(ts)) : null
   }
@@ -256,7 +270,7 @@ class SyncService {
   isStale(): boolean {
     const last = this.getLastSyncDate()
     if (!last) return true
-    return Date.now() - last.getTime() > 10 * 60 * 1000
+    return Date.now() - last.getTime() > 10 * 60 * 1000 // 10 دقائق
   }
 }
 

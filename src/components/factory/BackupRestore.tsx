@@ -120,11 +120,19 @@ export function BackupRestore({ open, onOpenChange }: { open: boolean; onOpenCha
   const handleSyncToggle = (enabled: boolean) => {
     setSyncEnabled(enabled)
     syncService.setEnabled(enabled)
-    // Auto-sync timer removed — sync is now manual-only
-    toast({
-      title: enabled ? 'تم التفعيل' : 'تم التعطيل',
-      description: enabled ? 'الإعدادات محفوظة (المزامنة يدوية)' : 'المزامنة معطلة',
-    })
+    if (enabled) {
+      syncService.start()
+      toast({
+        title: 'تم تفعيل المزامنة',
+        description: 'سيتم رفع وتحميل البيانات تلقائياً عند أي تغيير',
+      })
+    } else {
+      syncService.stop()
+      toast({
+        title: 'تم تعطيل المزامنة',
+        description: 'المزامنة التلقائية معطلة',
+      })
+    }
   }
 
   const handleBackup = async () => {

@@ -72,8 +72,10 @@ export default function Home() {
           const settings = await factorySettingsRepository.get()
           setFactorySettings(settings)
           autoBackupService.start()
-          // تفعيل المزامنة السحابية التلقائية للتزامن الفوري بين كافة الأجهزة
-          syncService.start()
+          // تفعيل المزامنة التلقائية لو كانت مفعّلة في الإعدادات
+          if (syncService.isEnabled()) {
+            syncService.start()
+          }
           warehouseRepository.seedDefaults().catch(() => {})
           expenseCategoryRepository.seedDefaults().catch(() => {})
           auditLogRepository.log({
@@ -91,7 +93,7 @@ export default function Home() {
 
     return () => {
       autoBackupService.stop()
-      // syncService.stop() - Sync معطّل، لا حاجة للإيقاف
+      syncService.stop()
     }
   }, [reloadKey])
 
@@ -128,7 +130,7 @@ export default function Home() {
       />
 
       {/* Main content */}
-      <main className="flex-1 max-w-2xl md:max-w-5xl lg:max-w-7xl mx-auto w-full px-3 sm:px-4 md:px-6 lg:px-8 pb-24 pt-4">
+      <main className="flex-1 max-w-2xl mx-auto w-full px-3 sm:px-4 pb-24 pt-4">
         {tab === 'dashboard' && <Dashboard onNavigate={setTab} />}
         {tab === 'sales' && <SalesView />}
         {tab === 'purchases' && <PurchasesView />}
