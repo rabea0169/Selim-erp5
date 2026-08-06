@@ -52,6 +52,7 @@ export async function POST(req: NextRequest) {
     const ret = await db.$transaction(async (tx) => {
       const sale = await tx.sale.findUnique({ where: { id: saleId }, include: { items: true } })
       if (!sale) throw new Error('الفاتورة غير موجودة')
+      if (Number(total) > sale.total) throw new Error('قيمة المرتجع لا يمكن أن تتجاوز إجمالي الفاتورة')
 
       const cName = customerName || sale.customerName || ''
 

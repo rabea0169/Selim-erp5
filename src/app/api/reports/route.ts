@@ -128,9 +128,9 @@ export async function GET(req: NextRequest) {
       total: r._sum.total || 0,
     }))
 
-    // Net calculation
-    const netProfit =
-      salesTotal - purchasesTotal - expensesTotal - advancesTotal + receiptsTotal - productionTotal
+    // Net calculation (الإيرادات - المشتريات - المصاريف العمومية)
+    // ملاحظة: السلف والقبوضات هي تحويلات مالية داخلية تؤثر على الخزينة ولا تؤثر على الربح
+    const netProfit = salesTotal - purchasesTotal - expensesTotal
 
     return NextResponse.json({
       range: { from, to },

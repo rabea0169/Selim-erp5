@@ -50,6 +50,7 @@ export async function POST(req: NextRequest) {
       // Fix I + Fix U: Move purchase fetch inside transaction + use findUnique
       const purchase = await tx.purchase.findUnique({ where: { id: purchaseId } })
       if (!purchase) throw new Error('فاتورة الشراء غير موجودة')
+      if (Number(total) > purchase.total) throw new Error('قيمة المرتجع لا يمكن أن تتجاوز إجمالي فاتورة الشراء')
 
       const ret = await tx.purchaseReturn.create({
         data: {
