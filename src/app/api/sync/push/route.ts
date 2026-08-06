@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
 import { requireAdmin } from '@/lib/admin-check'
-import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
 
 // حقول محظورة من التزامن (لا يسمح للعميل بتعديلها)
@@ -11,29 +10,29 @@ const FORBIDDEN_FIELDS: Record<string, string[]> = {
 
 // حقول مسموحة لكل نموذج (أمان بالسماح لا بالمنع)
 const ALLOWED_FIELDS: Record<string, string[]> = {
-  factorySettings: ['id', 'factoryName', 'taxNumber', 'commercialRegister', 'phone', 'address', 'logo', 'notes', 'createdAt', 'updatedAt'],
-  worker: ['id', 'name', 'phone', 'job', 'type', 'dailyWage', 'monthlySalary', 'notes', 'createdAt', 'updatedAt'],
-  workerAdvance: ['id', 'workerId', 'amount', 'date', 'notes', 'createdAt'],
-  workerReceipt: ['id', 'workerId', 'amount', 'date', 'notes', 'createdAt'],
-  workerAttendance: ['id', 'workerId', 'date', 'checkIn', 'checkOut', 'status', 'notes', 'createdAt'],
-  production: ['id', 'workerId', 'date', 'modelName', 'quantity', 'unitPrice', 'total', 'notes', 'createdAt'],
-  customer: ['id', 'name', 'phone', 'address', 'notes', 'createdAt'],
-  supplier: ['id', 'name', 'phone', 'address', 'notes', 'createdAt'],
-  sale: ['id', 'invoiceNo', 'customerName', 'customerId_ref', 'date', 'total', 'paid', 'notes', 'createdAt', 'updatedAt'],
+  factorySettings: ['id', 'factoryName', 'factoryNameEn', 'slogan', 'phone', 'whatsapp', 'email', 'address', 'taxNumber', 'commercialRegister', 'logo', 'currency', 'invoicePrefix', 'invoiceFooter', 'defaultPaperSize', 'taxRate', 'createdAt', 'updatedAt'],
+  worker: ['id', 'name', 'phone', 'job', 'type', 'hourlyRate', 'overtimeRate', 'workStartTime', 'workHoursPerDay', 'monthlySalary', 'notes', 'createdAt', 'updatedAt'],
+  workerAdvance: ['id', 'workerId', 'companyId', 'amount', 'date', 'notes', 'createdAt'],
+  workerReceipt: ['id', 'workerId', 'companyId', 'amount', 'date', 'notes', 'createdAt'],
+  workerAttendance: ['id', 'workerId', 'date', 'checkIn', 'checkOut', 'status', 'notes', 'workHours', 'overtimeHours', 'lateMinutes', 'createdAt'],
+  production: ['id', 'workerId', 'date', 'modelName', 'quantity', 'unitPrice', 'total', 'productId', 'addToInventory', 'notes', 'createdAt'],
+  customer: ['id', 'name', 'phone', 'address', 'notes', 'creditLimit', 'loyaltyPoints', 'openingBalance', 'createdAt'],
+  supplier: ['id', 'name', 'phone', 'address', 'notes', 'creditLimit', 'openingBalance', 'createdAt'],
+  sale: ['id', 'invoiceNo', 'customerName', 'customerId_ref', 'date', 'subtotal', 'discountType', 'discountValue', 'discountAmount', 'taxRate', 'taxAmount', 'extraFees', 'total', 'paid', 'notes', 'createdAt', 'updatedAt'],
   saleItem: ['id', 'saleId', 'itemName', 'productId', 'priceType', 'quantity', 'unitPrice', 'total'],
-  purchase: ['id', 'invoiceNo', 'supplierName', 'supplierId_ref', 'date', 'total', 'paid', 'notes', 'createdAt', 'updatedAt'],
+  purchase: ['id', 'invoiceNo', 'supplierName', 'supplierId_ref', 'date', 'subtotal', 'discountType', 'discountValue', 'discountAmount', 'taxRate', 'taxAmount', 'extraFees', 'total', 'paid', 'notes', 'createdAt', 'updatedAt'],
   purchaseItem: ['id', 'purchaseId', 'itemName', 'materialId', 'quantity', 'unitPrice', 'total'],
   expenseCategory: ['id', 'name', 'notes', 'createdAt'],
   expense: ['id', 'categoryId', 'categoryName', 'amount', 'date', 'notes', 'createdAt'],
   treasuryTransaction: ['id', 'type', 'amount', 'date', 'description', 'category', 'referenceType', 'referenceId', 'notes', 'createdAt'],
-  warehouse: ['id', 'name', 'type', 'notes', 'createdAt'],
-  material: ['id', 'warehouseId', 'name', 'unit', 'quantity', 'unitCost', 'minStock', 'notes', 'createdAt', 'updatedAt'],
+  warehouse: ['id', 'name', 'type', 'location', 'notes', 'createdAt'],
+  material: ['id', 'warehouseId', 'name', 'unit', 'quantity', 'unitCost', 'reorderLevel', 'notes', 'createdAt', 'updatedAt'],
   materialTransaction: ['id', 'materialId', 'warehouseId', 'type', 'quantity', 'unitCost', 'date', 'reason', 'referenceType', 'referenceId', 'notes', 'createdAt'],
-  product: ['id', 'name', 'warehouseId', 'sku', 'unit', 'quantity', 'retailPrice', 'wholesalePrice', 'costPrice', 'minStock', 'notes', 'createdAt', 'updatedAt'],
+  product: ['id', 'name', 'category', 'unit', 'wholesalePrice', 'halfWholesalePrice', 'retailPrice', 'cost', 'warehouseId', 'quantity', 'reorderLevel', 'notes', 'createdAt', 'updatedAt'],
   productionOrder: ['id', 'orderNumber', 'productId', 'productName', 'quantity', 'completedQuantity', 'unit', 'status', 'materials', 'stages', 'date', 'expectedEndDate', 'completedDate', 'notes', 'createdAt', 'updatedAt'],
-  payment: ['id', 'partyId', 'partyName', 'type', 'amount', 'date', 'referenceType', 'referenceId', 'notes', 'createdAt'],
-  saleReturn: ['id', 'saleId', 'customerId_ref', 'customerName', 'date', 'total', 'notes', 'items', 'createdAt'],
-  purchaseReturn: ['id', 'purchaseId', 'supplierId_ref', 'supplierName', 'date', 'total', 'notes', 'items', 'createdAt'],
+  payment: ['id', 'type', 'partyId', 'partyName', 'invoiceId', 'invoiceNo', 'amount', 'date', 'method', 'notes', 'createdAt'],
+  saleReturn: ['id', 'returnNumber', 'saleId', 'invoiceNo', 'customerName', 'customerId_ref', 'date', 'total', 'reason', 'restockItems', 'items', 'notes', 'createdAt'],
+  purchaseReturn: ['id', 'returnNumber', 'purchaseId', 'invoiceNo', 'supplierName', 'supplierId_ref', 'date', 'total', 'reason', 'restockItems', 'items', 'notes', 'createdAt'],
   auditLog: ['id', 'action', 'entityType', 'entityId', 'description', 'userId', 'userName', 'metadata', 'timestamp'],
 }
 
@@ -53,7 +52,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'لا توجد بيانات' }, { status: 400 })
     }
 
-    const results: Record<string, { success: number; failed: number; conflicts: number }> = {}
+    const results: Record<string, { success: number; failed: number }> = {}
 
     const tableMap: Record<string, any> = {
       // ⚠️ users و auditLogs مستثنيان من المزامنة لحماية الصلاحيات وسجل التدقيق
@@ -87,22 +86,21 @@ export async function POST(req: NextRequest) {
     for (const [localTable, modelName] of Object.entries(tableMap)) {
       const records = data[localTable]
       if (!records || !Array.isArray(records) || records.length === 0) {
-        results[localTable] = { success: 0, failed: 0, conflicts: 0 }
+        results[localTable] = { success: 0, failed: 0 }
         continue
       }
 
       const allowed = ALLOWED_FIELDS[modelName]
       const forbidden = FORBIDDEN_FIELDS[modelName] || []
       let successCount = 0
-      let failedCount  = 0
-      let conflictCount = 0
+      let failedCount = 0
 
       for (const record of records) {
         try {
           if (!record.id) { failedCount++; continue }
 
           // فلترة الحقول المسموحة فقط
-          const processed: Record<string, unknown> = {}
+          const processed: any = {}
           for (const [key, value] of Object.entries(record)) {
             // تجاهل الحقول المحظورة
             if (forbidden.includes(key)) continue
@@ -122,40 +120,6 @@ export async function POST(req: NextRequest) {
           }
 
           processed.updatedAt = new Date()
-          const user = await getCurrentUser()
-          if (user?.companyId) {
-            processed.companyId = user.companyId
-          }
-
-          // ===== Conflict Resolution: Server Wins with Timestamp Check =====
-          // إذا كان السجل موجوداً وأحدث من البيانات القادمة من العميل، نتجاهل التحديث
-          try {
-            const existing = await (db as any)[modelName].findUnique({
-              where: { id: record.id },
-              select: { updatedAt: true, companyId: true },
-            })
-
-            if (existing) {
-              // حماية عزل الشركات: لا يجوز الكتابة فوق سجل شركة أخرى
-              if (existing.companyId && processed.companyId && existing.companyId !== processed.companyId) {
-                console.warn(`[Sync] IDOR attempt: record ${record.id} belongs to different company`)
-                failedCount++
-                continue
-              }
-
-              // Conflict resolution: إذا كانت نسخة الخادم أحدث من نسخة العميل
-              const clientUpdatedAt = record.updatedAt ? new Date(record.updatedAt) : null
-              if (existing.updatedAt && clientUpdatedAt && existing.updatedAt > clientUpdatedAt) {
-                // Server data is newer — skip this record (Server Wins)
-                console.log(`[Sync] Conflict skipped (server newer): ${modelName}:${record.id}`)
-                conflictCount++
-                continue
-              }
-            }
-          } catch {
-            // إذا لم يدعم النموذج updatedAt أو findUnique، نكمل بشكل عادي
-          }
-          // =================================================================
 
           await (db as any)[modelName].upsert({
             where: { id: record.id },
@@ -163,13 +127,12 @@ export async function POST(req: NextRequest) {
             update: processed,
           })
           successCount++
-        } catch (e: unknown) {
-          const msg = e instanceof Error ? e.message : String(e)
-          console.error(`[Sync] Error in ${modelName} record ${record.id}:`, msg)
+        } catch (e: any) {
+          console.error(`[Sync] Error in ${modelName} record ${record.id}:`, e.message)
           failedCount++
         }
       }
-      results[localTable] = { success: successCount, failed: failedCount, conflicts: conflictCount }
+      results[localTable] = { success: successCount, failed: failedCount }
     }
 
     return NextResponse.json({
@@ -177,8 +140,6 @@ export async function POST(req: NextRequest) {
       message: 'تمت المزامنة بنجاح',
       results,
       syncedAt: new Date().toISOString(),
-      // إجمالي التعارضات للعرض في واجهة المستخدم
-      totalConflicts: Object.values(results).reduce((s, r) => s + r.conflicts, 0),
     })
   } catch (e) {
     const { error, status } = safeError(e)

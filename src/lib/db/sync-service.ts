@@ -13,11 +13,11 @@ class SyncService {
   private onlineHandler: (() => void) | null = null
   private pendingChanges: Set<string> = new Set()
 
-  // المزامنة معطّلة افتراضياً - تُفعّل يدوياً فقط بعد التأكد من عمل السيرفر
+  // المزامنة مُفعّلة افتراضياً لضمان عملها على كل الأجهزة
   isEnabled(): boolean {
     const stored = localStorage.getItem(SYNC_ENABLED_KEY)
-    // معطّلة افتراضياً - تحتاج تفعيل يدوي من الإعدادات
-    return stored === 'true'
+    // مُفعّلة افتراضياً - لو المستخدم ما عطّلهاش
+    return stored !== 'false'
   }
 
   setEnabled(enabled: boolean) {
@@ -39,6 +39,65 @@ class SyncService {
     // مزامنة عند العودة online
     this.onlineHandler = () => { this.sync() }
     window.addEventListener('online', this.onlineHandler)
+  }
+
+  // سحب تلقائي للبيانات من السيرفر عند أول دخول على جهاز جديد
+  async initialPull(): Promise<{ success: boolean; count?: number; error?: string }> {
+    if (typeof window === 'undefined') {
+      return { success: false, error: 'not in browser' }
+    }
+    if (!navigator.onLine) {
+      return { success: false, error: 'غير متصل بالإنترنت' }
+    }
+
+    try {
+      const { reportRepository } = await import('./repositories')
+      const localData = await reportRepository.exportAll()
+      let localCount = 0
+      for (const records of Object.values(localData.data || {})) {
+        localCount += (records as any[]).length
+      }
+
+      // إذا عندك بيانات محلية، اسحب من السيرفر ودمج
+      // إذا مفيش بيانات محلية، اسحب كل حاجة
+      const r = await fetch('/api/sync/pull', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      const res = await r.json()
+
+      if (!res.success) {
+        throw new Error(res.error)
+      }
+
+      let serverCount = 0
+      for (const records of Object.values(res.data || {})) {
+        serverCount += (records as any[]).length
+      }
+
+      if (serverCount > 0) {
+        // دمج بيانات السيرفر مع البيانات المحلية
+        await reportRepository.importAll({ data: res.data })
+        // إبلاغ كل المكونات بالتحديث
+        const { dataChangeEmitter } = await import('./live-data')
+        const allTypes = [
+          'sales', 'purchases', 'workers', 'workerAdvances', 'workerReceipts',
+          'workerAttendance', 'production', 'customers', 'suppliers', 'expenses',
+          'expenseCategories', 'factorySettings', 'treasuryTransactions',
+          'warehouses', 'materials', 'materialTransactions', 'products',
+          'productionOrders', 'payments', 'saleReturns', 'purchaseReturns',
+        ]
+        allTypes.forEach((t) => dataChangeEmitter.notifyUpdate(t as any))
+        console.log(`✅ Initial pull: ${serverCount} records from server (local had ${localCount})`)
+      }
+
+      localStorage.setItem(SYNC_STATUS_KEY, String(Date.now()))
+      return { success: true, count: serverCount }
+    } catch (e: any) {
+      console.warn('Initial pull failed (non-fatal):', e.message)
+      return { success: false, error: e.message }
+    }
   }
 
   stop() {
@@ -93,8 +152,8 @@ class SyncService {
 
         if (pushRes.success) {
           pushSuccess = true
-          for (const count of Object.values(pushRes.results || {})) {
-            pushed += count as number
+          for (const result of Object.values(pushRes.results || {}) as Array<{success: number; failed: number}>) {
+            pushed += result.success
           }
         }
       } catch (pushErr: any) {
@@ -181,8 +240,8 @@ class SyncService {
       }
 
       let count = 0
-      for (const c of Object.values(res.results || {})) {
-        count += c as number
+      for (const r of Object.values(res.results || {}) as Array<{success: number; failed: number}>) {
+        count += r.success
       }
 
       localStorage.setItem(SYNC_STATUS_KEY, String(Date.now()))

@@ -72,10 +72,16 @@ export default function Home() {
           const settings = await factorySettingsRepository.get()
           setFactorySettings(settings)
           autoBackupService.start()
-          // تفعيل المزامنة التلقائية لو كانت مفعّلة في الإعدادات
-          if (syncService.isEnabled()) {
-            syncService.start()
-          }
+          // تفعيل المزامنة التلقائية دائماً (مُفعّلة افتراضياً)
+          syncService.start()
+          // سحب تلقائي للبيانات من السيرفر عند تسجيل الدخول
+          syncService.initialPull().then((result) => {
+            if (result.success && result.count && result.count > 0) {
+              console.log(`[App] ✅ Pulled ${result.count} records from server on login`)
+              // إعادة تحميل الإحصائيات بعد السحب
+              setReloadKey((k) => k + 1)
+            }
+          }).catch(() => {})
           warehouseRepository.seedDefaults().catch(() => {})
           expenseCategoryRepository.seedDefaults().catch(() => {})
           auditLogRepository.log({
