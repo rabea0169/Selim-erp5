@@ -37,25 +37,30 @@ const EXPORT_SELECT: Record<string, any> = {
   auditLog: { id: true, companyId: true, action: true, entityType: true, entityId: true, description: true, userId: true, userName: true, timestamp: true },
 }
 
-export async function POST(_req: NextRequest) {
+export async function POST(req: NextRequest) {
   try {
     const admin = await requireAdmin()
     if (!admin.ok) {
       return NextResponse.json({ error: admin.error }, { status: admin.status })
     }
 
+    const body = await req.json().catch(() => ({}))
+    const { since } = body || {}
+
     const user = await getCurrentUser()
     const whereCompany = user?.companyId ? { companyId: user.companyId } : {}
+    const dateFilter = since && !isNaN(new Date(since).getTime()) ? { updatedAt: { gte: new Date(since) } } : {}
 
     const data: Record<string, any[]> = {}
 
     for (const [table, select] of Object.entries(EXPORT_SELECT)) {
       try {
         const orderByField = table === 'auditLog' ? { timestamp: 'asc' as const } : { createdAt: 'asc' as const }
-        // SaleItem و PurchaseItem ليس بهما companyId مادي بل يتبعان الفاتورة
         const isChildItem = table === 'saleItem' || table === 'purchaseItem'
+        const filterWhere = isChildItem ? {} : { ...whereCompany, ...dateFilter }
+
         const records = await (db as any)[table].findMany({
-          where: isChildItem ? {} : whereCompany,
+          where: filterWhere,
           orderBy: orderByField,
           select,
         })
