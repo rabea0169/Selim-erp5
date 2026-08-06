@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
 import { requireAdmin } from '@/lib/admin-check'
+import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
 
 // حقول محظورة من التزامن (لا يسمح للعميل بتعديلها)
@@ -120,6 +121,10 @@ export async function POST(req: NextRequest) {
           }
 
           processed.updatedAt = new Date()
+          const user = await getCurrentUser()
+          if (user?.companyId) {
+            processed.companyId = user.companyId
+          }
 
           await (db as any)[modelName].upsert({
             where: { id: record.id },
