@@ -1,16 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
-import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const user = await getCurrentUser()
     const { id } = await params
 
-    // جلب فاتورة الشراء والتحقق من تبعيتها لشركة المستخدم للحماية من ثغرات IDOR
-    const purchase = await db.purchase.findFirst({
-      where: { id, ...(user?.companyId ? { companyId: user.companyId } : {}) },
+    const purchase = await db.purchase.findUnique({
+      where: { id },
       include: { items: true },
     })
     if (!purchase) {
@@ -18,7 +15,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     }
 
     await db.$transaction(async (tx) => {
-      // 1) إرجاع كميات المواد الخام مع إعادة حساب متوسط التكلفة المرجح
+      // 1) إرجاع كميات المواد الخام مع إعادة حساب متوسط التكلفة المرجح (GAP-04 fix)
       for (const item of purchase.items) {
         if (item.materialId) {
           const mat = await tx.material.findUnique({ where: { id: item.materialId } })
@@ -27,6 +24,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
             const totalOldValue = mat.quantity * mat.unitCost
             const remainingQuantity = mat.quantity - item.quantity
 
+            // إعادة حساب تكلفة الوحدة المرجحة بعد إزالة قيمة الصنف المحذوف
             const newUnitCost = remainingQuantity > 0
               ? Math.max(0, (totalOldValue - removedValue)) / remainingQuantity
               : 0
@@ -43,7 +41,6 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
             // تسجيل حركة مرتجع للمادة
             await tx.materialTransaction.create({
               data: {
-                companyId: user?.companyId || null,
                 materialId: item.materialId,
                 warehouseId: mat.warehouseId,
                 type: 'out',
@@ -68,7 +65,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
 
       // 3) حذف المدفوعات المرتبطة
       await tx.payment.deleteMany({
-        where: { invoiceId: id },
+        where: { referenceType: 'purchase', referenceId: id },
       })
 
       // 4) حذف المرتجعات المرتبطة

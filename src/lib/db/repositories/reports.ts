@@ -7,6 +7,8 @@ import {
   workerReceiptRepository,
   productionRepository,
   workerAttendanceRepository,
+  saleReturnRepository,
+  purchaseReturnRepository,
 } from './index'
 import type {
   Sale,
@@ -31,6 +33,8 @@ export interface ReportSummary {
   productionTotal: number
   productionPieces: number
   expensesTotal: number
+  saleReturnsTotal: number
+  purchaseReturnsTotal: number
   netProfit: number
 }
 
@@ -53,6 +57,7 @@ class ReportRepository {
   async getFullReport(from?: string, to?: string): Promise<ReportData> {
     const [
       sales, purchases, expenses, advances, receipts, productions, attendance,
+      saleReturns, purchaseReturns,
     ] = await Promise.all([
       saleRepository.getByDateRange(from, to),
       purchaseRepository.getByDateRange(from, to),
@@ -61,6 +66,8 @@ class ReportRepository {
       workerReceiptRepository.getByDateRange(from, to),
       productionRepository.getByDateRange(from, to),
       workerAttendanceRepository.getByDateRange(from, to),
+      saleReturnRepository.getByDateRange(from, to),
+      purchaseReturnRepository.getByDateRange(from, to),
     ])
 
     const salesTotal = sales.reduce((s, x) => s + x.total, 0)
@@ -72,6 +79,11 @@ class ReportRepository {
     const productionTotal = productions.reduce((s, x) => s + x.total, 0)
     const productionPieces = productions.reduce((s, x) => s + x.quantity, 0)
     const expensesTotal = expenses.reduce((s, x) => s + x.amount, 0)
+
+    // مرتجعات المبيعات (مبالغ مرتجعة للعملاء)
+    const saleReturnsTotal = saleReturns.reduce((s, x) => s + x.total, 0)
+    // مرتجعات المشتريات (مبالغ مستردة من الموردين)
+    const purchaseReturnsTotal = purchaseReturns.reduce((s, x) => s + x.total, 0)
 
     // المصاريف حسب البند
     const expensesByCategory: Record<string, number> = {}
@@ -105,11 +117,11 @@ class ReportRepository {
       .sort((a, b) => b.total - a.total)
       .slice(0, 10)
 
-    // صافي الربح = إجمالي المبيعات - تكلفة المشتريات - المصاريف
+    // صافي الربح = (المبيعات - مرتجعات المبيعات) - (المشتريات - مرتجعات المشتريات) - المصاريف
     // ملاحظة: السلف والقبض هما تحويلات مالية داخلية (لا تؤثر على الربح)
     // والإنتاج هو تقييم داخلي وليس مصروف فعلي
     const netProfit =
-      salesTotal - purchasesTotal - expensesTotal
+      (salesTotal - saleReturnsTotal) - (purchasesTotal - purchaseReturnsTotal) - expensesTotal
 
     return {
       range: { from, to },
@@ -125,6 +137,8 @@ class ReportRepository {
         productionTotal,
         productionPieces,
         expensesTotal,
+        saleReturnsTotal,
+        purchaseReturnsTotal,
         netProfit,
       },
       sales,

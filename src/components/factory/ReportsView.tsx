@@ -68,7 +68,7 @@ export function ReportsView() {
   // تحميل التقرير مع التحديث الفوري عند تغير أي بيانات
   const { data, loading, reload } = useLiveData<ReportData>(
     () => fetchReport(from, to),
-    ['sales', 'purchases', 'expenses', 'workerAdvances', 'workerReceipts', 'production', 'workers']
+    ['sales', 'purchases', 'expenses', 'workerAdvances', 'workerReceipts', 'production', 'workers', 'saleReturns', 'purchaseReturns']
   )
 
   // إعادة التحميل عند تغير التاريخ

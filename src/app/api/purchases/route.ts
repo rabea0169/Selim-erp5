@@ -1,13 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
-import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
-import { purchaseSchema } from '@/lib/validations'
 
 // GET /api/purchases?from=&to=&q=&page=1&limit=50
 export async function GET(req: NextRequest) {
   try {
-    const user = await getCurrentUser()
     const { searchParams } = new URL(req.url)
     const from = searchParams.get('from')
     const to = searchParams.get('to')
@@ -16,8 +13,6 @@ export async function GET(req: NextRequest) {
     const limit = Math.min(200, Math.max(1, Number(searchParams.get('limit')) || 50))
 
     const where: any = {}
-    if (user?.companyId) where.companyId = user.companyId
-
     if (from || to) {
       where.date = {}
       if (from) {
@@ -33,15 +28,10 @@ export async function GET(req: NextRequest) {
       }
     }
     if (q) {
-      where.AND = [
-        user?.companyId ? { companyId: user.companyId } : {},
-        {
-          OR: [
-            { supplierName: { contains: q } },
-            { invoiceNo: { contains: q } },
-            { notes: { contains: q } },
-          ],
-        },
+      where.OR = [
+        { supplierName: { contains: q } },
+        { invoiceNo: { contains: q } },
+        { notes: { contains: q } },
       ]
     }
 
@@ -68,18 +58,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const user = await getCurrentUser()
-    const companyId = user?.companyId || null
-
     const body = await req.json()
-
-    // التحقق من البيانات باستخدام Zod
-    const validation = purchaseSchema.safeParse(body)
-    if (!validation.success) {
-      const errors = validation.error.issues.map((i) => i.message).join('، ')
-      return NextResponse.json({ error: errors }, { status: 400 })
-    }
-
     const {
       supplierName,
       supplierId_ref,
@@ -88,6 +67,10 @@ export async function POST(req: NextRequest) {
       items,
       paid,
       notes,
+      discountType,
+      discountValue,
+      taxRate,
+      extraFees,
     } = body
 
     if (!supplierName?.trim()) {
@@ -111,12 +94,22 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'أضف صنفاً صحيحاً واحداً على الأقل' }, { status: 400 })
     }
 
-    const total = validItems.reduce(
+    const subtotal = validItems.reduce(
       (sum: number, it: any) => sum + Number(it.quantity) * Number(it.unitPrice),
       0
     )
+    const discType = discountType || null
+    const discValue = Number(discountValue) || 0
+    const discountAmount = discType === 'percentage'
+      ? subtotal * (discValue / 100)
+      : discValue
+    const tRate = Number(taxRate) || 0
+    const taxAmount = (subtotal - discountAmount) * (tRate / 100)
+    const fees = Number(extraFees) || 0
+    const total = subtotal - discountAmount + taxAmount + fees
     const paidAmount = Number(paid) || 0
 
+    // F5-02 fix: التحقق من أن المدفوع لا يتجاوز الإجمالي ولا يكون سالباً
     if (paidAmount < 0) {
       return NextResponse.json({ error: 'المبلغ المدفوع لا يمكن أن يكون سالباً' }, { status: 400 })
     }
@@ -125,12 +118,10 @@ export async function POST(req: NextRequest) {
     }
 
     const purchase = await db.$transaction(async (tx) => {
-      // فحص المواد والمورد داخل الـ transaction
+      // فحص المواد والعميل داخل الـ transaction (TOCTOU fix)
       for (const it of validItems) {
         if (it.materialId) {
-          const material = await tx.material.findFirst({
-            where: { id: it.materialId, ...(companyId ? { companyId } : {}) },
-          })
+          const material = await tx.material.findUnique({ where: { id: it.materialId } })
           if (!material) {
             throw new Error(`المادة "${it.itemName}" غير موجودة في قاعدة البيانات`)
           }
@@ -138,9 +129,7 @@ export async function POST(req: NextRequest) {
       }
 
       if (supplierId_ref) {
-        const supplier = await tx.supplier.findFirst({
-          where: { id: supplierId_ref, ...(companyId ? { companyId } : {}) },
-        })
+        const supplier = await tx.supplier.findUnique({ where: { id: supplierId_ref } })
         if (!supplier) {
           throw new Error('المورد المحدد غير موجود')
         }
@@ -148,11 +137,17 @@ export async function POST(req: NextRequest) {
 
       const newPurchase = await tx.purchase.create({
         data: {
-          companyId,
           supplierName: supplierName.trim(),
           supplierId_ref: supplierId_ref || null,
           invoiceNo: invoiceNo?.trim() || null,
           date: dateObj,
+          subtotal,
+          discountType: discType,
+          discountValue: discValue,
+          discountAmount,
+          taxRate: tRate,
+          taxAmount,
+          extraFees: fees,
           total,
           paid: paidAmount,
           notes: notes?.trim() || null,
@@ -190,7 +185,6 @@ export async function POST(req: NextRequest) {
 
             await tx.materialTransaction.create({
               data: {
-                companyId,
                 materialId: it.materialId,
                 warehouseId: material.warehouseId,
                 type: 'in',
@@ -209,7 +203,6 @@ export async function POST(req: NextRequest) {
       if (paidAmount > 0) {
         await tx.treasuryTransaction.create({
           data: {
-            companyId,
             type: 'withdrawal',
             amount: paidAmount,
             date: dateObj,

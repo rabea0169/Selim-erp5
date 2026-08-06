@@ -190,6 +190,11 @@ export function SaleForm({ open, onOpenChange, onSaved, customers }: SaleFormPro
         return
       }
     }
+    // التحقق من أن المدفوع لا يتجاوز الإجمالي
+    if (Number(paid) > total) {
+      toast({ title: 'تنبيه', description: `المبلغ المدفوع (${formatCurrency(Number(paid))}) يتجاوز إجمالي الفاتورة (${formatCurrency(total)})`, variant: 'destructive' })
+      return
+    }
     setSaving(true)
     try {
       await saleRepository.createWithItems({

@@ -1,14 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
-import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
-import { saleSchema } from '@/lib/validations'
-import { logAudit } from '@/lib/audit'
 
 // GET /api/sales?from=&to=&q=&page=1&limit=50
 export async function GET(req: NextRequest) {
   try {
-    const user = await getCurrentUser()
     const { searchParams } = new URL(req.url)
     const from = searchParams.get('from')
     const to = searchParams.get('to')
@@ -17,8 +13,6 @@ export async function GET(req: NextRequest) {
     const limit = Math.min(200, Math.max(1, Number(searchParams.get('limit')) || 50))
 
     const where: any = {}
-    if (user?.companyId) where.companyId = user.companyId
-
     if (from || to) {
       where.date = {}
       if (from) {
@@ -34,15 +28,10 @@ export async function GET(req: NextRequest) {
       }
     }
     if (q) {
-      where.AND = [
-        user?.companyId ? { companyId: user.companyId } : {},
-        {
-          OR: [
-            { customerName: { contains: q } },
-            { invoiceNo: { contains: q } },
-            { notes: { contains: q } },
-          ],
-        },
+      where.OR = [
+        { customerName: { contains: q } },
+        { invoiceNo: { contains: q } },
+        { notes: { contains: q } },
       ]
     }
 
@@ -70,18 +59,7 @@ export async function GET(req: NextRequest) {
 // POST /api/sales
 export async function POST(req: NextRequest) {
   try {
-    const user = await getCurrentUser()
-    const companyId = user?.companyId || null
-
     const body = await req.json()
-
-    // التحقق من البيانات باستخدام Zod
-    const validation = saleSchema.safeParse(body)
-    if (!validation.success) {
-      const errors = validation.error.issues.map((i) => i.message).join('، ')
-      return NextResponse.json({ error: errors }, { status: 400 })
-    }
-
     const {
       customerName,
       customerId_ref,
@@ -90,6 +68,10 @@ export async function POST(req: NextRequest) {
       items,
       paid,
       notes,
+      discountType,
+      discountValue,
+      taxRate,
+      extraFees,
     } = body
 
     if (!customerName?.trim()) {
@@ -113,12 +95,22 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'أضف صنفاً صحيحاً واحداً على الأقل' }, { status: 400 })
     }
 
-    const total = validItems.reduce(
+    const subtotal = validItems.reduce(
       (sum: number, it: any) => sum + Number(it.quantity) * Number(it.unitPrice),
       0
     )
+    const discType = discountType || null
+    const discValue = Number(discountValue) || 0
+    const discountAmount = discType === 'percentage'
+      ? subtotal * (discValue / 100)
+      : discValue
+    const tRate = Number(taxRate) || 0
+    const taxAmount = (subtotal - discountAmount) * (tRate / 100)
+    const fees = Number(extraFees) || 0
+    const total = subtotal - discountAmount + taxAmount + fees
     const paidAmount = Number(paid) || 0
 
+    // F5-02 fix: التحقق من أن المدفوع لا يتجاوز الإجمالي ولا يكون سالباً
     if (paidAmount < 0) {
       return NextResponse.json({ error: 'المبلغ المدفوع لا يمكن أن يكون سالباً' }, { status: 400 })
     }
@@ -127,12 +119,10 @@ export async function POST(req: NextRequest) {
     }
 
     const sale = await db.$transaction(async (tx) => {
-      // فحص المخزون داخل الـ transaction
+      // فحص المخزون داخل الـ transaction (TOCTOU fix)
       for (const it of validItems) {
         if (it.productId) {
-          const product = await tx.product.findFirst({
-            where: { id: it.productId, ...(companyId ? { companyId } : {}) },
-          })
+          const product = await tx.product.findUnique({ where: { id: it.productId } })
           if (!product) {
             throw new Error(`المنتج "${it.itemName}" غير موجود في قاعدة البيانات`)
           }
@@ -144,9 +134,7 @@ export async function POST(req: NextRequest) {
 
       // التحقق من العميل داخل الـ transaction
       if (customerId_ref) {
-        const customer = await tx.customer.findFirst({
-          where: { id: customerId_ref, ...(companyId ? { companyId } : {}) },
-        })
+        const customer = await tx.customer.findUnique({ where: { id: customerId_ref } })
         if (!customer) {
           throw new Error('العميل المحدد غير موجود')
         }
@@ -154,11 +142,17 @@ export async function POST(req: NextRequest) {
 
       const newSale = await tx.sale.create({
         data: {
-          companyId,
           customerName: customerName.trim(),
           customerId_ref: customerId_ref || null,
           invoiceNo: invoiceNo?.trim() || null,
           date: dateObj,
+          subtotal,
+          discountType: discType,
+          discountValue: discValue,
+          discountAmount,
+          taxRate: tRate,
+          taxAmount,
+          extraFees: fees,
           total,
           paid: paidAmount,
           notes: notes?.trim() || null,
@@ -190,7 +184,6 @@ export async function POST(req: NextRequest) {
       if (paidAmount > 0) {
         await tx.treasuryTransaction.create({
           data: {
-            companyId,
             type: 'deposit',
             amount: paidAmount,
             date: dateObj,
@@ -205,14 +198,6 @@ export async function POST(req: NextRequest) {
 
       return newSale
     })
-
-    logAudit({
-      action: 'CREATE',
-      entityType: 'Sale',
-      entityId: sale.id,
-      description: `إنشاء فاتورة مبيعات للعميل ${sale.customerName} بقيمة ${sale.total} ج.م`,
-      metadata: { total: sale.total, paid: sale.paid, invoiceNo: sale.invoiceNo },
-    }).catch(() => {})
 
     return NextResponse.json({ sale })
   } catch (e) {

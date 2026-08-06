@@ -1,70 +1,60 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
 import { requireAdmin } from '@/lib/admin-check'
-import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
 
-// حقول مستبعدة من التصدير
+// حقول مستبعدة من التصدير (مثل كلمة المرور)
 const EXCLUDED_FIELDS: Record<string, string[]> = {
   user: ['passwordHash'],
 }
 
-// حقول مسموحة بتصديرها
+// حقول مسموحة بتصديرها (للأمان)
 const EXPORT_SELECT: Record<string, any> = {
-  factorySettings: { id: true, companyId: true, factoryName: true, taxNumber: true, commercialRegister: true, phone: true, address: true, logo: true, notes: true, createdAt: true, updatedAt: true },
-  worker: { id: true, companyId: true, name: true, phone: true, job: true, type: true, dailyWage: true, monthlySalary: true, notes: true, createdAt: true, updatedAt: true },
-  workerAdvance: { id: true, companyId: true, workerId: true, amount: true, date: true, notes: true, createdAt: true },
-  workerReceipt: { id: true, companyId: true, workerId: true, amount: true, date: true, notes: true, createdAt: true },
-  workerAttendance: { id: true, companyId: true, workerId: true, date: true, checkIn: true, checkOut: true, status: true, notes: true, createdAt: true },
-  production: { id: true, companyId: true, workerId: true, date: true, modelName: true, quantity: true, unitPrice: true, total: true, notes: true, createdAt: true, productId: true, addToInventory: true },
-  customer: { id: true, companyId: true, name: true, phone: true, address: true, notes: true, createdAt: true },
-  supplier: { id: true, companyId: true, name: true, phone: true, address: true, notes: true, createdAt: true },
-  sale: { id: true, companyId: true, invoiceNo: true, customerName: true, customerId_ref: true, date: true, total: true, paid: true, notes: true, createdAt: true, updatedAt: true },
+  factorySettings: { id: true, factoryName: true, factoryNameEn: true, slogan: true, phone: true, whatsapp: true, email: true, address: true, taxNumber: true, commercialRegister: true, logo: true, currency: true, invoicePrefix: true, invoiceFooter: true, defaultPaperSize: true, taxRate: true, createdAt: true, updatedAt: true },
+  worker: { id: true, name: true, phone: true, job: true, type: true, hourlyRate: true, overtimeRate: true, workStartTime: true, workHoursPerDay: true, monthlySalary: true, notes: true, createdAt: true, updatedAt: true },
+  workerAdvance: { id: true, workerId: true, companyId: true, amount: true, date: true, notes: true, createdAt: true },
+  workerReceipt: { id: true, workerId: true, companyId: true, amount: true, date: true, notes: true, createdAt: true },
+  workerAttendance: { id: true, workerId: true, date: true, checkIn: true, checkOut: true, status: true, notes: true, workHours: true, overtimeHours: true, lateMinutes: true, createdAt: true },
+  production: { id: true, workerId: true, date: true, modelName: true, quantity: true, unitPrice: true, total: true, productId: true, addToInventory: true, notes: true, createdAt: true },
+  customer: { id: true, name: true, phone: true, address: true, notes: true, creditLimit: true, loyaltyPoints: true, openingBalance: true, createdAt: true },
+  supplier: { id: true, name: true, phone: true, address: true, notes: true, creditLimit: true, openingBalance: true, createdAt: true },
+  sale: { id: true, invoiceNo: true, customerName: true, customerId_ref: true, date: true, subtotal: true, discountType: true, discountValue: true, discountAmount: true, taxRate: true, taxAmount: true, extraFees: true, total: true, paid: true, notes: true, createdAt: true, updatedAt: true },
   saleItem: { id: true, saleId: true, itemName: true, productId: true, priceType: true, quantity: true, unitPrice: true, total: true },
-  purchase: { id: true, companyId: true, invoiceNo: true, supplierName: true, supplierId_ref: true, date: true, total: true, paid: true, notes: true, createdAt: true, updatedAt: true },
+  purchase: { id: true, invoiceNo: true, supplierName: true, supplierId_ref: true, date: true, subtotal: true, discountType: true, discountValue: true, discountAmount: true, taxRate: true, taxAmount: true, extraFees: true, total: true, paid: true, notes: true, createdAt: true, updatedAt: true },
   purchaseItem: { id: true, purchaseId: true, itemName: true, materialId: true, quantity: true, unitPrice: true, total: true },
-  expenseCategory: { id: true, companyId: true, name: true, notes: true, createdAt: true },
-  expense: { id: true, companyId: true, categoryId: true, categoryName: true, amount: true, date: true, notes: true, createdAt: true },
-  treasuryTransaction: { id: true, companyId: true, type: true, amount: true, date: true, description: true, category: true, referenceType: true, referenceId: true, notes: true, createdAt: true },
-  warehouse: { id: true, companyId: true, name: true, type: true, notes: true, createdAt: true },
-  material: { id: true, companyId: true, warehouseId: true, name: true, unit: true, quantity: true, unitCost: true, minStock: true, notes: true, createdAt: true, updatedAt: true },
-  materialTransaction: { id: true, companyId: true, materialId: true, warehouseId: true, type: true, quantity: true, unitCost: true, date: true, reason: true, referenceType: true, referenceId: true, notes: true, createdAt: true },
-  product: { id: true, companyId: true, name: true, warehouseId: true, sku: true, unit: true, quantity: true, retailPrice: true, wholesalePrice: true, costPrice: true, minStock: true, notes: true, createdAt: true, updatedAt: true },
-  productionOrder: { id: true, companyId: true, orderNumber: true, productId: true, productName: true, quantity: true, completedQuantity: true, unit: true, status: true, materials: true, stages: true, date: true, expectedEndDate: true, completedDate: true, notes: true, createdAt: true, updatedAt: true },
-  payment: { id: true, companyId: true, partyId: true, partyName: true, type: true, amount: true, date: true, referenceType: true, referenceId: true, notes: true, createdAt: true },
-  saleReturn: { id: true, companyId: true, saleId: true, customerId_ref: true, customerName: true, date: true, total: true, notes: true, items: true, createdAt: true },
-  purchaseReturn: { id: true, companyId: true, purchaseId: true, supplierId_ref: true, supplierName: true, date: true, total: true, notes: true, items: true, createdAt: true },
-  auditLog: { id: true, companyId: true, action: true, entityType: true, entityId: true, description: true, userId: true, userName: true, timestamp: true },
+  expenseCategory: { id: true, name: true, notes: true, createdAt: true },
+  expense: { id: true, categoryId: true, categoryName: true, amount: true, date: true, notes: true, createdAt: true },
+  treasuryTransaction: { id: true, type: true, amount: true, date: true, description: true, category: true, referenceType: true, referenceId: true, notes: true, createdAt: true },
+  warehouse: { id: true, name: true, type: true, location: true, notes: true, createdAt: true },
+  material: { id: true, warehouseId: true, name: true, unit: true, quantity: true, unitCost: true, reorderLevel: true, notes: true, createdAt: true, updatedAt: true },
+  materialTransaction: { id: true, materialId: true, warehouseId: true, type: true, quantity: true, unitCost: true, date: true, reason: true, referenceType: true, referenceId: true, notes: true, createdAt: true },
+  product: { id: true, name: true, category: true, unit: true, wholesalePrice: true, halfWholesalePrice: true, retailPrice: true, cost: true, warehouseId: true, quantity: true, reorderLevel: true, notes: true, createdAt: true, updatedAt: true },
+  productionOrder: { id: true, orderNumber: true, productId: true, productName: true, quantity: true, completedQuantity: true, unit: true, status: true, materials: true, stages: true, date: true, expectedEndDate: true, completedDate: true, notes: true, createdAt: true, updatedAt: true },
+  payment: { id: true, type: true, partyId: true, partyName: true, invoiceId: true, invoiceNo: true, amount: true, date: true, method: true, notes: true, createdAt: true },
+  saleReturn: { id: true, returnNumber: true, saleId: true, invoiceNo: true, customerName: true, customerId_ref: true, date: true, total: true, reason: true, restockItems: true, items: true, notes: true, createdAt: true },
+  purchaseReturn: { id: true, returnNumber: true, purchaseId: true, invoiceNo: true, supplierName: true, supplierId_ref: true, date: true, total: true, reason: true, restockItems: true, items: true, notes: true, createdAt: true },
+  auditLog: { id: true, userId: true, userName: true, action: true, entityType: true, entityId: true, description: true, metadata: true, timestamp: true },
 }
 
-export async function POST(req: NextRequest) {
+// Fix O: Changed from GET to POST
+export async function POST(_req: NextRequest) {
   try {
     const admin = await requireAdmin()
     if (!admin.ok) {
       return NextResponse.json({ error: admin.error }, { status: admin.status })
     }
 
-    const body = await req.json().catch(() => ({}))
-    const { since } = body || {}
-
-    const user = await getCurrentUser()
-    const whereCompany = user?.companyId ? { companyId: user.companyId } : {}
-    const dateFilter = since && !isNaN(new Date(since).getTime()) ? { updatedAt: { gte: new Date(since) } } : {}
-
     const data: Record<string, any[]> = {}
 
     for (const [table, select] of Object.entries(EXPORT_SELECT)) {
       try {
+        // auditLog يستخدم timestamp بدل createdAt
         const orderByField = table === 'auditLog' ? { timestamp: 'asc' as const } : { createdAt: 'asc' as const }
-        const isChildItem = table === 'saleItem' || table === 'purchaseItem'
-        const filterWhere = isChildItem ? {} : { ...whereCompany, ...dateFilter }
-
         const records = await (db as any)[table].findMany({
-          where: filterWhere,
           orderBy: orderByField,
           select,
         })
-        
+        // تحويل التواريخ لـ ISO string
         data[table] = records.map((r: any) => {
           const processed: any = {}
           for (const [key, value] of Object.entries(r)) {

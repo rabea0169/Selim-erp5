@@ -85,10 +85,16 @@ export function ReportTabs({ data }: ReportTabsProps) {
             <Row label="إجمالي المبيعات" value={formatCurrency(data.summary.salesTotal)} color="emerald" />
             <Row label="المحصل من المبيعات" value={formatCurrency(data.summary.salesPaid)} color="blue" />
             <Row label="متبقي المبيعات" value={formatCurrency(data.summary.salesRemaining)} color="amber" />
+            {data.summary.saleReturnsTotal > 0 && (
+              <Row label="مرتجعات المبيعات" value={`- ${formatCurrency(data.summary.saleReturnsTotal)}`} color="rose" />
+            )}
             <div className="h-px bg-slate-100 my-1" />
             <Row label="إجمالي المشتريات" value={formatCurrency(data.summary.purchasesTotal)} color="amber" />
             <Row label="المدفوع للموردين" value={formatCurrency(data.summary.purchasesPaid)} color="blue" />
             <Row label="متبقي للموردين" value={formatCurrency(data.summary.purchasesRemaining)} color="rose" />
+            {data.summary.purchaseReturnsTotal > 0 && (
+              <Row label="مرتجعات المشتريات" value={formatCurrency(data.summary.purchaseReturnsTotal)} color="emerald" />
+            )}
             <div className="h-px bg-slate-100 my-1" />
             <Row label="إجمالي المصاريف" value={formatCurrency(data.summary.expensesTotal)} color="rose" />
             <Row label="سلف الموظفين" value={formatCurrency(data.summary.advancesTotal)} color="purple" />
