@@ -1,9 +1,8 @@
 'use client'
 
-import { useState, useRef } from 'react'
-import { Factory, Database, LogOut, Printer, Search, Bell, Sun, Moon, Wifi, WifiOff, X } from 'lucide-react'
+import { useState, useRef, useEffect } from 'react'
+import { Factory, Database, LogOut, Printer, Search, Sun, Moon, SlidersHorizontal, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
   Dialog,
@@ -12,11 +11,10 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog'
-import { useToast } from '@/hooks/use-toast'
 import { globalSearchService, type SearchResult } from '@/lib/db'
 import { useTheme } from '@/lib/use-theme'
 import { useConnectionStatus } from '@/lib/use-connection-status'
-import { formatCurrency, formatDate } from '@/lib/format'
+import { formatCurrency } from '@/lib/format'
 import type { TabKey } from './BottomNav'
 
 interface HeaderProps {
@@ -45,6 +43,24 @@ export function Header({
   const [searchResults, setSearchResults] = useState<SearchResult[]>([])
   const [searching, setSearching] = useState(false)
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // حالة قائمة الضبط والإعدادات للعمل بلمسة واحدة على الهاتف والكمبيوتر بنفس الكفاءة
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent | TouchEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    document.addEventListener('touchstart', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('touchstart', handleClickOutside)
+    }
+  }, [])
 
   const handleSearch = async (q: string) => {
     setSearchQuery(q)
@@ -120,45 +136,54 @@ export function Header({
               {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
 
-            {/* More menu */}
-            <div className="relative group">
-              <button className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 transition-colors">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10" />
-                </svg>
+            {/* زر وسلسلة قائمة الضبط والإعدادات - تعمل باللمس على الموبايل و بالنقر على الكمبيوتر */}
+            <div className="relative" ref={menuRef}>
+              <button
+                type="button"
+                onClick={() => setMenuOpen((prev) => !prev)}
+                className={cn(
+                  'w-8 h-8 rounded-lg flex items-center justify-center transition-colors',
+                  menuOpen ? 'bg-emerald-600 text-white shadow-sm' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                )}
+                title="الضبط والإعدادات"
+              >
+                <SlidersHorizontal className="w-4 h-4" />
               </button>
-              {/* Dropdown */}
-              <div className="absolute left-0 top-full mt-1 w-48 bg-white rounded-xl shadow-xl border border-slate-100 py-1 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
-                <button
-                  onClick={onOpenFactory}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
-                >
-                  <Factory className="w-4 h-4 text-amber-600" />
-                  بيانات المصنع
-                </button>
-                <button
-                  onClick={onOpenPrint}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
-                >
-                  <Printer className="w-4 h-4 text-slate-600" />
-                  إعدادات الطباعة
-                </button>
-                <button
-                  onClick={onOpenBackup}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
-                >
-                  <Database className="w-4 h-4 text-slate-600" />
-                  نسخ احتياطي
-                </button>
-                <div className="border-t border-slate-100 my-1" />
-                <button
-                  onClick={onLogout}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-rose-600 hover:bg-rose-50"
-                >
-                  <LogOut className="w-4 h-4" />
-                  تسجيل الخروج
-                </button>
-              </div>
+
+              {/* القائمة المنسدلة للضبط */}
+              {menuOpen && (
+                <div className="absolute left-0 top-full mt-1.5 w-52 bg-white rounded-2xl shadow-2xl border border-slate-100 py-1.5 z-50 animate-in fade-in zoom-in-95 duration-100 dir-rtl">
+                  <button
+                    onClick={() => { setMenuOpen(false); onOpenFactory() }}
+                    className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 active:bg-slate-100 transition-colors text-right"
+                  >
+                    <Factory className="w-4 h-4 text-amber-600 shrink-0" />
+                    بيانات المصنع والضبط
+                  </button>
+                  <button
+                    onClick={() => { setMenuOpen(false); onOpenPrint() }}
+                    className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 active:bg-slate-100 transition-colors text-right"
+                  >
+                    <Printer className="w-4 h-4 text-slate-600 shrink-0" />
+                    إعدادات الطباعة
+                  </button>
+                  <button
+                    onClick={() => { setMenuOpen(false); onOpenBackup() }}
+                    className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 active:bg-slate-100 transition-colors text-right"
+                  >
+                    <Database className="w-4 h-4 text-slate-600 shrink-0" />
+                    النسخ الاحتياطي والاستعادة
+                  </button>
+                  <div className="border-t border-slate-100 my-1" />
+                  <button
+                    onClick={() => { setMenuOpen(false); onLogout() }}
+                    className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm font-medium text-rose-600 hover:bg-rose-50 active:bg-rose-100 transition-colors text-right"
+                  >
+                    <LogOut className="w-4 h-4 shrink-0" />
+                    تسجيل الخروج
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
