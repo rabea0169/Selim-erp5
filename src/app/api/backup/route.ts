@@ -3,13 +3,20 @@ import { db } from '@/lib/db-server'
 import { requireAdmin } from '@/lib/admin-check'
 import { safeError } from '@/lib/safe-error'
 
-// GET /api/backup - تصدير كل البيانات بصيغة JSON (admin فقط)
+// GET /api/backup - تصدير بيانات الشركة الحالية فقط بصيغة JSON (admin فقط)
 export async function GET() {
   try {
     const admin = await requireAdmin()
     if (!admin.ok) {
       return NextResponse.json({ error: admin.error }, { status: admin.status })
     }
+    const companyId = admin.companyId ?? null
+
+    // Fix: عزل كامل بالشركة — الجداول الفرعية (saleItems/purchaseItems) عبر معرفات الآباء
+    const sales = await db.sale.findMany({ where: { companyId } })
+    const purchases = await db.purchase.findMany({ where: { companyId } })
+    const saleIds = sales.map((s) => s.id)
+    const purchaseIds = purchases.map((p) => p.id)
 
     const [
       workers,
@@ -19,13 +26,10 @@ export async function GET() {
       production,
       customers,
       suppliers,
-      sales,
       saleItems,
-      purchases,
       purchaseItems,
       expenseCategories,
       expenses,
-      // Fix D: Missing tables
       products,
       warehouses,
       materials,
@@ -38,36 +42,34 @@ export async function GET() {
       factorySettings,
       auditLogs,
     ] = await Promise.all([
-      db.worker.findMany(),
-      db.workerAdvance.findMany(),
-      db.workerReceipt.findMany(),
-      db.workerAttendance.findMany(),
-      db.production.findMany(),
-      db.customer.findMany(),
-      db.supplier.findMany(),
-      db.sale.findMany(),
-      db.saleItem.findMany(),
-      db.purchase.findMany(),
-      db.purchaseItem.findMany(),
-      db.expenseCategory.findMany(),
-      db.expense.findMany(),
-      // Fix D: Missing tables
-      db.product.findMany(),
-      db.warehouse.findMany(),
-      db.material.findMany(),
-      db.materialTransaction.findMany(),
-      db.treasuryTransaction.findMany(),
-      db.productionOrder.findMany(),
-      db.payment.findMany(),
-      db.saleReturn.findMany(),
-      db.purchaseReturn.findMany(),
-      db.factorySettings.findMany(),
-      db.auditLog.findMany(),
+      db.worker.findMany({ where: { companyId } }),
+      db.workerAdvance.findMany({ where: { companyId } }),
+      db.workerReceipt.findMany({ where: { companyId } }),
+      db.workerAttendance.findMany({ where: { companyId } }),
+      db.production.findMany({ where: { companyId } }),
+      db.customer.findMany({ where: { companyId } }),
+      db.supplier.findMany({ where: { companyId } }),
+      db.saleItem.findMany({ where: { saleId: { in: saleIds } } }),
+      db.purchaseItem.findMany({ where: { purchaseId: { in: purchaseIds } } }),
+      db.expenseCategory.findMany({ where: { companyId } }),
+      db.expense.findMany({ where: { companyId } }),
+      db.product.findMany({ where: { companyId } }),
+      db.warehouse.findMany({ where: { companyId } }),
+      db.material.findMany({ where: { companyId } }),
+      db.materialTransaction.findMany({ where: { companyId } }),
+      db.treasuryTransaction.findMany({ where: { companyId } }),
+      db.productionOrder.findMany({ where: { companyId } }),
+      db.payment.findMany({ where: { companyId } }),
+      db.saleReturn.findMany({ where: { companyId } }),
+      db.purchaseReturn.findMany({ where: { companyId } }),
+      db.factorySettings.findMany({ where: { companyId: companyId ?? '__none__' } }),
+      db.auditLog.findMany({ where: { companyId } }),
     ])
 
     const backup = {
-      version: 3,
+      version: 4,
       app: 'clothing-factory-management',
+      companyId,
       exportedAt: new Date().toISOString(),
       data: {
         workers,
@@ -83,7 +85,6 @@ export async function GET() {
         purchaseItems,
         expenseCategories,
         expenses,
-        // Fix D: Missing tables
         products,
         warehouses,
         materials,

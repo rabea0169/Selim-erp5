@@ -3,13 +3,14 @@ import { db } from '@/lib/db-server'
 import { requireAdmin } from '@/lib/admin-check'
 import { safeError } from '@/lib/safe-error'
 
-// POST /api/restore - استرجاع البيانات من ملف JSON (admin فقط)
+// POST /api/restore - استرجاع بيانات الشركة الحالية فقط من ملف JSON (admin فقط)
 export async function POST(req: NextRequest) {
   try {
     const admin = await requireAdmin()
     if (!admin.ok) {
       return NextResponse.json({ error: admin.error }, { status: admin.status })
     }
+    const companyId = admin.companyId ?? null
 
     const body = await req.json()
     const { data, confirm } = body
@@ -25,61 +26,69 @@ export async function POST(req: NextRequest) {
 
     // استخدام transaction لضمان إتمام العملية بالكامل أو فشلها بالكامل
     // ⚠️ ملاحظة: جدول users و auditLogs لا يتم مسحهما أو استرجاعهما (حماية الصلاحيات وسجل التدقيق)
+    // Fix: كل عمليات الحذف والإنشاء مقيدة بالشركة الحالية فقط
     await db.$transaction(async (tx) => {
-      // حذف كل البيانات الحالية بالترتيب الصحيح (للعلاقات)
+      // معرفات فواتير الشركة لحذف الجداول الفرعية (لا تحتوي companyId)
+      const companySales = await tx.sale.findMany({ where: { companyId }, select: { id: true } })
+      const companyPurchases = await tx.purchase.findMany({ where: { companyId }, select: { id: true } })
+      const saleIds = companySales.map((s) => s.id)
+      const purchaseIds = companyPurchases.map((p) => p.id)
+
+      // حذف بيانات الشركة الحالية فقط بالترتيب الصحيح (للعلاقات)
       // Children first, then parents
-      await tx.treasuryTransaction.deleteMany()
-      await tx.materialTransaction.deleteMany()
-      await tx.expense.deleteMany()
-      await tx.expenseCategory.deleteMany()
-      await tx.purchaseItem.deleteMany()
-      await tx.purchaseReturn.deleteMany()
-      await tx.purchase.deleteMany()
-      await tx.saleItem.deleteMany()
-      await tx.saleReturn.deleteMany()
-      await tx.sale.deleteMany()
-      await tx.payment.deleteMany()
-      await tx.productionOrder.deleteMany()
-      await tx.production.deleteMany()
-      await tx.product.deleteMany()
-      await tx.material.deleteMany()
-      await tx.supplier.deleteMany()
-      await tx.customer.deleteMany()
-      await tx.workerAttendance.deleteMany()
-      await tx.workerReceipt.deleteMany()
-      await tx.workerAdvance.deleteMany()
-      await tx.worker.deleteMany()
-      await tx.warehouse.deleteMany()
-      await tx.factorySettings.deleteMany()
+      await tx.treasuryTransaction.deleteMany({ where: { companyId } })
+      await tx.materialTransaction.deleteMany({ where: { companyId } })
+      await tx.expense.deleteMany({ where: { companyId } })
+      await tx.expenseCategory.deleteMany({ where: { companyId } })
+      await tx.purchaseItem.deleteMany({ where: { purchaseId: { in: purchaseIds } } })
+      await tx.purchaseReturn.deleteMany({ where: { companyId } })
+      await tx.purchase.deleteMany({ where: { companyId } })
+      await tx.saleItem.deleteMany({ where: { saleId: { in: saleIds } } })
+      await tx.saleReturn.deleteMany({ where: { companyId } })
+      await tx.sale.deleteMany({ where: { companyId } })
+      await tx.payment.deleteMany({ where: { companyId } })
+      await tx.productionOrder.deleteMany({ where: { companyId } })
+      await tx.production.deleteMany({ where: { companyId } })
+      await tx.product.deleteMany({ where: { companyId } })
+      await tx.material.deleteMany({ where: { companyId } })
+      await tx.supplier.deleteMany({ where: { companyId } })
+      await tx.customer.deleteMany({ where: { companyId } })
+      await tx.workerAttendance.deleteMany({ where: { companyId } })
+      await tx.workerReceipt.deleteMany({ where: { companyId } })
+      await tx.workerAdvance.deleteMany({ where: { companyId } })
+      await tx.worker.deleteMany({ where: { companyId } })
+      await tx.warehouse.deleteMany({ where: { companyId } })
+      if (companyId) {
+        await tx.factorySettings.deleteMany({ where: { companyId } })
+      }
 
       // إعادة إنشاء البيانات بالترتيب الصحيح (الأصول قبل الأبناء)
-      // Fix E: Added all missing tables
+      // مع فرض companyId الخاص بالشركة الحالية على كل السجلات
 
-      // FactorySettings
-      if (data.factorySettings?.length) {
-        for (const s of data.factorySettings) {
-          await tx.factorySettings.create({
-            data: {
-              id: s.id,
-              factoryName: s.factoryName,
-              factoryNameEn: s.factoryNameEn ?? null,
-              slogan: s.slogan ?? null,
-              phone: s.phone ?? null,
-              whatsapp: s.whatsapp ?? null,
-              email: s.email ?? null,
-              address: s.address ?? null,
-              taxNumber: s.taxNumber ?? null,
-              commercialRegister: s.commercialRegister ?? null,
-              logo: s.logo ?? null,
-              currency: s.currency || 'ج.م',
-              invoicePrefix: s.invoicePrefix ?? null,
-              invoiceFooter: s.invoiceFooter ?? null,
-              defaultPaperSize: s.defaultPaperSize ?? null,
-              taxRate: s.taxRate ?? null,
-              updatedAt: s.updatedAt ? new Date(s.updatedAt) : new Date(),
-            },
-          })
-        }
+      // FactorySettings (المفتاح الأساسي هو companyId)
+      if (companyId && data.factorySettings?.length) {
+        const s = data.factorySettings[0]
+        await tx.factorySettings.create({
+          data: {
+            companyId,
+            factoryName: s.factoryName,
+            factoryNameEn: s.factoryNameEn ?? null,
+            slogan: s.slogan ?? null,
+            phone: s.phone ?? null,
+            whatsapp: s.whatsapp ?? null,
+            email: s.email ?? null,
+            address: s.address ?? null,
+            taxNumber: s.taxNumber ?? null,
+            commercialRegister: s.commercialRegister ?? null,
+            logo: s.logo ?? null,
+            currency: s.currency || 'ج.م',
+            invoicePrefix: s.invoicePrefix ?? null,
+            invoiceFooter: s.invoiceFooter ?? null,
+            defaultPaperSize: s.defaultPaperSize ?? null,
+            taxRate: s.taxRate ?? null,
+            updatedAt: s.updatedAt ? new Date(s.updatedAt) : new Date(),
+          },
+        })
       }
 
       // Warehouses
@@ -88,6 +97,7 @@ export async function POST(req: NextRequest) {
           await tx.warehouse.create({
             data: {
               id: w.id,
+              companyId,
               name: w.name,
               type: w.type,
               location: w.location ?? null,
@@ -104,6 +114,7 @@ export async function POST(req: NextRequest) {
           await tx.product.create({
             data: {
               id: p.id,
+              companyId,
               name: p.name,
               category: p.category ?? null,
               unit: p.unit,
@@ -128,6 +139,7 @@ export async function POST(req: NextRequest) {
           await tx.material.create({
             data: {
               id: m.id,
+              companyId,
               name: m.name,
               unit: m.unit,
               warehouseId: m.warehouseId,
@@ -148,6 +160,7 @@ export async function POST(req: NextRequest) {
           await tx.customer.create({
             data: {
               id: c.id,
+              companyId,
               name: c.name,
               phone: c.phone ?? null,
               address: c.address ?? null,
@@ -167,6 +180,7 @@ export async function POST(req: NextRequest) {
           await tx.supplier.create({
             data: {
               id: s.id,
+              companyId,
               name: s.name,
               phone: s.phone ?? null,
               address: s.address ?? null,
@@ -185,6 +199,7 @@ export async function POST(req: NextRequest) {
           await tx.worker.create({
             data: {
               id: w.id,
+              companyId,
               name: w.name,
               phone: w.phone ?? null,
               job: w.job ?? null,
@@ -208,6 +223,7 @@ export async function POST(req: NextRequest) {
           await tx.expenseCategory.create({
             data: {
               id: c.id,
+              companyId,
               name: c.name,
               notes: c.notes ?? null,
               createdAt: new Date(c.createdAt),
@@ -222,6 +238,7 @@ export async function POST(req: NextRequest) {
           await tx.sale.create({
             data: {
               id: s.id,
+              companyId,
               invoiceNo: s.invoiceNo ?? null,
               customerName: s.customerName,
               customerId_ref: s.customerId_ref || null,
@@ -249,6 +266,7 @@ export async function POST(req: NextRequest) {
           await tx.purchase.create({
             data: {
               id: p.id,
+              companyId,
               invoiceNo: p.invoiceNo ?? null,
               supplierName: p.supplierName,
               supplierId_ref: p.supplierId_ref || null,
@@ -276,6 +294,7 @@ export async function POST(req: NextRequest) {
           await tx.production.create({
             data: {
               id: p.id,
+              companyId,
               workerId: p.workerId,
               date: new Date(p.date),
               modelName: p.modelName,
@@ -297,6 +316,7 @@ export async function POST(req: NextRequest) {
           await tx.workerAdvance.create({
             data: {
               id: a.id,
+              companyId,
               workerId: a.workerId,
               amount: Number(a.amount),
               date: new Date(a.date),
@@ -313,6 +333,7 @@ export async function POST(req: NextRequest) {
           await tx.workerReceipt.create({
             data: {
               id: r.id,
+              companyId,
               workerId: r.workerId,
               amount: Number(r.amount),
               date: new Date(r.date),
@@ -329,6 +350,7 @@ export async function POST(req: NextRequest) {
           await tx.workerAttendance.create({
             data: {
               id: a.id,
+              companyId,
               workerId: a.workerId,
               date: new Date(a.date),
               checkIn: a.checkIn ? new Date(a.checkIn) : null,
@@ -344,7 +366,7 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // SaleItems
+      // SaleItems (لا تحتوي companyId — تتبع الفاتورة الأب)
       if (data.saleItems?.length) {
         for (const it of data.saleItems) {
           await tx.saleItem.create({
@@ -362,7 +384,7 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // PurchaseItems
+      // PurchaseItems (لا تحتوي companyId — تتبع الفاتورة الأب)
       if (data.purchaseItems?.length) {
         for (const it of data.purchaseItems) {
           await tx.purchaseItem.create({
@@ -385,6 +407,7 @@ export async function POST(req: NextRequest) {
           await tx.expense.create({
             data: {
               id: e.id,
+              companyId,
               categoryId: e.categoryId,
               categoryName: e.categoryName,
               amount: Number(e.amount),
@@ -402,6 +425,7 @@ export async function POST(req: NextRequest) {
           await tx.treasuryTransaction.create({
             data: {
               id: t.id,
+              companyId,
               type: t.type,
               amount: Number(t.amount),
               date: new Date(t.date),
@@ -422,6 +446,7 @@ export async function POST(req: NextRequest) {
           await tx.materialTransaction.create({
             data: {
               id: mt.id,
+              companyId,
               materialId: mt.materialId,
               warehouseId: mt.warehouseId,
               type: mt.type,
@@ -444,6 +469,7 @@ export async function POST(req: NextRequest) {
           await tx.productionOrder.create({
             data: {
               id: po.id,
+              companyId,
               orderNumber: po.orderNumber,
               productId: po.productId,
               productName: po.productName,
@@ -470,9 +496,12 @@ export async function POST(req: NextRequest) {
           await tx.payment.create({
             data: {
               id: p.id,
+              companyId,
               type: p.type,
               partyId: p.partyId,
               partyName: p.partyName,
+              customerId: p.customerId ?? null,
+              supplierId: p.supplierId ?? null,
               invoiceId: p.invoiceId ?? null,
               invoiceNo: p.invoiceNo ?? null,
               amount: Number(p.amount),
@@ -491,6 +520,7 @@ export async function POST(req: NextRequest) {
           await tx.saleReturn.create({
             data: {
               id: sr.id,
+              companyId,
               returnNumber: sr.returnNumber,
               saleId: sr.saleId,
               invoiceNo: sr.invoiceNo ?? null,
@@ -514,6 +544,7 @@ export async function POST(req: NextRequest) {
           await tx.purchaseReturn.create({
             data: {
               id: pr.id,
+              companyId,
               returnNumber: pr.returnNumber,
               purchaseId: pr.purchaseId,
               invoiceNo: pr.invoiceNo ?? null,
@@ -534,7 +565,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: 'تم استرجاع البيانات بنجاح',
+      message: 'تم استرجاع بيانات شركتك بنجاح',
       counts: {
         workers: data.workers?.length || 0,
         customers: data.customers?.length || 0,
