@@ -1,103 +1,56 @@
+'use client'
+
 import { BaseRepository } from './base'
-import { getDB, generateId, nowISO } from '../connection'
+import { apiGet, apiPost } from '../../api-client'
 import { dataChangeEmitter } from '../live-data'
 import type { Production } from '../types'
 
+/**
+ * Production repository — API-based.
+ * GET /api/production returns { production: [...], pagination: {...} }
+ */
 class ProductionRepository extends BaseRepository<Production> {
   constructor() {
-    super('production', true)
+    super('/api/production', 'production')
   }
 
+  /** Get all production records for a specific worker */
   async getByWorker(workerId: string): Promise<Production[]> {
-    const result = await this.getByIndex('by-worker', workerId)
-    return result.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    const res: any = await apiGet('/api/production', { workerId })
+    if (Array.isArray(res)) return res as Production[]
+    if (res?.production) return res.production as Production[]
+    for (const key of Object.keys(res || {})) {
+      if (key === 'pagination') continue
+      if (Array.isArray(res[key])) return res[key] as Production[]
+    }
+    return []
   }
 
+  /** Get production records within a date range, optionally filtered by worker */
   async getByDateRange(from?: string, to?: string, workerId?: string): Promise<Production[]> {
-    let result: Production[]
-    if (from || to) {
-      const db = await this.getDB()
-      if (from && to) {
-        const toDate = new Date(to)
-        toDate.setHours(23, 59, 59, 999)
-        result = await db.getAllFromIndex('production', 'by-date', IDBKeyRange.bound(from, toDate.toISOString()))
-      } else if (from) {
-        result = await db.getAllFromIndex('production', 'by-date', IDBKeyRange.lowerBound(from))
-      } else {
-        const toDate = new Date(to!)
-        toDate.setHours(23, 59, 59, 999)
-        result = await db.getAllFromIndex('production', 'by-date', IDBKeyRange.upperBound(toDate.toISOString()))
-      }
-    } else {
-      result = await this.getAll()
-    }
+    const params: Record<string, string> = {}
+    if (from) params.from = from
+    if (to) params.to = to
+    if (workerId) params.workerId = workerId
 
-    if (workerId) {
-      result = result.filter((p) => p.workerId === workerId)
+    const res: any = await apiGet('/api/production', params)
+    if (Array.isArray(res)) return res as Production[]
+    if (res?.production) return res.production as Production[]
+    for (const key of Object.keys(res || {})) {
+      if (key === 'pagination') continue
+      if (Array.isArray(res[key])) return res[key] as Production[]
     }
-
-    return result.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    return []
   }
 
-  async createWithCalculation(data: {
-    workerId: string
-    date: string
-    modelName: string
-    quantity: number
-    unitPrice: number
-    productId?: string
-    addToInventory?: boolean
-    notes?: string
-  }): Promise<Production> {
-    const total = data.quantity * data.unitPrice
-    const now = nowISO()
-
-    // ===== ربط إنتاج العمال بالمخزون =====
-    // إذا تم تحديد منتج، أضف الكمية المنتجة لمخزون المنتجات
-    if (data.productId && data.addToInventory !== false) {
-      const db = await getDB()
-      const tx = db.transaction(['production', 'products'], 'readwrite')
-
-      const record: Production = {
-        id: generateId(),
-        workerId: data.workerId,
-        date: data.date,
-        modelName: data.modelName,
-        quantity: data.quantity,
-        unitPrice: data.unitPrice,
-        total,
-        notes: data.notes,
-        createdAt: now,
-      }
-
-      await tx.objectStore('production').add(record)
-
-      // إضافة الكمية المنتجة لمخزون المنتج
-      const product = await tx.objectStore('products').get(data.productId)
-      if (product) {
-        await tx.objectStore('products').put({
-          ...product,
-          quantity: product.quantity + data.quantity,
-          updatedAt: now,
-        })
-      }
-
-      await tx.done
-      dataChangeEmitter.notifyCreate('production')
-      dataChangeEmitter.notifyUpdate('products')
-      return record
-    }
-
-    return this.create({
-      workerId: data.workerId,
-      date: data.date,
-      modelName: data.modelName,
-      quantity: data.quantity,
-      unitPrice: data.unitPrice,
-      total,
-      notes: data.notes,
-    })
+  /** Create a production record — server handles stock update */
+  async createWithCalculation(data: any): Promise<Production> {
+    const result = await apiPost<Production>('/api/production', data)
+    dataChangeEmitter.notifyCreate('production')
+    return result
   }
 }
 
-export const productionRepository = new ProductionRepository()
+const productionRepository = new ProductionRepository()
+
+export { productionRepository }

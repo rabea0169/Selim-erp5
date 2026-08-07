@@ -3,6 +3,8 @@
 // نظام التحديث الفوري - يبث الأحداث لما تتغير البيانات
 // كل المكونات اللي بتستخدم useLiveData هتتحدث تلقائياً
 
+import { useEffect, useState, useCallback } from 'react'
+
 type EntityType =
   | 'sales' | 'purchases' | 'workers' | 'workerAdvances' | 'workerReceipts'
   | 'workerAttendance' | 'production' | 'customers' | 'suppliers'
@@ -24,9 +26,7 @@ type Listener = (event: DataChangeEvent) => void
 class DataChangeEmitter {
   private listeners = new Map<EntityType, Set<Listener>>()    
   private globalListeners = new Set<Listener>()
-  private saveTimer: ReturnType<typeof setTimeout> | null = null
 
-  // الاشتراك في تغييرات نوع معين
   subscribe(type: EntityType, listener: Listener): () => void {
     if (!this.listeners.has(type)) {
       this.listeners.set(type, new Set())
@@ -37,7 +37,6 @@ class DataChangeEmitter {
     }
   }
 
-  // الاشتراك في كل التغييرات
   subscribeAll(listener: Listener): () => void {
     this.globalListeners.add(listener)
     return () => {
@@ -45,72 +44,15 @@ class DataChangeEmitter {
     }
   }
 
-  // بث حدث تغيير + حفظ احتياطي تلقائي في Cache API + إبلاغ المزامنة
   emit(event: DataChangeEvent) {
-    // بث للمستمعين المحددين
     this.listeners.get(event.type)?.forEach((listener) => {
-      try {
-        listener(event)
-      } catch (e) {
-        console.error('Listener error:', e)
-      }
+      try { listener(event) } catch (e) { console.error('Listener error:', e) }
     })
-
-    // بث للمستمعين الشاملين
     this.globalListeners.forEach((listener) => {
-      try {
-        listener(event)
-      } catch (e) {
-        console.error('Global listener error:', e)
-      }
+      try { listener(event) } catch (e) { console.error('Global listener error:', e) }
     })
-
-    // حفظ احتياطي تلقائي في Cache API بعد 2 ثانية من آخر تغيير
-    this.scheduleCacheBackup()
-
-    // إبلاغ خدمة المزامنة بالتغيير لرفعه للسيرفر (async, non-blocking)
-    if (this._syncReady && this._syncServiceRef) {
-      this._syncServiceRef.notifyChange(event.type)
-    } else if (!this._syncLoading) {
-      // تحميل كسول لخدمة المزامنة أول مرة
-      this._syncLoading = true
-      import('./sync-service').then((mod) => {
-        this._syncServiceRef = mod.syncService
-        this._syncReady = true
-        this._syncLoading = false
-        if (mod.syncService.isEnabled()) mod.syncService.notifyChange(event.type)
-      }).catch(() => { this._syncLoading = false })
-    }
   }
 
-  private _syncReady = false
-  private _syncLoading = false
-  private _syncServiceRef: any = null
-
-  // حفظ نسخة احتياطية في Cache API (debounced)
-  private scheduleCacheBackup() {
-    if (this.saveTimer) clearTimeout(this.saveTimer)
-    this.saveTimer = setTimeout(() => {
-      this.saveToCacheAPI()
-    }, 2000)
-  }
-
-  private async saveToCacheAPI() {
-    try {
-      const { reportRepository } = await import('./repositories')
-      const data = await reportRepository.exportAll()
-      const jsonStr = JSON.stringify(data)
-      const blob = new Blob([jsonStr], { type: 'application/json' })
-      const cache = await caches.open('auto-backups')
-      // حفظ نسخة واحدة فقط (باستبدال القديمة)
-      await cache.put('/auto-backup-latest', new Response(blob))
-      console.log('[DB] ✅ Auto-saved snapshot to Cache API')
-    } catch (e) {
-      // صامت - مشكلة في الكاش مش كارثية
-    }
-  }
-
-  // دوال مساعدة لبث الأحداث
   notifyCreate(type: EntityType, id?: string) {
     this.emit({ type, action: 'create', id, timestamp: Date.now() })
   }
@@ -124,11 +66,7 @@ class DataChangeEmitter {
   }
 }
 
-// Singleton instance
 export const dataChangeEmitter = new DataChangeEmitter()
-
-// Hook للتحديث الفوري
-import { useEffect, useState, useCallback } from 'react'
 
 export function useLiveData<T>(
   fetcher: () => Promise<T>,
@@ -148,33 +86,23 @@ export function useLiveData<T>(
     let mounted = true
 
     const loadData = async () => {
-      // Already handled by the reloadFlag pattern - callers increment reloadFlag to trigger reload
       if (!mounted) return
       setLoading(true)
       setError(null)
       try {
         const result = await fetcher()
-        if (mounted) {
-          setData(result)
-        }
+        if (mounted) setData(result)
       } catch (e: any) {
-        if (mounted) {
-          setError(e.message)
-        }
+        if (mounted) setError(e.message)
       } finally {
-        if (mounted) {
-          setLoading(false)
-        }
+        if (mounted) setLoading(false)
       }
     }
 
     loadData()
 
-    // الاشتراك في التغييرات
     const unsubscribers = dependencies.map((type) =>
-      dataChangeEmitter.subscribe(type, () => {
-        loadData()
-      })
+      dataChangeEmitter.subscribe(type, () => loadData())
     )
 
     return () => {
@@ -187,7 +115,6 @@ export function useLiveData<T>(
   return { data, loading, error, reload }
 }
 
-// Hook مبسط للتحديث الفوري (بدون data - بس trigger)
 export function useDataChange(callback: () => void, dependencies: EntityType[]) {
   useEffect(() => {
     const unsubscribers = dependencies.map((type) =>

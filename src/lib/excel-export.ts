@@ -41,17 +41,15 @@ export function exportToExcel({ title, factorySettings, sheets, fileName }: Expo
     const data = [sheet.headers, ...sheet.rows]
     const ws = XLSX.utils.aoa_to_sheet(data)
 
-    // ضبط عرض الأعمدة والدعم العربي RTL
+    // ضبط عرض الأعمدة
     const colWidths = sheet.headers.map((h, i) => {
       const maxLen = Math.max(
         h.length,
         ...sheet.rows.map((row) => String(row[i] || '').length)
       )
-      return { wch: Math.min(Math.max(maxLen + 4, 12), 50) }
+      return { wch: Math.min(maxLen + 2, 50) }
     })
     ws['!cols'] = colWidths
-    if (!ws['!views']) ws['!views'] = []
-    ws['!views'].push({ RTL: true })
 
     XLSX.utils.book_append_sheet(wb, ws, sheet.name.substring(0, 31)) // حد Excel 31 حرف
   }

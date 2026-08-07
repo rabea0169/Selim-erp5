@@ -83,7 +83,7 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void })
           </div>
           <h1 className="text-2xl font-bold text-slate-800">Selim ERP</h1>
           <p className="text-sm text-slate-500 mt-1">نظام إدارة المصنع</p>
-          <p className="text-[10px] text-emerald-600 mt-1">💾 يعمل offline - بياناتك محفوظة على جهازك</p>
+          <p className="text-[10px] text-emerald-600 mt-1">☁️ بياناتك محفوظة على السيرفر بأمان</p>
         </div>
 
         {/* Card */}
@@ -224,7 +224,7 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void })
         </div>
 
         <p className="text-center text-xs text-slate-400 mt-6">
-          نظام إدارة مصنع الملابس - يعمل offline بدون إنترنت
+          نظام إدارة مصنع الملابس
         </p>
       </div>
     </div>

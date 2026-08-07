@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireCompanyScope } from '@/lib/company-scope'
 import { db } from '@/lib/db-server'
 import { safeError } from '@/lib/safe-error'
 
@@ -66,7 +65,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
 
       // 3) حذف المدفوعات المرتبطة
       await tx.payment.deleteMany({
-        where: { invoiceId: id, type: 'supplier_payment' },
+        where: { referenceType: 'purchase', referenceId: id },
       })
 
       // 4) حذف المرتجعات المرتبطة

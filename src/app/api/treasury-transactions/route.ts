@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
-import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
 
 export async function GET(req: NextRequest) {
   try {
-    const user = await getCurrentUser()
     const { searchParams } = new URL(req.url)
     const type = searchParams.get('type')
     const from = searchParams.get('from')
@@ -14,12 +12,13 @@ export async function GET(req: NextRequest) {
     const page = Math.max(1, Number(searchParams.get('page')) || 1)
     const limit = Math.min(100, Math.max(1, Number(searchParams.get('limit')) || 50))
 
+    // Fix Q: Date validation
     const fromDate = from ? new Date(from) : undefined
     const toDate = to ? new Date(to) : undefined
     if (from && isNaN(fromDate!.getTime())) return NextResponse.json({ error: 'تاريخ غير صالح' }, { status: 400 })
     if (to && isNaN(toDate!.getTime())) return NextResponse.json({ error: 'تاريخ غير صالح' }, { status: 400 })
 
-    const where: any = user?.companyId ? { companyId: user.companyId } : {}
+    const where: any = {}
     if (type) where.type = type
     if (category) where.category = category
     if (from || to) {
@@ -31,7 +30,7 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const [transactions, total] = await Promise.all([
+    const [transactions, total, summaryResult] = await Promise.all([
       db.treasuryTransaction.findMany({
         where,
         orderBy: { date: 'desc' },
@@ -39,6 +38,12 @@ export async function GET(req: NextRequest) {
         take: limit,
       }),
       db.treasuryTransaction.count({ where }),
+      db.treasuryTransaction.aggregate({
+        where,
+        _sum: {
+          amount: true,
+        },
+      }),
     ])
 
     const deposits = await db.treasuryTransaction.aggregate({
@@ -69,14 +74,12 @@ export async function GET(req: NextRequest) {
       },
     })
   } catch (e) {
-    const { error, status } = safeError(e)
-    return NextResponse.json({ error }, { status })
+    const { error, status } = safeError(e); return NextResponse.json({ error }, { status })
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const user = await getCurrentUser()
     const body = await req.json()
     const { type, amount, date, description, category, notes } = body
 
@@ -108,7 +111,6 @@ export async function POST(req: NextRequest) {
 
     const transaction = await db.treasuryTransaction.create({
       data: {
-        companyId: user?.companyId || null,
         type,
         amount: amt,
         date: new Date(date),
@@ -120,7 +122,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ transaction })
   } catch (e) {
-    const { error, status } = safeError(e)
-    return NextResponse.json({ error }, { status })
+    const { error, status } = safeError(e); return NextResponse.json({ error }, { status })
   }
 }

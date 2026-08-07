@@ -5,9 +5,9 @@ import { safeError } from '@/lib/safe-error'
 
 export async function POST(req: NextRequest) {
   try {
-    // Rate limiting: 5 محاولات دخول في 15 دقيقة لكل IP
+    // Rate limiting: 10 محاولات دخول في الدقيقة
     const ip = getClientIP(req)
-    const { limited, retryAfter } = rateLimit(`login:${ip}`, 5, 15 * 60_000)
+    const { limited, retryAfter } = rateLimit(`login:${ip}`, 10, 60_000)
     if (limited) {
       return NextResponse.json(
         { error: `محاولات كثيرة جداً. حاول بعد ${retryAfter} ثانية` },
@@ -22,15 +22,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         { error: 'اسم المستخدم وكلمة المرور مطلوبان' },
         { status: 400 }
-      )
-    }
-
-    // Rate limiting: 5 محاولات لكل اسم مستخدم في 15 دقيقة
-    const { limited: userLimited } = rateLimit(`login-user:${username.toLowerCase()}`, 5, 15 * 60_000)
-    if (userLimited) {
-      return NextResponse.json(
-        { error: `محاولات كثيرة جداً. حاول بعد ${retryAfter} ثانية` },
-        { status: 429, headers: { 'Retry-After': String(retryAfter) } }
       )
     }
 

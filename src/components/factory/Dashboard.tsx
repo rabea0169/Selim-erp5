@@ -149,7 +149,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           <span className="w-1.5 h-5 bg-emerald-500 rounded-full"></span>
           ملخص اليوم
         </h2>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           <StatCard
             label="مبيعات اليوم"
             value={todayData.summary.salesTotal}
@@ -222,7 +222,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           <span className="w-1.5 h-5 bg-emerald-500 rounded-full"></span>
           الوصول السريع
         </h2>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           {quickCards.map((c) => {
             const Icon = c.icon
             return (

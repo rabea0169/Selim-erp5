@@ -1,26 +1,19 @@
+'use client'
 import { BaseRepository } from './base'
-import { getDB, generateId, nowISO } from '../connection'
-import { materialRepository } from './warehouses'
-import type { Product, ProductionOrder, ProductionOrderItem, ProductionOrderStage } from '../types'
+import { apiPost, apiPut } from '../../api-client'
+import { dataChangeEmitter } from '../live-data'
+import type { Product, ProductionOrder, ProductionOrderStage } from '../types'
 
 class ProductRepository extends BaseRepository<Product> {
-  constructor() {
-    super('products', true)
-  }
+  constructor() { super('/api/products', 'products') }
 
   async search(query: string): Promise<Product[]> {
-    const all = await this.getAll()
-    if (!query) return all
-    const q = query.toLowerCase()
-    return all.filter((p) =>
-      p.name.toLowerCase().includes(q) ||
-      (p.category || '').toLowerCase().includes(q)
-    )
+    if (!query) return this.getAll()
+    return this.getAll({ q: query })
   }
 
   async getByWarehouse(warehouseId: string): Promise<Product[]> {
-    const db = await this.getDB() as any
-    return db.getAllFromIndex('products', 'by-warehouse', warehouseId)
+    return this.getAll({ warehouseId })
   }
 
   async getLowStock(): Promise<Product[]> {
@@ -28,76 +21,35 @@ class ProductRepository extends BaseRepository<Product> {
     return all.filter((p) => p.reorderLevel && p.quantity <= p.reorderLevel)
   }
 
-  // إضافة كمية لمنتج (بعد انتهاء التصنيع) - ذري داخل معاملة
   async addStock(productId: string, quantity: number, reason: string, referenceId?: string): Promise<void> {
-    const db = await getDB()
-    const tx = db.transaction(['products'], 'readwrite')
-    const product = await tx.objectStore('products').get(productId)
-    if (!product) throw new Error('المنتج غير موجود')
-
-    await tx.objectStore('products').put({
-      ...product,
-      quantity: product.quantity + quantity,
-      updatedAt: nowISO(),
-    })
-
-    await tx.done
+    await apiPost(`/api/products/${productId}/stock`, { quantity, type: 'in', reason, referenceId })
+    dataChangeEmitter.notifyUpdate('products')
   }
 
-  // سحب كمية من منتج (بعد البيع) - ذري داخل معاملة
   async consumeStock(productId: string, quantity: number, reason: string): Promise<void> {
-    const db = await getDB()
-    const tx = db.transaction(['products'], 'readwrite')
-    const product = await tx.objectStore('products').get(productId)
-    if (!product) throw new Error('المنتج غير موجود')
-    if (product.quantity < quantity) {
-      throw new Error(`الكمية المتاحة (${product.quantity}) أقل من المطلوب (${quantity})`)
-    }
-
-    await tx.objectStore('products').put({
-      ...product,
-      quantity: product.quantity - quantity,
-      updatedAt: nowISO(),
-    })
-
-    await tx.done
+    await apiPost(`/api/products/${productId}/stock`, { quantity, type: 'out', reason })
+    dataChangeEmitter.notifyUpdate('products')
   }
 }
 
 class ProductionOrderRepository extends BaseRepository<ProductionOrder> {
-  constructor() {
-    super('productionOrders', true)
-  }
+  constructor() { super('/api/production-orders', 'productionOrders') }
 
   async getByStatus(status: ProductionOrder['status']): Promise<ProductionOrder[]> {
-    const db = await this.getDB() as any
-    const result = await db.getAllFromIndex('productionOrders', 'by-status', status)
-    return result.sort((a: ProductionOrder, b: ProductionOrder) =>
-      new Date(b.date).getTime() - new Date(a.date).getTime()
-    )
+    return this.getAll({ status })
   }
 
   async getByProduct(productId: string): Promise<ProductionOrder[]> {
-    const db = await this.getDB() as any
-    return db.getAllFromIndex('productionOrders', 'by-product', productId)
+    return this.getAll({ productId })
   }
 
   async getByDateRange(from?: string, to?: string): Promise<ProductionOrder[]> {
-    const db = await this.getDB() as any
-    let result: ProductionOrder[]
-    if (from && to) {
-      const toDate = new Date(to)
-      toDate.setHours(23, 59, 59, 999)
-      result = await db.getAllFromIndex('productionOrders', 'by-date', IDBKeyRange.bound(from, toDate.toISOString()))
-    } else {
-      result = await this.getAll()
-    }
-    return result.sort((a: ProductionOrder, b: ProductionOrder) =>
-      new Date(b.date).getTime() - new Date(a.date).getTime()
-    )
+    const params: Record<string, string> = {}
+    if (from) params.from = from
+    if (to) params.to = to
+    return this.getAll(params)
   }
 
-  // إنشاء أمر تشغيل جديد + سحب المواد الخام تلقائياً
   async createOrder(data: {
     productId: string
     productName: string
@@ -108,163 +60,27 @@ class ProductionOrderRepository extends BaseRepository<ProductionOrder> {
     expectedEndDate?: string
     notes?: string
   }): Promise<ProductionOrder> {
-    const db = await getDB()
-    const tx = db.transaction(['productionOrders', 'materials', 'materialTransactions'], 'readwrite')
-
-    const orderNumber = `PO-${Date.now().toString().slice(-8)}`
-    const now = nowISO()
-
-    const order: ProductionOrder = {
-      id: generateId(),
-      orderNumber,
-      productId: data.productId,
-      productName: data.productName,
-      quantity: data.quantity,
-      completedQuantity: 0,
-      unit: data.unit,
-      status: 'in_progress',
-      materials: data.materials.map((m) => ({
-        id: generateId(),
-        materialId: m.materialId,
-        materialName: m.materialName,
-        quantity: m.quantity,
-        unit: m.unit,
-      })),
-      stages: data.stages.map((s) => ({
-        id: generateId(),
-        name: s.name,
-        status: 'pending' as const,
-      })),
-      date: now,
-      expectedEndDate: data.expectedEndDate,
-      notes: data.notes,
-      createdAt: now,
-      updatedAt: now,
-    }
-
-    // سحب المواد الخام من المخزن
-    for (const mat of data.materials) {
-      const material = await tx.objectStore('materials').get(mat.materialId)
-      if (!material) {
-        throw new Error(`المادة ${mat.materialName} غير موجودة`)
-      }
-      if (material.quantity < mat.quantity) {
-        throw new Error(`الكمية المتاحة من ${mat.materialName} (${material.quantity}) أقل من المطلوب (${mat.quantity})`)
-      }
-
-      // تحديث كمية المادة
-      await tx.objectStore('materials').put({
-        ...material,
-        quantity: material.quantity - mat.quantity,
-        updatedAt: now,
-      })
-
-      // تسجيل حركة السحب
-      const transaction = {
-        id: generateId(),
-        materialId: mat.materialId,
-        warehouseId: material.warehouseId,
-        type: 'out' as const,
-        quantity: mat.quantity,
-        unitCost: material.unitCost,
-        date: now,
-        reason: `أمر تشغيل ${orderNumber}`,
-        referenceType: 'production_order',
-        referenceId: order.id,
-        notes: `سحب لإنتاج ${data.productName}`,
-        createdAt: now,
-      }
-      await tx.objectStore('materialTransactions').add(transaction)
-    }
-
-    await tx.objectStore('productionOrders').add(order)
-    await tx.done
-
-    return order
+    const res = await apiPost<any>('/api/production-orders', data)
+    dataChangeEmitter.notifyCreate('productionOrders')
+    dataChangeEmitter.notifyUpdate('materials')
+    dataChangeEmitter.notifyCreate('materialTransactions')
+    return res.productionOrder || res
   }
 
-  // إكمال مرحلة في أمر التشغيل - ذري داخل معاملة
   async completeStage(orderId: string, stageId: string, workerId?: string): Promise<void> {
-    const db = await getDB()
-    const tx = db.transaction(['productionOrders'], 'readwrite')
-    const order = await tx.objectStore('productionOrders').get(orderId)
-    if (!order) throw new Error('أمر التشغيل غير موجود')
-
-    const stages = order.stages.map((s: ProductionOrderStage) => {
-      if (s.id === stageId) {
-        return {
-          ...s,
-          status: 'completed' as const,
-          completedAt: nowISO(),
-          workerId,
-        }
-      }
-      return s
-    })
-
-    await tx.objectStore('productionOrders').put({ ...order, stages, updatedAt: nowISO() })
-    await tx.done
+    await apiPut(`/api/production-orders/${orderId}`, { action: 'completeStage', stageId, workerId })
+    dataChangeEmitter.notifyUpdate('productionOrders')
   }
 
-  // بدء مرحلة - ذري داخل معاملة
   async startStage(orderId: string, stageId: string, workerId?: string): Promise<void> {
-    const db = await getDB()
-    const tx = db.transaction(['productionOrders'], 'readwrite')
-    const order = await tx.objectStore('productionOrders').get(orderId)
-    if (!order) throw new Error('أمر التشغيل غير موجود')
-
-    const stages = order.stages.map((s: ProductionOrderStage) => {
-      if (s.id === stageId) {
-        return {
-          ...s,
-          status: 'in_progress' as const,
-          startedAt: nowISO(),
-          workerId,
-        }
-      }
-      return s
-    })
-
-    await tx.objectStore('productionOrders').put({ ...order, stages, updatedAt: nowISO() })
-    await tx.done
+    await apiPut(`/api/production-orders/${orderId}`, { action: 'startStage', stageId, workerId })
+    dataChangeEmitter.notifyUpdate('productionOrders')
   }
 
-  // إكمال أمر التشغيل + إضافة الكمية لمنتج
   async completeOrder(orderId: string, completedQuantity: number): Promise<void> {
-    const db = await getDB()
-    const tx = db.transaction(['productionOrders', 'products'], 'readwrite')
-
-    const order = await tx.objectStore('productionOrders').get(orderId)
-    if (!order) throw new Error('أمر التشغيل غير موجود')
-
-    const updatedOrder: ProductionOrder = {
-      ...order,
-      completedQuantity,
-      status: 'completed',
-      completedDate: nowISO(),
-      updatedAt: nowISO(),
-      stages: order.stages.map((s) => ({
-        ...s,
-        status: 'completed' as const,
-        completedAt: s.completedAt || nowISO(),
-      })),
-    }
-
-    await tx.objectStore('productionOrders').put(updatedOrder)
-
-    // إضافة الكمية للمنتج في المخزن
-    if (order.productId) {
-      const product = await tx.objectStore('products').get(order.productId)
-      if (product) {
-        await tx.objectStore('products').put({
-          ...product,
-          quantity: product.quantity + completedQuantity,
-          updatedAt: nowISO(),
-        })
-      }
-    }
-
-    await tx.done
+    await apiPut(`/api/production-orders/${orderId}`, { action: 'completeOrder', completedQuantity })
+    dataChangeEmitter.notifyUpdate('productionOrders')
+    dataChangeEmitter.notifyUpdate('products')
   }
 }
 

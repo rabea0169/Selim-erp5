@@ -1,14 +1,14 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
-import { requireCompanyAdmin } from '@/lib/company-scope'
+import { requireAdmin } from '@/lib/admin-check'
 import { safeError } from '@/lib/safe-error'
 
-// POST /api/seed - إنشاء فئات المصاريف الافتراضية لشركة الجلسة فقط
+// POST /api/seed - إنشاء فئات المصاريف الافتراضية
 export async function POST() {
   try {
-    const scope = await requireCompanyAdmin()
-    if (!scope.ok) {
-      return NextResponse.json({ error: scope.error }, { status: scope.status })
+    const admin = await requireAdmin()
+    if (!admin.ok) {
+      return NextResponse.json({ error: admin.error }, { status: admin.status })
     }
 
     const defaultCategories = [
@@ -26,14 +26,9 @@ export async function POST() {
     const results: { name: string; created: boolean }[] = []
 
     for (const name of defaultCategories) {
-      const existing = await db.expenseCategory.findFirst({
-        where: { name, companyId: scope.companyId },
-      })
-
+      const existing = await db.expenseCategory.findFirst({ where: { name } })
       if (!existing) {
-        await db.expenseCategory.create({
-          data: { name, companyId: scope.companyId },
-        })
+        await db.expenseCategory.create({ data: { name } })
         results.push({ name, created: true })
       } else {
         results.push({ name, created: false })
@@ -41,7 +36,6 @@ export async function POST() {
     }
 
     const categories = await db.expenseCategory.findMany({
-      where: { companyId: scope.companyId },
       orderBy: { name: 'asc' },
     })
 

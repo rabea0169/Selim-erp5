@@ -1,21 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireCompanyScope } from '@/lib/company-scope'
 import { db } from '@/lib/db-server'
-
 import { safeError } from '@/lib/safe-error'
-import { workerSchema } from '@/lib/validations'
 
-// GET /api/workers?q=&page=1&limit=50
 export async function GET(req: NextRequest) {
   try {
-    const scope = await requireCompanyScope()
-    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
     const { searchParams } = new URL(req.url)
     const q = searchParams.get('q') || ''
-    const page = Math.max(1, Number(searchParams.get('page')) || 1)
-    const limit = Math.min(100, Math.max(1, Number(searchParams.get('limit')) || 50))
 
-    const where: any = scope.companyId ? { companyId: scope.companyId } : {}
+    const where: any = {}
     if (q) {
       where.OR = [
         { name: { contains: q } },
@@ -24,20 +16,16 @@ export async function GET(req: NextRequest) {
       ]
     }
 
-    const [workers, total] = await Promise.all([
-      db.worker.findMany({
-        where,
-        include: {
-          advances: { orderBy: { date: 'desc' } },
-          receipts: { orderBy: { date: 'desc' } },
-        },
-        orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * limit,
-        take: limit,
-      }),
-      db.worker.count({ where }),
-    ])
+    const workers = await db.worker.findMany({
+      where,
+      include: {
+        advances: { orderBy: { date: 'desc' } },
+        receipts: { orderBy: { date: 'desc' } },
+      },
+      orderBy: { createdAt: 'desc' },
+    })
 
+    // Calculate totals
     const workersWithTotals = workers.map((w) => {
       const totalAdvances = w.advances.reduce((s, a) => s + a.amount, 0)
       const totalReceipts = w.receipts.reduce((s, r) => s + r.amount, 0)
@@ -49,31 +37,18 @@ export async function GET(req: NextRequest) {
       }
     })
 
-    return NextResponse.json({
-      workers: workersWithTotals,
-      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
-    })
+    return NextResponse.json({ workers: workersWithTotals })
   } catch (e) {
-    const { error, status } = safeError(e)
-    return NextResponse.json({ error }, { status })
+    const { error, status } = safeError(e); return NextResponse.json({ error }, { status })
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const scope = await requireCompanyScope()
-    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
     const body = await req.json()
-
-    // التحقق من البيانات باستخدام Zod
-    const validation = workerSchema.safeParse(body)
-    if (!validation.success) {
-      const errors = validation.error.issues.map((i) => i.message).join('، ')
-      return NextResponse.json({ error: errors }, { status: 400 })
-    }
-
     const { name, phone, job, type, notes } = body
 
+    // التحقق من البيانات
     if (!name?.trim()) {
       return NextResponse.json(
         { error: 'اسم الموظف مطلوب' },
@@ -81,6 +56,7 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    // Fix S: Validate worker type strictly
     const VALID_WORKER_TYPES = ['monthly', 'production', 'hourly']
     if (type && !VALID_WORKER_TYPES.includes(type)) {
       return NextResponse.json({ error: 'نوع العامل غير صالح' }, { status: 400 })
@@ -89,7 +65,6 @@ export async function POST(req: NextRequest) {
 
     const worker = await db.worker.create({
       data: {
-        companyId: scope.companyId || null,
         name: name.trim(),
         phone: phone?.trim() || null,
         job: job?.trim() || null,
@@ -99,7 +74,6 @@ export async function POST(req: NextRequest) {
     })
     return NextResponse.json({ worker })
   } catch (e) {
-    const { error, status } = safeError(e)
-    return NextResponse.json({ error }, { status })
+    const { error, status } = safeError(e); return NextResponse.json({ error }, { status })
   }
 }

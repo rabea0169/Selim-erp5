@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireCompanyScope } from '@/lib/company-scope'
 import { db } from '@/lib/db-server'
 import { safeError } from '@/lib/safe-error'
 

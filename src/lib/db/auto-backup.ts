@@ -25,6 +25,10 @@ class AutoBackupService {
 
     // فحص كل ساعة
     this.intervalId = setInterval(() => this.checkAndDownload(), 60 * 60 * 1000)
+
+    // تنظيف النسخ القديمة من Cache API كل 24 ساعة
+    setTimeout(() => this.cleanOldCacheBackups(), 60 * 1000)
+    setInterval(() => this.cleanOldCacheBackups(), 24 * 60 * 60 * 1000)
   }
 
   stop() {

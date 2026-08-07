@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireCompanyScope } from '@/lib/company-scope'
 import { db } from '@/lib/db-server'
 import { safeError } from '@/lib/safe-error'
 
@@ -45,9 +44,6 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const scope = await requireCompanyScope()
-    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
-
     const body = await req.json()
     const { workerId, date, checkIn, checkOut, status, notes } = body
 
@@ -93,58 +89,29 @@ export async function POST(req: NextRequest) {
       })
 
       if (existing) {
-        // حساب ساعات العمل
-        const ci = checkIn ? new Date(checkIn) : existing.checkIn
-        const co = checkOut ? new Date(checkOut) : existing.checkOut
-        const workHours = ci && co ? Math.max(0, (co.getTime() - ci.getTime()) / 3600000) : null
-        const lateMinutes = ci && worker.shiftStart
-          ? Math.max(0, Math.round((ci.getTime() - new Date(worker.shiftStart).getTime()) / 60000))
-          : null
-        const overtimeHours = co && worker.shiftEnd
-          ? Math.max(0, (co.getTime() - new Date(worker.shiftEnd).getTime()) / 3600000)
-          : null
-
         // تحديث السجل الموجود
         const updated = await tx.workerAttendance.update({
           where: { id: existing.id },
           data: {
-            checkIn: ci,
-            checkOut: co,
+            checkIn: checkIn ? new Date(checkIn) : existing.checkIn,
+            checkOut: checkOut ? new Date(checkOut) : existing.checkOut,
             status: validStatus,
             notes: notes !== undefined ? (notes?.trim() || null) : existing.notes,
-            workHours,
-            lateMinutes,
-            overtimeHours,
           },
           include: { worker: true },
         })
         return { attendance: updated, updated: true }
       }
 
-      // حساب ساعات العمل للسجل الجديد
-      const ci = checkIn ? new Date(checkIn) : null
-      const co = checkOut ? new Date(checkOut) : null
-      const workHours = ci && co ? Math.max(0, (co.getTime() - ci.getTime()) / 3600000) : null
-      const lateMinutes = ci && (worker as any).shiftStart
-        ? Math.max(0, Math.round((ci.getTime() - new Date((worker as any).shiftStart).getTime()) / 60000))
-        : null
-      const overtimeHours = co && (worker as any).shiftEnd
-        ? Math.max(0, (co.getTime() - new Date((worker as any).shiftEnd).getTime()) / 3600000)
-        : null
-
       // إنشاء سجل جديد
       const record = await tx.workerAttendance.create({
         data: {
           workerId,
           date: new Date(date),
-          checkIn: ci,
-          checkOut: co,
+          checkIn: checkIn ? new Date(checkIn) : null,
+          checkOut: checkOut ? new Date(checkOut) : null,
           status: validStatus,
           notes: notes?.trim() || null,
-          workHours,
-          lateMinutes,
-          overtimeHours,
-          companyId: scope.companyId,
         },
         include: { worker: true },
       })

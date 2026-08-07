@@ -1,18 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireCompanyScope } from '@/lib/company-scope'
 import { db } from '@/lib/db-server'
-
 import { safeError } from '@/lib/safe-error'
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const scope = await requireCompanyScope()
-    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
     const { id } = await params
 
-    // جلب الفاتورة والتحقق من تبعيتها لشركة المستخدم للحماية من ثغرات IDOR
-    const sale = await db.sale.findFirst({
-      where: { id, ...(scope.companyId ? { companyId: scope.companyId } : {}) },
+    // جلب الفاتورة مع أصنافها
+    const sale = await db.sale.findUnique({
+      where: { id },
       include: { items: true },
     })
     if (!sale) {
@@ -39,7 +35,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
 
       // 3) حذف المدفوعات المرتبطة بالفاتورة
       await tx.payment.deleteMany({
-        where: { invoiceId: id },
+        where: { referenceType: 'sale', referenceId: id },
       })
 
       // 4) حذف المرتجعات المرتبطة

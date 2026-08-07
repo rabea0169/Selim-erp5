@@ -1,38 +1,43 @@
-import bcrypt from 'bcryptjs'
-import { BaseRepository } from './base'
+'use client'
+
+import { apiGet, apiPost } from '../../api-client'
 import type { User } from '../types'
 
-class UserRepository extends BaseRepository<User> {
-  constructor() {
-    super('users', true)
-  }
-
-  async getByUsername(username: string): Promise<User | undefined> {
-    const db = await this.getDB()
-    return db.getFromIndex('users', 'by-username', username)
-  }
-
+/**
+ * User repository — API-based (no IndexedDB).
+ * Handles auth/user operations via /api/auth endpoints.
+ */
+const userRepository = {
+  /** Check whether any users exist in the system */
   async hasAnyUser(): Promise<boolean> {
-    const count = await this.count()
-    return count > 0
-  }
+    const res: any = await apiGet('/api/auth/register')
+    return !!res?.hasUsers
+  },
 
+  /** Get user by username (calls register endpoint for status) */
+  async getUsername(username: string): Promise<User | undefined> {
+    const res: any = await apiGet('/api/auth/register')
+    if (!res || !res.hasUsers) return undefined
+    // Server-side lookup — this is primarily for register status check.
+    // Direct user lookup by username isn't exposed via a public endpoint;
+    // authentication is handled via verifyPassword.
+    return undefined
+  },
+
+  /** Register / create a new user with password */
   async createWithPassword(data: { username: string; password: string; name: string; role?: string }): Promise<User> {
-    const passwordHash = await bcrypt.hash(data.password, 10)
-    return this.create({
-      username: data.username,
-      passwordHash,
-      name: data.name,
-      role: (data.role as 'admin' | 'user') || 'admin',
-    })
-  }
+    return await apiPost<User>('/api/auth/register', data)
+  },
 
+  /** Verify credentials and return the user */
   async verifyPassword(username: string, password: string): Promise<User | null> {
-    const user = await this.getByUsername(username)
-    if (!user) return null
-    const valid = await bcrypt.compare(password, user.passwordHash)
-    return valid ? user : null
-  }
+    try {
+      const res: any = await apiPost('/api/auth/login', { username, password })
+      return res?.user ?? res ?? null
+    } catch {
+      return null
+    }
+  },
 }
 
-export const userRepository = new UserRepository()
+export { userRepository }

@@ -1,26 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireCompanyScope } from '@/lib/company-scope'
 import { db } from '@/lib/db-server'
-
 import { safeError } from '@/lib/safe-error'
-import { expenseSchema } from '@/lib/validations'
 
 export async function GET(req: NextRequest) {
   try {
-    const scope = await requireCompanyScope()
-    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
     const { searchParams } = new URL(req.url)
     const from = searchParams.get('from')
     const to = searchParams.get('to')
     const categoryId = searchParams.get('categoryId')
     const q = searchParams.get('q') || ''
 
+    // Fix Q: Date validation
     const fromDate = from ? new Date(from) : undefined
     const toDate = to ? new Date(to) : undefined
     if (from && isNaN(fromDate!.getTime())) return NextResponse.json({ error: 'تاريخ غير صالح' }, { status: 400 })
     if (to && isNaN(toDate!.getTime())) return NextResponse.json({ error: 'تاريخ غير صالح' }, { status: 400 })
 
-    const where: any = scope.companyId ? { companyId: scope.companyId } : {}
+    const where: any = {}
     if (from || to) {
       where.date = {}
       if (from) where.date.gte = fromDate
@@ -40,48 +36,46 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ expenses })
   } catch (e) {
-    const { error, status } = safeError(e)
-    return NextResponse.json({ error }, { status })
+    const { error, status } = safeError(e); return NextResponse.json({ error }, { status })
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const scope = await requireCompanyScope()
-    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
     const body = await req.json()
-
-    // التحقق من البيانات باستخدام Zod
-    const validation = expenseSchema.safeParse(body)
-    if (!validation.success) {
-      const errors = validation.error.issues.map((i) => i.message).join('، ')
-      return NextResponse.json({ error: errors }, { status: 400 })
-    }
-
     const { categoryId, amount, date, description, notes } = body
 
+    // التحقق من البيانات
     if (!categoryId) {
-      return NextResponse.json({ error: 'بند المصروف مطلوب' }, { status: 400 })
+      return NextResponse.json(
+        { error: 'بند المصروف مطلوب' },
+        { status: 400 }
+      )
     }
     if (!date) {
-      return NextResponse.json({ error: 'التاريخ مطلوب' }, { status: 400 })
+      return NextResponse.json(
+        { error: 'التاريخ مطلوب' },
+        { status: 400 }
+      )
     }
     const amt = Number(amount)
     if (isNaN(amt) || amt <= 0) {
-      return NextResponse.json({ error: 'المبلغ يجب أن يكون رقماً موجباً' }, { status: 400 })
+      return NextResponse.json(
+        { error: 'المبلغ يجب أن يكون رقماً موجباً' },
+        { status: 400 }
+      )
     }
 
+    // Fix C: Wrap in transaction with treasury withdrawal
     const expense = await db.$transaction(async (tx) => {
-      const cat = await tx.expenseCategory.findFirst({
-        where: { id: categoryId, ...(scope.companyId ? { companyId: scope.companyId } : {}) },
-      })
+      // التحقق من وجود الفئة
+      const cat = await tx.expenseCategory.findUnique({ where: { id: categoryId } })
       if (!cat) {
         throw new Error('فئة المصروف غير موجودة')
       }
 
-      const exp = await tx.expense.create({
+      const newExpense = await tx.expense.create({
         data: {
-          companyId: scope.companyId || null,
           categoryId,
           categoryName: cat.name,
           amount: amt,
@@ -91,29 +85,25 @@ export async function POST(req: NextRequest) {
         include: { category: true },
       })
 
+      // Create corresponding treasury withdrawal
       await tx.treasuryTransaction.create({
         data: {
-          companyId: scope.companyId || null,
           type: 'withdrawal',
           amount: amt,
-          date: new Date(date),
           description: `مصروف: ${description || cat.name}`,
-          category: 'مصاريف',
           referenceType: 'expense',
-          referenceId: exp.id,
-          notes: notes?.trim() || null,
+          referenceId: newExpense.id,
+          date: newExpense.date,
         },
       })
 
-      return exp
+      return newExpense
     })
-
     return NextResponse.json({ expense })
   } catch (e) {
     if (e instanceof Error && e.message.includes('غير موجودة')) {
       return NextResponse.json({ error: e.message }, { status: 404 })
     }
-    const { error, status } = safeError(e)
-    return NextResponse.json({ error }, { status })
+    const { error, status } = safeError(e); return NextResponse.json({ error }, { status })
   }
 }

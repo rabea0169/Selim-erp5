@@ -92,6 +92,8 @@ export interface Production {
   quantity: number
   unitPrice: number
   total: number
+  productId?: string          // ربط بالمنتج (اختياري)
+  addToInventory?: boolean   // هل يُضاف للمخزون تلقائياً
   notes?: string
   createdAt: string
 }

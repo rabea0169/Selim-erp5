@@ -1,6 +1,6 @@
 'use client'
 
-import { saleRepository, customerRepository, workerAttendanceRepository, factorySettingsRepository, workerRepository, expenseRepository, productRepository, materialRepository } from './repositories'
+import { saleRepository, customerRepository, workerAttendanceRepository, factorySettingsRepository, workerRepository, expenseRepository } from './repositories'
 import { todayStr } from '@/lib/format'
 
 export interface SmartAlert {
@@ -101,42 +101,6 @@ class AlertsService {
           actionTarget: 'expenses',
         })
       }
-
-      // 6. منتجات وصلت لحد إعادة الطلب (مخزون منخفض)
-      try {
-        const allProducts = await productRepository.getAll()
-        const lowProducts = allProducts.filter((p) => p.reorderLevel && p.quantity <= p.reorderLevel)
-        if (lowProducts.length > 0) {
-          alerts.push({
-            id: 'low-stock-products',
-            type: 'danger',
-            title: 'منتجات منخفضة',
-            message: `${lowProducts.length} منتج وصل لحد إعادة الطلب: ${lowProducts.slice(0, 3).map((p) => p.name).join('، ')}${lowProducts.length > 3 ? '...' : ''}`,
-            icon: '📦',
-            actionLabel: 'عرض المنتجات',
-            actionType: 'navigate',
-            actionTarget: 'products',
-          })
-        }
-      } catch {}
-
-      // 7. خامات وصلت لحد إعادة الطلب
-      try {
-        const allMaterials = await materialRepository.getAll()
-        const lowMaterials = allMaterials.filter((m) => m.reorderLevel && m.quantity <= m.reorderLevel)
-        if (lowMaterials.length > 0) {
-          alerts.push({
-            id: 'low-stock-materials',
-            type: 'warning',
-            title: 'خامات منخفضة',
-            message: `${lowMaterials.length} خامة وصلت لحد إعادة الطلب: ${lowMaterials.slice(0, 3).map((m) => m.name).join('، ')}${lowMaterials.length > 3 ? '...' : ''}`,
-            icon: '🏭',
-            actionLabel: 'عرض المخازن',
-            actionType: 'navigate',
-            actionTarget: 'warehouses',
-          })
-        }
-      } catch {}
     } catch (e) {
       console.error('Failed to load alerts:', e)
     }

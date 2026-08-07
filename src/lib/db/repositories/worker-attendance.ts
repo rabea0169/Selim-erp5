@@ -1,105 +1,68 @@
+'use client'
+
 import { BaseRepository } from './base'
-import { workerRepository } from './workers'
-import { calculateAttendance } from '@/lib/attendance-calc'
+import { apiGet, apiPost } from '../../api-client'
+import { dataChangeEmitter } from '../live-data'
 import type { WorkerAttendance } from '../types'
 
+/**
+ * Worker attendance repository — API-based.
+ * GET /api/attendance returns { attendance: [...], pagination: {...} }
+ */
 class WorkerAttendanceRepository extends BaseRepository<WorkerAttendance> {
   constructor() {
-    super('workerAttendance', true)
+    super('/api/attendance', 'attendance')
   }
 
+  /** Get all attendance records for a specific worker */
   async getByWorker(workerId: string): Promise<WorkerAttendance[]> {
-    const result = await this.getByIndex('by-worker', workerId)
-    return result.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    const res: any = await apiGet('/api/attendance', { workerId })
+    if (Array.isArray(res)) return res as WorkerAttendance[]
+    if (res?.attendance) return res.attendance as WorkerAttendance[]
+    // Auto-detect first array key
+    for (const key of Object.keys(res || {})) {
+      if (key === 'pagination') continue
+      if (Array.isArray(res[key])) return res[key] as WorkerAttendance[]
+    }
+    return []
   }
 
+  /** Get attendance records for a specific date */
   async getByDate(date: string): Promise<WorkerAttendance[]> {
-    const startOfDay = new Date(date)
-    startOfDay.setHours(0, 0, 0, 0)
-    const endOfDay = new Date(startOfDay)
-    endOfDay.setDate(endOfDay.getDate() + 1)
-
-    const db = await this.getDB()
-    const all = await db.getAllFromIndex(
-      'workerAttendance',
-      'by-date',
-      IDBKeyRange.bound(startOfDay.toISOString(), endOfDay.toISOString())
-    )
-    return all.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    return this.getByDateRange(date, date)
   }
 
+  /** Get attendance records within a date range, optionally filtered by worker */
   async getByDateRange(from?: string, to?: string, workerId?: string): Promise<WorkerAttendance[]> {
-    let result: WorkerAttendance[]
-    if (from || to) {
-      const db = await this.getDB()
-      if (from && to) {
-        const toDate = new Date(to)
-        toDate.setHours(23, 59, 59, 999)
-        result = await db.getAllFromIndex(
-          'workerAttendance',
-          'by-date',
-          IDBKeyRange.bound(from, toDate.toISOString())
-        )
-      } else if (from) {
-        result = await db.getAllFromIndex('workerAttendance', 'by-date', IDBKeyRange.lowerBound(from))
-      } else {
-        const toDate = new Date(to!)
-        toDate.setHours(23, 59, 59, 999)
-        result = await db.getAllFromIndex('workerAttendance', 'by-date', IDBKeyRange.upperBound(toDate.toISOString()))
-      }
-    } else {
-      result = await this.getAll()
-    }
+    const params: Record<string, string> = {}
+    if (from) params.from = from
+    if (to) params.to = to
+    if (workerId) params.workerId = workerId
 
-    if (workerId) {
-      result = result.filter((a) => a.workerId === workerId)
+    const res: any = await apiGet('/api/attendance', params)
+    if (Array.isArray(res)) return res as WorkerAttendance[]
+    if (res?.attendance) return res.attendance as WorkerAttendance[]
+    for (const key of Object.keys(res || {})) {
+      if (key === 'pagination') continue
+      if (Array.isArray(res[key])) return res[key] as WorkerAttendance[]
     }
-
-    return result.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    return []
   }
 
-  // البحث عن سجل موجود لنفس الموظف في نفس اليوم
+  /** Find existing attendance record for a worker on a specific date */
   async findExistingForDay(workerId: string, date: string): Promise<WorkerAttendance | undefined> {
-    const startOfDay = new Date(date)
-    startOfDay.setHours(0, 0, 0, 0)
-    const endOfDay = new Date(startOfDay)
-    endOfDay.setDate(endOfDay.getDate() + 1)
-
-    const db = await this.getDB()
-    const records = await db.getAllFromIndex(
-      'workerAttendance',
-      'by-date',
-      IDBKeyRange.bound(startOfDay.toISOString(), endOfDay.toISOString())
-    )
-    return records.find((r) => r.workerId === workerId)
+    const records = await this.getByDateRange(date, date, workerId)
+    return records.find(r => r.workerId === workerId && r.date === date)
   }
 
-  // حفظ أو تحديث (upsert) سجل الحضور - مع حساب الساعات تلقائياً
-  async upsert(data: Partial<WorkerAttendance> & { workerId: string; date: string }): Promise<WorkerAttendance> {
-    // جلب بيانات الموظف لحساب الساعات
-    const worker = await workerRepository.getById(data.workerId)
-
-    // دمج مع البيانات الموجودة (لو update)
-    const existing = await this.findExistingForDay(data.workerId, data.date)
-    const merged: Partial<WorkerAttendance> = existing ? { ...existing, ...data } : data
-
-    // حساب الساعات لو فيه checkIn و checkOut
-    if (merged.checkIn && merged.checkOut && worker && merged.status === 'present') {
-      const calc = calculateAttendance(
-        merged as WorkerAttendance,
-        worker
-      )
-      merged.workHours = calc.workHours
-      merged.overtimeHours = calc.overtimeHours
-      merged.lateMinutes = calc.lateMinutes
-    }
-
-    if (existing) {
-      const updated = await this.update(existing.id, merged)
-      return updated || existing
-    }
-    return this.create(merged)
+  /** Create or update attendance (server handles upsert logic) */
+  async upsert(data: any): Promise<WorkerAttendance> {
+    const result = await apiPost<WorkerAttendance>('/api/attendance', data)
+    dataChangeEmitter.notifyCreate('workerAttendance')
+    return result
   }
 }
 
-export const workerAttendanceRepository = new WorkerAttendanceRepository()
+const workerAttendanceRepository = new WorkerAttendanceRepository()
+
+export { workerAttendanceRepository }

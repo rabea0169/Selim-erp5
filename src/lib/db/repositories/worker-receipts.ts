@@ -1,101 +1,35 @@
+'use client'
 import { BaseRepository } from './base'
-import { getDB, generateId, nowISO } from '../connection'
-import { workerRepository } from './workers'
+import { apiPost, apiDelete } from '../../api-client'
+import { dataChangeEmitter } from '../live-data'
 import type { WorkerReceipt } from '../types'
 
 class WorkerReceiptRepository extends BaseRepository<WorkerReceipt> {
-  constructor() {
-    super('workerReceipts', true)
-  }
+  constructor() { super('/api/worker-receipts', 'workerReceipts') }
 
   async getByWorker(workerId: string): Promise<WorkerReceipt[]> {
-    const result = await this.getByIndex('by-worker', workerId)
-    return result.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    return this.getAll({ workerId })
   }
 
   async getByDateRange(from?: string, to?: string, workerId?: string): Promise<WorkerReceipt[]> {
-    let result = await this.getByDateRangeBase('by-date', from, to)
-    if (workerId) {
-      result = result.filter((r) => r.workerId === workerId)
-    }
-    return result.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    const params: Record<string, string> = {}
+    if (from) params.from = from
+    if (to) params.to = to
+    if (workerId) params.workerId = workerId
+    return this.getAll(params)
   }
 
-  private async getByDateRangeBase(indexName: string, from?: string, to?: string): Promise<WorkerReceipt[]> {
-    const db = await this.getDB()
-    if (from && to) {
-      const toDate = new Date(to)
-      toDate.setHours(23, 59, 59, 999)
-      return (db as any).getAllFromIndex(this.storeName, indexName, IDBKeyRange.bound(from, toDate.toISOString()))
-    } else if (from) {
-      return (db as any).getAllFromIndex(this.storeName, indexName, IDBKeyRange.lowerBound(from))
-    } else if (to) {
-      const toDate = new Date(to)
-      toDate.setHours(23, 59, 59, 999)
-      return (db as any).getAllFromIndex(this.storeName, indexName, IDBKeyRange.upperBound(toDate.toISOString()))
-    }
-    return this.getAll()
-  }
-
-  // إنشاء قبض + إيداع في الخزينة تلقائياً (معاملة ذرية)
   async create(data: Partial<WorkerReceipt>): Promise<WorkerReceipt> {
-    const now = nowISO()
-    const id = data.id || generateId()
-    const record = {
-      ...data,
-      id,
-      createdAt: (data as any).createdAt || now,
-    } as WorkerReceipt
-
-    // جلب بيانات العامل قبل بدء المعاملة لتجنب مشاكل الاتصال المتقاطع
-    let workerName = 'موظف'
-    if (record.workerId) {
-      try {
-        const worker = await workerRepository.getById(record.workerId)
-        if (worker) workerName = worker.name
-      } catch {}
-    }
-
-    const db = await getDB()
-    const tx = db.transaction(['workerReceipts', 'treasuryTransactions'], 'readwrite')
-
-    await tx.objectStore('workerReceipts').add(record)
-
-    // إيداع في الخزينة في نفس المعاملة
-    if (record.amount > 0 && record.workerId) {
-      const treasuryTx = {
-        id: generateId(),
-        type: 'deposit' as const,
-        amount: record.amount,
-        date: record.date,
-        description: `قبض من موظف - ${workerName}`,
-        category: 'قبض موظفين',
-        referenceType: 'worker_receipt',
-        referenceId: record.id,
-        notes: record.notes,
-        createdAt: nowISO(),
-      }
-      await tx.objectStore('treasuryTransactions').add(treasuryTx)
-    }
-
-    await tx.done
-    return record
+    const res = await apiPost<any>('/api/worker-receipts', data)
+    dataChangeEmitter.notifyCreate('workerReceipts')
+    dataChangeEmitter.notifyUpdate('treasuryTransactions')
+    return res.workerReceipt || res
   }
 
-  // حذف قبض + حذف المعاملة من الخزينة
   async delete(id: string): Promise<void> {
-    const db = await getDB()
-    const tx = db.transaction(['workerReceipts', 'treasuryTransactions'], 'readwrite')
-
-    const allTreasury = await tx.objectStore('treasuryTransactions').getAll()
-    for (const t of allTreasury) {
-      if (t.referenceType === 'worker_receipt' && t.referenceId === id) {
-        await tx.objectStore('treasuryTransactions').delete(t.id)
-      }
-    }
-
-    await tx.objectStore('workerReceipts').delete(id)
-    await tx.done
+    await apiDelete(`/api/worker-receipts/${id}`)
+    dataChangeEmitter.notifyDelete('workerReceipts')
+    dataChangeEmitter.notifyUpdate('treasuryTransactions')
   }
 }
 

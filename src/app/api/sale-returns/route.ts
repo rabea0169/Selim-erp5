@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireCompanyScope } from '@/lib/company-scope'
 import { db } from '@/lib/db-server'
-
+import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
 
 export async function GET(req: NextRequest) {
   try {
-    const scope = await requireCompanyScope()
-    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: 'غير مصرح' }, { status: 401 })
 
     const { searchParams } = new URL(req.url)
     const saleId = searchParams.get('saleId')
@@ -36,8 +35,8 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const scope = await requireCompanyScope()
-    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: 'غير مصرح' }, { status: 401 })
 
     const body = await req.json()
     const { saleId, date, total, reason, notes, items, returnNumber, customerName } = body
@@ -95,13 +94,6 @@ export async function POST(req: NextRequest) {
           description: `مرتجع مبيعات - ${sale.customerName}`,
           category: 'مرتجعات', referenceType: 'sale_return', referenceId: saleReturn.id,
         },
-      })
-
-      // تحديث sale.paid — تنقص بقيمة المرتجع (المبلغ أُعيد للعميل)
-      const newPaid = Math.max(0, sale.paid - Number(total))
-      await tx.sale.update({
-        where: { id: saleId },
-        data: { paid: newPaid },
       })
 
       return saleReturn

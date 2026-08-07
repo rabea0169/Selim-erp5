@@ -104,7 +104,7 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
         {/* Safe area for iPhone */}
         <div className="h-[env(safe-area-inset-bottom)] bg-white" />
 
-        <div className="max-w-2xl md:max-w-5xl lg:max-w-7xl mx-auto px-1 sm:px-4 md:px-6 lg:px-8">
+        <div className="max-w-2xl mx-auto px-1">
           <div className="grid grid-cols-5 gap-0.5 py-1">
             {visibleItems.map((item) => {
               const Icon = item.icon

@@ -1,32 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
-import { requireCompanyScope } from '@/lib/company-scope'
 import { safeError } from '@/lib/safe-error'
-import { customerSchema } from '@/lib/validations'
 
 export async function GET(req: NextRequest) {
   try {
-    const scope = await requireCompanyScope()
-    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
     const { searchParams } = new URL(req.url)
     const q = searchParams.get('q') || ''
-
     const where: any = {}
-    where.companyId = scope.companyId
-
     if (q) {
-      where.AND = [
-        { companyId: scope.companyId },
-        {
-          OR: [
-            { name: { contains: q } },
-            { phone: { contains: q } },
-            { address: { contains: q } },
-          ],
-        },
+      where.OR = [
+        { name: { contains: q } },
+        { phone: { contains: q } },
+        { address: { contains: q } },
       ]
     }
-
     const customers = await db.customer.findMany({
       where,
       include: {
@@ -61,17 +48,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const scope = await requireCompanyScope()
-    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
     const body = await req.json()
-
-    // التحقق من البيانات باستخدام Zod
-    const validation = customerSchema.safeParse(body)
-    if (!validation.success) {
-      const errors = validation.error.issues.map((i) => i.message).join('، ')
-      return NextResponse.json({ error: errors }, { status: 400 })
-    }
-
     const { name, phone, address, notes } = body
 
     if (!name?.trim()) {
@@ -83,7 +60,6 @@ export async function POST(req: NextRequest) {
 
     const customer = await db.customer.create({
       data: {
-        companyId: scope.companyId || null,
         name: name.trim(),
         phone: phone?.trim() || null,
         address: address?.trim() || null,

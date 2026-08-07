@@ -1,21 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireCompanyScope } from '@/lib/company-scope'
 import { db } from '@/lib/db-server'
-
 import { safeError } from '@/lib/safe-error'
 
 // GET /api/materials?q=&warehouseId=&page=1&limit=50
 export async function GET(req: NextRequest) {
   try {
-    const scope = await requireCompanyScope()
-    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
     const { searchParams } = new URL(req.url)
     const q = searchParams.get('q') || ''
     const warehouseId = searchParams.get('warehouseId')
     const page = Math.max(1, Number(searchParams.get('page')) || 1)
     const limit = Math.min(200, Math.max(1, Number(searchParams.get('limit')) || 50))
 
-    const where: any = scope.companyId ? { companyId: scope.companyId } : {}
+    const where: any = {}
     if (warehouseId) where.warehouseId = warehouseId
     if (q) where.name = { contains: q }
 
@@ -43,8 +39,6 @@ export async function GET(req: NextRequest) {
 // POST /api/materials
 export async function POST(req: NextRequest) {
   try {
-    const scope = await requireCompanyScope()
-    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
     const body = await req.json()
     const { name, unit, warehouseId, quantity, unitCost, reorderLevel, notes } = body
 
@@ -65,17 +59,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'سعر الوحدة لا يمكن أن يكون سالباً' }, { status: 400 })
     }
 
-    // التحقق من أن المخزن تابع لنفس الشركة
-    const warehouse = await db.warehouse.findFirst({
-      where: { id: warehouseId, ...(scope.companyId ? { companyId: scope.companyId } : {}) },
-    })
+    const warehouse = await db.warehouse.findUnique({ where: { id: warehouseId } })
     if (!warehouse) {
       return NextResponse.json({ error: 'المخزن المحدد غير موجود' }, { status: 404 })
     }
 
     const material = await db.material.create({
       data: {
-        companyId: scope.companyId || null,
         name: name.trim(),
         unit: unit.trim(),
         warehouseId,

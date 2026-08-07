@@ -15,6 +15,98 @@ class SyncService {
   private _lastPullTime = 0
   private _isSyncing = false
 
+  // خريطة تحويل: أسماء Prisma (مفرد من السيرفر) ← أسماء IndexedDB (جمع محلي)
+  private static SERVER_TO_LOCAL_MAP: Record<string, string> = {
+    factorySettings: 'factorySettings',
+    worker: 'workers',
+    workerAdvance: 'workerAdvances',
+    workerReceipt: 'workerReceipts',
+    workerAttendance: 'workerAttendance',
+    production: 'production',
+    customer: 'customers',
+    supplier: 'suppliers',
+    sale: 'sales',
+    saleItem: 'saleItems',
+    purchase: 'purchases',
+    purchaseItem: 'purchaseItems',
+    expenseCategory: 'expenseCategories',
+    expense: 'expenses',
+    treasuryTransaction: 'treasuryTransactions',
+    warehouse: 'warehouses',
+    material: 'materials',
+    materialTransaction: 'materialTransactions',
+    product: 'products',
+    productionOrder: 'productionOrders',
+    payment: 'payments',
+    saleReturn: 'saleReturns',
+    purchaseReturn: 'purchaseReturns',
+    auditLog: 'auditLogs',
+  }
+
+  // تحويل أسماء الجداول القادمة من السيرفر لأسماء IndexedDB المحلية
+  // + استخراج العناصر المضمنة (items) من المرتجعات
+  private convertServerToLocalKeys(serverData: Record<string, any[]>): Record<string, any[]> {
+    const localData: Record<string, any[]> = {}
+    const returnItems: { saleReturnItems: any[]; purchaseReturnItems: any[] } = { saleReturnItems: [], purchaseReturnItems: [] }
+
+    for (const [serverKey, records] of Object.entries(serverData)) {
+      const localKey = SyncService.SERVER_TO_LOCAL_MAP[serverKey]
+      if (localKey) {
+        // معالجة المرتجعات: استخراج items المضمنة
+        if (serverKey === 'saleReturn') {
+          for (const rec of records as any[]) {
+            if (Array.isArray(rec.items) && rec.items.length > 0) {
+              for (const item of rec.items) {
+                returnItems.saleReturnItems.push({
+                  id: item.id,
+                  returnId: rec.id,
+                  saleItemId: item.saleItemId,
+                  itemName: item.itemName,
+                  productId: item.productId,
+                  quantity: item.quantity,
+                  unitPrice: item.unitPrice,
+                  total: item.total,
+                })
+              }
+            }
+          }
+        }
+        if (serverKey === 'purchaseReturn') {
+          for (const rec of records as any[]) {
+            if (Array.isArray(rec.items) && rec.items.length > 0) {
+              for (const item of rec.items) {
+                returnItems.purchaseReturnItems.push({
+                  id: item.id,
+                  returnId: rec.id,
+                  purchaseItemId: item.purchaseItemId,
+                  itemName: item.itemName,
+                  materialId: item.materialId,
+                  quantity: item.quantity,
+                  unitPrice: item.unitPrice,
+                  total: item.total,
+                })
+              }
+            }
+          }
+        }
+        localData[localKey] = records
+      } else {
+        console.warn(`[Sync] No mapping for server key: ${serverKey}`)
+        localData[serverKey] = records
+      }
+    }
+
+    // إضافة عناصر المرتجعات كجداول منفصلة
+    if (returnItems.saleReturnItems.length > 0) {
+      localData['saleReturnItems'] = returnItems.saleReturnItems
+    }
+    if (returnItems.purchaseReturnItems.length > 0) {
+      localData['purchaseReturnItems'] = returnItems.purchaseReturnItems
+    }
+
+    return localData
+  }
+
   // قائمة بأنواع البيانات لإعلامها
   private static ALL_TYPES = [
     'sales', 'purchases', 'workers', 'workerAdvances', 'workerReceipts',
@@ -49,10 +141,7 @@ class SyncService {
     if (!this.isEnabled()) return
     if (this.intervalId) return // Already running
 
-    // مزامنة فورية قصيرة بعد تسجيل الدخول لرفع أي بيانات محلية معلقة
-    setTimeout(() => { this.sync() }, 1000)
-
-    // مزامنة كل 2 دقيقة
+    // مزامنة كل 2 دقيقة (بدون مزامنة فورية — initialPull يعملها أول)
     this.intervalId = setInterval(() => { this.sync() }, 2 * 60 * 1000)
 
     // مزامنة عند العودة online
@@ -80,27 +169,8 @@ class SyncService {
         localCount += (records as any[]).length
       }
 
-      // إذا يوجد بيانات محلية على هذا الجهاز، ارفعها أولاً حتى لا تبقى حبيسة الجهاز
-      if (localCount > 0) {
-        try {
-          const pushResponse = await fetch('/api/sync/push', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ data: localData.data }),
-          })
-          if (pushResponse.ok) {
-            const pushRes = await pushResponse.json()
-            let pushed = 0
-            for (const result of Object.values(pushRes.results || {}) as Array<{ success: number; failed: number }>) {
-              pushed += result.success
-            }
-            console.log(`✅ Initial push: ${pushed} local records uploaded before pull`)
-          }
-        } catch (pushErr: any) {
-          console.warn('Initial push failed (will retry by auto sync):', pushErr.message)
-        }
-      }
-
+      // إذا عندك بيانات محلية، اسحب من السيرفر ودمج
+      // إذا مفيش بيانات محلية، اسحب كل حاجة
       const r = await fetch('/api/sync/pull', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -118,8 +188,9 @@ class SyncService {
       }
 
       if (serverCount > 0) {
-        // دمج بيانات السيرفر مع البيانات المحلية
-        await reportRepository.importAll({ data: res.data })
+        // تحويل أسماء الجداول من السيرفر (مفرد) للمحلي (جمع) ثم دمج
+        const convertedData = this.convertServerToLocalKeys(res.data)
+        await reportRepository.importAll({ data: convertedData })
         this._lastPullTime = Date.now()
         // إشعار مجمّع — مرة واحدة فقط
         this.notifyAllTypes()
@@ -242,8 +313,9 @@ class SyncService {
 
           if (pulled > 0 || localCount === 0) {
             if (!skipPull) {
-              // importAll الآن يعمل merge (لا يمسح البيانات المحلية)
-              await reportRepository.importAll({ data: pullRes.data })
+              // تحويل أسماء الجداول من أسماء Prisma (مفرد) لأسماء IndexedDB (جمع)
+              const convertedData = this.convertServerToLocalKeys(pullRes.data)
+              await reportRepository.importAll({ data: convertedData })
               this._lastPullTime = Date.now()
               console.log('✅ Sync pull complete:', { pulled })
               // إشعار مجمّع
@@ -252,12 +324,12 @@ class SyncService {
               console.log('⏭️ Sync pull skipped: initialPull was recent')
             }
           }
-
-          localStorage.setItem(SYNC_STATUS_KEY, String(Date.now()))
-          this.pendingChanges.clear()
-          console.log('✅ Sync complete:', { pushed, pulled })
-          return { success: true, pushed, pulled }
         }
+
+        localStorage.setItem(SYNC_STATUS_KEY, String(Date.now()))
+        this.pendingChanges.clear()
+        console.log('✅ Sync complete:', { pushed, pulled })
+        return { success: true, pushed, pulled: pulled || 0 }
       } catch (pullErr: any) {
         console.warn('Sync pull failed (local data preserved):', pullErr.message)
       }
@@ -338,17 +410,12 @@ class SyncService {
 
       if (count > 0 || localCount === 0) {
         if (res.data) {
-          // importAll الآن يعمل merge (لا يمسح البيانات المحلية)
-          const importResult = await reportRepository.importAll({ data: res.data })
+          // تحويل أسماء الجداول من السيرفر (مفرد) للمحلي (جمع)
+          const convertedData = this.convertServerToLocalKeys(res.data)
+          await reportRepository.importAll({ data: convertedData })
           this._lastPullTime = Date.now()
-          // استخدم عدد السجلات المستوردة فعلاً بدلاً من عدد السجلات القادمة من السيرفر فقط
-          count = importResult?.counts?.totalImported ?? count
           // إشعار مجمّع
           this.notifyAllTypes()
-          // إعادة تحميل الصفحة بعد الاستيراد اليدوي لضمان قراءة الواجهة للسجلات الجديدة
-          if (typeof window !== 'undefined') {
-            setTimeout(() => window.location.reload(), 600)
-          }
         }
       } else {
         console.log('⏭️ Pull skipped: server empty, local data preserved')

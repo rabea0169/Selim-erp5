@@ -1,44 +1,33 @@
 'use client'
 
-import { getDB, generateId, nowISO } from '../connection'
 import type { AuditLogEntry } from '../types'
 
-export type { AuditLogEntry }
+/**
+ * Audit log repository — no-op stub for server mode.
+ * The server handles audit logging internally; the client does not
+ * need to read or write audit logs directly.
+ */
+const auditLogRepository = {
+  /** Log an entry — server handles this automatically */
+  async log(_entry: Omit<AuditLogEntry, 'id' | 'timestamp'>): Promise<void> {
+    // No-op: audit logging is handled server-side
+  },
 
-class AuditLogRepository {
-  async log(entry: Omit<AuditLogEntry, 'id' | 'timestamp'>): Promise<void> {
-    try {
-      const db = await getDB()
-      const logEntry: AuditLogEntry = {
-        ...entry,
-        id: generateId(),
-        timestamp: nowISO(),
-      }
-      await db.add('auditLogs', logEntry)
-    } catch (e) {
-      console.error('Failed to log audit:', e)
-    }
-  }
+  /** Get all audit log entries */
+  async getAll(_limit?: number): Promise<AuditLogEntry[]> {
+    // No dedicated audit log API endpoint
+    return []
+  },
 
-  async getAll(limit: number = 100): Promise<AuditLogEntry[]> {
-    const db = await getDB()
-    const all = await db.getAll('auditLogs')
-    return all.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).slice(0, limit)
-  }
+  /** Get audit log entries for a specific entity */
+  async getByEntity(_type: string, _id?: string): Promise<AuditLogEntry[]> {
+    return []
+  },
 
-  async getByEntity(entityType: string, entityId?: string): Promise<AuditLogEntry[]> {
-    const all = await this.getAll(1000)
-    return all.filter((log) => {
-      if (log.entityType !== entityType) return false
-      if (entityId && log.entityId !== entityId) return false
-      return true
-    })
-  }
-
+  /** Clear all audit logs */
   async clear(): Promise<void> {
-    const db = await getDB()
-    await db.clear('auditLogs')
-  }
+    // No-op: server manages audit log retention
+  },
 }
 
-export const auditLogRepository = new AuditLogRepository()
+export { auditLogRepository }

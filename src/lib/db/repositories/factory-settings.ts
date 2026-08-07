@@ -1,10 +1,11 @@
-import { getDB, nowISO } from '../connection'
+'use client'
+
+import { apiGet, apiPut } from '../../api-client'
+import { dataChangeEmitter } from '../live-data'
 import type { FactorySettings } from '../types'
 
-const SETTINGS_ID = 'singleton'
-
-const DEFAULT_SETTINGS: FactorySettings = {
-  id: SETTINGS_ID,
+/** Default factory settings used for reset */
+const DEFAULT_SETTINGS: Omit<FactorySettings, 'id' | 'updatedAt'> = {
   factoryName: 'مصنع الملابس',
   factoryNameEn: 'Clothing Factory',
   slogan: '',
@@ -16,48 +17,43 @@ const DEFAULT_SETTINGS: FactorySettings = {
   commercialRegister: '',
   logo: '',
   currency: 'ج.م',
-  invoicePrefix: 'INV-',
-  invoiceFooter: 'شكراً لتعاملكم معنا',
-  defaultPaperSize: 'A4',
-  updatedAt: '',
+  invoicePrefix: '',
+  invoiceFooter: '',
+  defaultPaperSize: 'a4',
 }
 
-class FactorySettingsRepository {
+/**
+ * Factory settings repository — singleton API-based pattern.
+ * GET /api/factory-settings returns the settings object directly.
+ */
+const factorySettingsRepository = {
+  /** Get the current factory settings */
   async get(): Promise<FactorySettings> {
-    const db = await getDB()
-    const settings = await db.get('factorySettings', SETTINGS_ID)
-    if (!settings) {
-      // إنشاء الإعدادات الافتراضية لو مش موجودة
-      const defaults = { ...DEFAULT_SETTINGS, updatedAt: nowISO() }
-      await db.put('factorySettings', defaults)
-      return defaults
-    }
-    return settings
-  }
+    return await apiGet<FactorySettings>('/api/factory-settings')
+  },
 
+  /** Update factory settings (partial or full) */
   async update(data: Partial<FactorySettings>): Promise<FactorySettings> {
-    const db = await getDB()
-    const current = await this.get()
-    const updated: FactorySettings = {
-      ...current,
-      ...data,
-      id: SETTINGS_ID,
-      updatedAt: nowISO(),
-    }
-    await db.put('factorySettings', updated)
-    return updated
-  }
+    const result = await apiPut<FactorySettings>('/api/factory-settings', data)
+    dataChangeEmitter.notifyUpdate('factorySettings')
+    return result
+  },
 
-  async updateLogo(logoBase64: string): Promise<void> {
-    await this.update({ logo: logoBase64 })
-  }
+  /** Update only the logo */
+  async updateLogo(logoBase64: string): Promise<FactorySettings> {
+    const result = await apiPut<FactorySettings>('/api/factory-settings', { logo: logoBase64 })
+    dataChangeEmitter.notifyUpdate('factorySettings')
+    return result
+  },
 
+  /** Reset all settings to defaults */
   async reset(): Promise<FactorySettings> {
-    const db = await getDB()
-    const defaults = { ...DEFAULT_SETTINGS, updatedAt: nowISO() }
-    await db.put('factorySettings', defaults)
-    return defaults
-  }
+    const result = await apiPut<FactorySettings>('/api/factory-settings', {
+      ...DEFAULT_SETTINGS,
+    })
+    dataChangeEmitter.notifyUpdate('factorySettings')
+    return result
+  },
 }
 
-export const factorySettingsRepository = new FactorySettingsRepository()
+export { factorySettingsRepository }

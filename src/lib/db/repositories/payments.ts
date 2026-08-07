@@ -1,130 +1,29 @@
+'use client'
 import { BaseRepository } from './base'
-import { getDB, generateId, nowISO } from '../connection'
+import { apiGet, apiPost, apiDelete } from '../../api-client'
 import { dataChangeEmitter } from '../live-data'
-import type { Payment, Sale, Purchase } from '../types'
+import type { Payment } from '../types'
 
 class PaymentRepository extends BaseRepository<Payment> {
-  constructor() {
-    super('payments', true)
-  }
+  constructor() { super('/api/payments', 'payments') }
 
-  // سدادات عميل/مورد معين
   async getByParty(partyId: string): Promise<Payment[]> {
-    const db = await this.getDB() as any
-    const result = await db.getAllFromIndex('payments', 'by-party', partyId)
-    return result.sort((a: Payment, b: Payment) =>
-      new Date(b.date).getTime() - new Date(a.date).getTime()
-    )
+    return this.getAll({ partyId })
   }
 
-  // السدادات في فترة محددة
   async getByDateRange(from?: string, to?: string): Promise<Payment[]> {
-    const db = await this.getDB() as any
-    let result: Payment[]
-    if (from && to) {
-      const toDate = new Date(to)
-      toDate.setHours(23, 59, 59, 999)
-      result = await db.getAllFromIndex('payments', 'by-date', IDBKeyRange.bound(from, toDate.toISOString()))
-    } else if (from) {
-      result = await db.getAllFromIndex('payments', 'by-date', IDBKeyRange.lowerBound(from))
-    } else if (to) {
-      const toDate = new Date(to)
-      toDate.setHours(23, 59, 59, 999)
-      result = await db.getAllFromIndex('payments', 'by-date', IDBKeyRange.upperBound(toDate.toISOString()))
-    } else {
-      result = await this.getAll()
-    }
-    return result.sort((a: Payment, b: Payment) =>
-      new Date(b.date).getTime() - new Date(a.date).getTime()
-    )
+    const params: Record<string, string> = {}
+    if (from) params.from = from
+    if (to) params.to = to
+    return this.getAll(params)
   }
 
-  // سدادات عملاء أو موردين
   async getByType(type: 'customer_payment' | 'supplier_payment'): Promise<Payment[]> {
-    const db = await this.getDB() as any
-    const result = await db.getAllFromIndex('payments', 'by-type', type)
-    return result.sort((a: Payment, b: Payment) =>
-      new Date(b.date).getTime() - new Date(a.date).getTime()
-    )
+    return this.getAll({ type })
   }
 
-  // إنشاء سداد + إيداع/سحب من الخزينة تلقائياً + تحديث paid في الفاتورة
   async create(data: Omit<Payment, 'id' | 'createdAt'>): Promise<Payment> {
-    const db = await getDB()
-    const tx = db.transaction(
-      ['payments', 'treasuryTransactions', 'sales', 'purchases'],
-      'readwrite'
-    )
-
-    const now = nowISO()
-    const paymentId = generateId()
-
-    const payment: Payment = {
-      ...data,
-      id: paymentId,
-      createdAt: now,
-    }
-
-    await tx.objectStore('payments').add(payment)
-
-    // تحديث المدفوع في الفاتورة المرتبطة (لو موجودة) مع التحقق من عدم تجاوز الإجمالي
-    if (data.invoiceId) {
-      if (data.type === 'customer_payment') {
-        const sale = await tx.objectStore('sales').get(data.invoiceId) as Sale | undefined
-        if (sale) {
-          const newPaid = (sale.paid || 0) + data.amount
-          if (newPaid > sale.total) {
-            throw new Error(`المبلغ يتجاوز إجمالي الفاتورة (المتبقي: ${(sale.total - (sale.paid || 0)).toFixed(2)})`)
-          }
-          const updatedSale: Sale = {
-            ...sale,
-            paid: newPaid,
-            updatedAt: now,
-          }
-          await tx.objectStore('sales').put(updatedSale)
-        }
-      } else if (data.type === 'supplier_payment') {
-        const purchase = await tx.objectStore('purchases').get(data.invoiceId) as Purchase | undefined
-        if (purchase) {
-          const newPaid = (purchase.paid || 0) + data.amount
-          if (newPaid > purchase.total) {
-            throw new Error(`المبلغ يتجاوز إجمالي الفاتورة (المتبقي: ${(purchase.total - (purchase.paid || 0)).toFixed(2)})`)
-          }
-          const updatedPurchase: Purchase = {
-            ...purchase,
-            paid: newPaid,
-            updatedAt: now,
-          }
-          await tx.objectStore('purchases').put(updatedPurchase)
-        }
-      }
-    }
-
-    // إيداع أو سحب من الخزينة تلقائياً
-    // سداد عميل = إيداع (فلوس دخلت)
-    // سداد مورد = سحب (فلوس خرجت)
-    const isCustomerPayment = data.type === 'customer_payment'
-    const treasuryTx = {
-      id: generateId(),
-      type: isCustomerPayment ? 'deposit' as const : 'withdrawal' as const,
-      amount: data.amount,
-      date: data.date,
-      description: isCustomerPayment
-        ? `سداد من عميل - ${data.partyName}`
-        : `سداد لمورد - ${data.partyName}`,
-      category: isCustomerPayment ? 'مبيعات' : 'مشتريات',
-      referenceType: 'payment',
-      referenceId: paymentId,
-      notes: data.invoiceNo
-        ? `فاتورة رقم ${data.invoiceNo}${data.method ? ` - ${data.method}` : ''}`
-        : data.method,
-      createdAt: now,
-    }
-    await tx.objectStore('treasuryTransactions').add(treasuryTx)
-
-    await tx.done
-
-    // إشعار التحديث الفوري
+    const res = await apiPost<any>('/api/payments', data)
     dataChangeEmitter.notifyCreate('payments')
     dataChangeEmitter.notifyUpdate('treasuryTransactions')
     if (data.type === 'customer_payment') {
@@ -134,67 +33,25 @@ class PaymentRepository extends BaseRepository<Payment> {
       dataChangeEmitter.notifyUpdate('purchases')
       dataChangeEmitter.notifyUpdate('suppliers')
     }
-
-    return payment
+    return res.payment || res
   }
 
-  // حذف السداد + حذف معاملة الخزينة المرتبطة + تراجع عن تحديث الفاتورة
   async delete(id: string): Promise<void> {
-    const db = await getDB()
-    const tx = db.transaction(
-      ['payments', 'treasuryTransactions', 'sales', 'purchases'],
-      'readwrite'
-    )
-
-    const payment = await tx.objectStore('payments').get(id) as Payment | undefined
-    if (!payment) {
-      await tx.done
-      return
-    }
-
-    // تراجع عن تحديث paid في الفاتورة
-    if (payment.invoiceId) {
-      if (payment.type === 'customer_payment') {
-        const sale = await tx.objectStore('sales').get(payment.invoiceId) as Sale | undefined
-        if (sale) {
-          await tx.objectStore('sales').put({
-            ...sale,
-            paid: Math.max(0, (sale.paid || 0) - payment.amount),
-            updatedAt: nowISO(),
-          })
-        }
-      } else if (payment.type === 'supplier_payment') {
-        const purchase = await tx.objectStore('purchases').get(payment.invoiceId) as Purchase | undefined
-        if (purchase) {
-          await tx.objectStore('purchases').put({
-            ...purchase,
-            paid: Math.max(0, (purchase.paid || 0) - payment.amount),
-            updatedAt: nowISO(),
-          })
-        }
+    // We need to know the payment type to emit correct events
+    // Fetch it first, then delete
+    try {
+      const payment = await this.getById(id)
+      await apiDelete(`/api/payments/${id}`)
+      dataChangeEmitter.notifyDelete('payments')
+      dataChangeEmitter.notifyUpdate('treasuryTransactions')
+      if (payment?.type === 'customer_payment') {
+        dataChangeEmitter.notifyUpdate('sales')
+        dataChangeEmitter.notifyUpdate('customers')
+      } else {
+        dataChangeEmitter.notifyUpdate('purchases')
+        dataChangeEmitter.notifyUpdate('suppliers')
       }
-    }
-
-    // حذف معاملة الخزينة المرتبطة
-    const allTreasury = await tx.objectStore('treasuryTransactions').getAll()
-    for (const t of allTreasury) {
-      if (t.referenceType === 'payment' && t.referenceId === id) {
-        await tx.objectStore('treasuryTransactions').delete(t.id)
-      }
-    }
-
-    await tx.objectStore('payments').delete(id)
-    await tx.done
-
-    dataChangeEmitter.notifyDelete('payments')
-    dataChangeEmitter.notifyUpdate('treasuryTransactions')
-    if (payment.type === 'customer_payment') {
-      dataChangeEmitter.notifyUpdate('sales')
-      dataChangeEmitter.notifyUpdate('customers')
-    } else {
-      dataChangeEmitter.notifyUpdate('purchases')
-      dataChangeEmitter.notifyUpdate('suppliers')
-    }
+    } catch { await apiDelete(`/api/payments/${id}`) }
   }
 }
 

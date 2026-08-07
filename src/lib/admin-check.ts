@@ -15,7 +15,7 @@ export async function requireAdmin(): Promise<
   try {
     const cookieStore = await cookies()
     const token = cookieStore.get(SESSION_COOKIE)?.value
-    const session = await verifySessionToken(token)
+    const session = verifySessionToken(token)
     if (!session) {
       return { ok: false, error: 'غير مصرح — يجب تسجيل الدخول أولاً', status: 401 }
     }
@@ -29,7 +29,7 @@ export async function requireAdmin(): Promise<
       return { ok: false, error: 'المستخدم غير موجود', status: 401 }
     }
 
-    if (user.role !== 'admin') {
+    if (user.role !== 'admin' && user.role !== 'owner') {
       return { ok: false, error: 'غير مصرح — يتطلب صلاحيات مدير', status: 403 }
     }
 

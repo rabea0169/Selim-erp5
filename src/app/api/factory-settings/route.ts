@@ -1,19 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
-import { requireCompanyAdmin, requireCompanyScope } from '@/lib/company-scope'
+import { requireAdmin } from '@/lib/admin-check'
 import { safeError } from '@/lib/safe-error'
 
 export async function GET() {
   try {
-    const scope = await requireCompanyScope()
-    if (!scope.ok) {
-      return NextResponse.json({ error: scope.error }, { status: scope.status })
-    }
-
     const settings = await db.factorySettings.findUnique({
-      where: { companyId: scope.companyId },
+      where: { id: 'singleton' },
     })
-
     return NextResponse.json({ settings })
   } catch (e) {
     const { error, status } = safeError(e)
@@ -23,9 +17,9 @@ export async function GET() {
 
 export async function PUT(req: NextRequest) {
   try {
-    const scope = await requireCompanyAdmin()
-    if (!scope.ok) {
-      return NextResponse.json({ error: scope.error }, { status: scope.status })
+    const admin = await requireAdmin()
+    if (!admin.ok) {
+      return NextResponse.json({ error: admin.error }, { status: admin.status })
     }
 
     const body = await req.json()
@@ -37,30 +31,42 @@ export async function PUT(req: NextRequest) {
       )
     }
 
-    const data = {
-      factoryName: body.factoryName.trim(),
-      factoryNameEn: body.factoryNameEn?.trim() || null,
-      slogan: body.slogan?.trim() || null,
-      phone: body.phone?.trim() || null,
-      whatsapp: body.whatsapp?.trim() || null,
-      email: body.email?.trim() || null,
-      address: body.address?.trim() || null,
-      taxNumber: body.taxNumber?.trim() || null,
-      commercialRegister: body.commercialRegister?.trim() || null,
-      logo: body.logo || null,
-      currency: body.currency?.trim() || 'ج.م',
-      invoicePrefix: body.invoicePrefix?.trim() || 'INV-',
-      invoiceFooter: body.invoiceFooter?.trim() || null,
-      defaultPaperSize: body.defaultPaperSize?.trim() || 'A4',
-      taxRate: body.taxRate != null ? Number(body.taxRate) : 0,
-    }
-
     const settings = await db.factorySettings.upsert({
-      where: { companyId: scope.companyId },
-      update: data,
+      where: { id: 'singleton' },
+      update: {
+        factoryName: body.factoryName.trim(),
+        factoryNameEn: body.factoryNameEn?.trim() || null,
+        slogan: body.slogan?.trim() || null,
+        phone: body.phone?.trim() || null,
+        whatsapp: body.whatsapp?.trim() || null,
+        email: body.email?.trim() || null,
+        address: body.address?.trim() || null,
+        taxNumber: body.taxNumber?.trim() || null,
+        commercialRegister: body.commercialRegister?.trim() || null,
+        logo: body.logo || null,
+        currency: body.currency?.trim() || 'ج.م',
+        invoicePrefix: body.invoicePrefix?.trim() || 'INV-',
+        invoiceFooter: body.invoiceFooter?.trim() || null,
+        defaultPaperSize: body.defaultPaperSize?.trim() || 'A4',
+        taxRate: body.taxRate != null ? Number(body.taxRate) : 0,
+      },
       create: {
-        ...data,
-        companyId: scope.companyId,
+        id: 'singleton',
+        factoryName: body.factoryName.trim(),
+        factoryNameEn: body.factoryNameEn?.trim() || null,
+        slogan: body.slogan?.trim() || null,
+        phone: body.phone?.trim() || null,
+        whatsapp: body.whatsapp?.trim() || null,
+        email: body.email?.trim() || null,
+        address: body.address?.trim() || null,
+        taxNumber: body.taxNumber?.trim() || null,
+        commercialRegister: body.commercialRegister?.trim() || null,
+        logo: body.logo || null,
+        currency: body.currency?.trim() || 'ج.م',
+        invoicePrefix: body.invoicePrefix?.trim() || 'INV-',
+        invoiceFooter: body.invoiceFooter?.trim() || null,
+        defaultPaperSize: body.defaultPaperSize?.trim() || 'A4',
+        taxRate: body.taxRate != null ? Number(body.taxRate) : 0,
       },
     })
 

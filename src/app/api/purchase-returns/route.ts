@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireCompanyScope } from '@/lib/company-scope'
 import { db } from '@/lib/db-server'
-
+import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
 
 export async function GET(req: NextRequest) {
   try {
-    const scope = await requireCompanyScope()
-    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: 'غير مصرح' }, { status: 401 })
 
     const { searchParams } = new URL(req.url)
     const purchaseId = searchParams.get('purchaseId')
@@ -37,8 +36,8 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const scope = await requireCompanyScope()
-    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: 'غير مصرح' }, { status: 401 })
 
     const body = await req.json()
     const { purchaseId, invoiceNo, supplierName, supplierId_ref, date, total, reason, restockItems, items, notes } = body

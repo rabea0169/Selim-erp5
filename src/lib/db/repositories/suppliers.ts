@@ -1,78 +1,33 @@
+'use client'
 import { BaseRepository } from './base'
-import { getDB } from '../connection'
+import { apiGet } from '../../api-client'
 import type { Supplier, Purchase } from '../types'
 
 class SupplierRepository extends BaseRepository<Supplier> {
-  constructor() {
-    super('suppliers', true)
-  }
+  constructor() { super('/api/suppliers', 'suppliers') }
 
   async search(query: string): Promise<Supplier[]> {
-    const all = await this.getAll()
-    if (!query) return all
-    const q = query.toLowerCase()
-    return all.filter(
-      (s) =>
-        s.name.toLowerCase().includes(q) ||
-        (s.phone || '').includes(q) ||
-        (s.address || '').toLowerCase().includes(q)
-    )
+    if (!query) return this.getAll()
+    return this.getAll({ q: query })
   }
 
-  async getWithStats(supplierId: string): Promise<{
-    supplier: Supplier
-    totalPurchases: number
-    totalPaid: number
-    totalRemaining: number
-    purchasesCount: number
-    purchases: Purchase[]
-  } | null> {
-    const supplier = await this.getById(supplierId)
-    if (!supplier) return null
-
-    const db = await getDB()
-    const purchases = await db.getAllFromIndex('purchases', 'by-supplier', supplierId)
-      .then((p) => p.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()))
-
-    const totalPurchases = purchases.reduce((s, x) => s + x.total, 0)
-    const totalPaid = purchases.reduce((s, x) => s + x.paid, 0)
-
-    return {
-      supplier,
-      totalPurchases,
-      totalPaid,
-      totalRemaining: totalPurchases - totalPaid,
-      purchasesCount: purchases.length,
-      purchases,
-    }
-  }
-
-  async getAllWithStats(): Promise<Array<Supplier & {
-    totalPurchases: number
-    totalPaid: number
-    totalRemaining: number
-    purchasesCount: number
-  }>> {
-    const suppliers = await this.getAll()
-    const result: Array<Supplier & {
-      totalPurchases: number
-      totalPaid: number
-      totalRemaining: number
-      purchasesCount: number
-    }> = []
-    for (const s of suppliers) {
-      const stats = await this.getWithStats(s.id)
-      if (stats) {
-        result.push({
-          ...s,
-          totalPurchases: stats.totalPurchases,
-          totalPaid: stats.totalPaid,
-          totalRemaining: stats.totalRemaining,
-          purchasesCount: stats.purchasesCount,
-        })
+  async getWithStats(supplierId: string): Promise<{ supplier: Supplier; totalPurchases: number; totalPaid: number; totalRemaining: number; purchasesCount: number; purchases: Purchase[] } | null> {
+    try {
+      const res = await apiGet<any>(`/api/supplier-report/${supplierId}`)
+      return {
+        supplier: res.supplier,
+        totalPurchases: res.totalPurchases || 0,
+        totalPaid: res.totalPaid || 0,
+        totalRemaining: res.totalRemaining || 0,
+        purchasesCount: (res.purchases || []).length,
+        purchases: res.purchases || [],
       }
-    }
-    return result.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    } catch { return null }
+  }
+
+  async getAllWithStats(): Promise<Array<Supplier & { totalPurchases: number; totalPaid: number; totalRemaining: number; purchasesCount: number }>> {
+    const suppliers = await this.getAll()
+    return suppliers
   }
 }
 

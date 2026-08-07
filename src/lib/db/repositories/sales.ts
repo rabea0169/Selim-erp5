@@ -1,64 +1,32 @@
+'use client'
 import { BaseRepository } from './base'
-import { getDB, generateId, nowISO } from '../connection'
-import { productRepository } from './products'
-import type { Sale, SaleItem } from '../types'
+import { apiGet, apiPost, apiDelete } from '../../api-client'
+import { dataChangeEmitter } from '../live-data'
+import type { Sale } from '../types'
 
 class SaleRepository extends BaseRepository<Sale> {
-  constructor() {
-    super('sales', true)
-  }
+  constructor() { super('/api/sales', 'sales') }
 
   async search(query: string, from?: string, to?: string): Promise<Sale[]> {
-    let sales = await this.getByDateRange(from, to)
-    if (query) {
-      const q = query.toLowerCase()
-      sales = sales.filter(
-        (s) =>
-          s.customerName.toLowerCase().includes(q) ||
-          (s.invoiceNo || '').toLowerCase().includes(q) ||
-          (s.notes || '').toLowerCase().includes(q)
-      )
-    }
-    return sales
+    const params: Record<string, string> = {}
+    if (query) params.q = query
+    if (from) params.from = from
+    if (to) params.to = to
+    return this.getAll(params)
   }
 
   async getByDateRange(from?: string, to?: string): Promise<Sale[]> {
-    let sales: Sale[]
-    if (from || to) {
-      const db = await this.getDB()
-      if (from && to) {
-        const toDate = new Date(to)
-        toDate.setHours(23, 59, 59, 999)
-        sales = await db.getAllFromIndex('sales', 'by-date', IDBKeyRange.bound(from, toDate.toISOString()))
-      } else if (from) {
-        sales = await db.getAllFromIndex('sales', 'by-date', IDBKeyRange.lowerBound(from))
-      } else {
-        const toDate = new Date(to!)
-        toDate.setHours(23, 59, 59, 999)
-        sales = await db.getAllFromIndex('sales', 'by-date', IDBKeyRange.upperBound(toDate.toISOString()))
-      }
-    } else {
-      sales = await this.getAll()
-    }
-
-    // تحميل الأصناف لكل فاتورة
-    const db = await this.getDB()
-    const salesWithItems = await Promise.all(
-      sales.map(async (sale) => {
-        const items = await db.getAllFromIndex('saleItems', 'by-sale', sale.id)
-        return { ...sale, items }
-      })
-    )
-
-    return salesWithItems.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    const params: Record<string, string> = {}
+    if (from) params.from = from
+    if (to) params.to = to
+    return this.getAll(params)
   }
 
   async getById(id: string): Promise<Sale | undefined> {
-    const sale = await super.getById(id)
-    if (!sale) return undefined
-    const db = await this.getDB()
-    const items = await db.getAllFromIndex('saleItems', 'by-sale', id)
-    return { ...sale, items }
+    try {
+      const res = await apiGet<any>(`/api/sales/${id}`)
+      return res.sale || res
+    } catch { return undefined }
   }
 
   async createWithItems(data: {
@@ -72,155 +40,20 @@ class SaleRepository extends BaseRepository<Sale> {
     discountValue?: number
     taxRate?: number
     extraFees?: number
-    items: Array<{
-      itemName: string
-      productId?: string
-      priceType?: 'wholesale' | 'half_wholesale' | 'retail' | 'custom'
-      quantity: number
-      unitPrice: number
-    }>
+    items: Array<{ itemName: string; productId?: string; priceType?: string; quantity: number; unitPrice: number }>
   }): Promise<Sale> {
-    const db = await this.getDB()
-    const tx = db.transaction(['sales', 'saleItems', 'treasuryTransactions', 'products'], 'readwrite')
-
-    // حساب الإجمالي الفرعي (مجموع الأصناف)
-    const subtotal = data.items.reduce((s, it) => s + it.quantity * it.unitPrice, 0)
-
-    // حساب مبلغ الخصم
-    let discountAmount = 0
-    if (data.discountType && data.discountValue && data.discountValue > 0) {
-      if (data.discountType === 'percentage') {
-        discountAmount = (subtotal * data.discountValue) / 100
-      } else {
-        discountAmount = Math.min(data.discountValue, subtotal)
-      }
-    }
-
-    // حساب الضريبة على المبلغ بعد الخصم
-    const taxRate = data.taxRate || 0
-    const taxableBase = subtotal - discountAmount
-    const taxAmount = taxRate > 0 ? (taxableBase * taxRate) / 100 : 0
-
-    // مصاريف إضافية
-    const extraFees = data.extraFees || 0
-
-    // الإجمالي النهائي
-    const total = subtotal - discountAmount + taxAmount + extraFees
-
-    const now = nowISO()
-    const saleId = generateId()
-
-    const sale: Sale = {
-      id: saleId,
-      customerName: data.customerName,
-      customerId_ref: data.customerId_ref,
-      invoiceNo: data.invoiceNo,
-      date: data.date,
-      subtotal,
-      discountType: data.discountType,
-      discountValue: data.discountValue,
-      discountAmount,
-      taxRate,
-      taxAmount,
-      extraFees,
-      total,
-      paid: data.paid,
-      notes: data.notes,
-      items: [],
-      createdAt: now,
-      updatedAt: now,
-    }
-
-    await tx.objectStore('sales').add(sale)
-
-    const items: SaleItem[] = []
-    for (const it of data.items) {
-      const item: SaleItem = {
-        id: generateId(),
-        saleId,
-        itemName: it.itemName,
-        productId: it.productId,
-        priceType: it.priceType,
-        quantity: it.quantity,
-        unitPrice: it.unitPrice,
-        total: it.quantity * it.unitPrice,
-      }
-      await tx.objectStore('saleItems').add(item)
-      items.push(item)
-
-      // سحب الكمية من مخزون المنتج (لو مربوط بـ productId)
-      if (it.productId) {
-        const product = await tx.objectStore('products').get(it.productId)
-        if (product) {
-          if (product.quantity < it.quantity) {
-            throw new Error(`الكمية المتاحة من ${product.name} (${product.quantity}) أقل من المطلوب (${it.quantity})`)
-          }
-          await tx.objectStore('products').put({
-            ...product,
-            quantity: product.quantity - it.quantity,
-            updatedAt: now,
-          })
-        }
-      }
-    }
-
-    // إيداع المبلغ المدفوع في الخزينة تلقائياً
-    if (data.paid > 0) {
-      const treasuryTx = {
-        id: generateId(),
-        type: 'deposit' as const,
-        amount: data.paid,
-        date: data.date,
-        description: `تحصيل من مبيعة - ${data.customerName}`,
-        category: 'مبيعات',
-        referenceType: 'sale',
-        referenceId: saleId,
-        notes: data.invoiceNo ? `فاتورة رقم ${data.invoiceNo}` : undefined,
-        createdAt: now,
-      }
-      await tx.objectStore('treasuryTransactions').add(treasuryTx)
-    }
-
-    await tx.done
-
-    return { ...sale, items }
+    const res = await apiPost<any>('/api/sales', data)
+    dataChangeEmitter.notifyCreate('sales')
+    dataChangeEmitter.notifyUpdate('treasuryTransactions')
+    dataChangeEmitter.notifyUpdate('products')
+    return res.sale || res
   }
 
   async delete(id: string): Promise<void> {
-    const db = await this.getDB()
-    const tx = db.transaction(['sales', 'saleItems', 'treasuryTransactions', 'products'], 'readwrite')
-
-    // حذف المعاملات المرتبطة في الخزينة
-    const allTreasury = await tx.objectStore('treasuryTransactions').getAll()
-    for (const t of allTreasury) {
-      if (t.referenceType === 'sale' && t.referenceId === id) {
-        await tx.objectStore('treasuryTransactions').delete(t.id)
-      }
-    }
-
-    // إرجاع الكميات للمنتجات (لو مربوطة بـ productId)
-    const items = await tx.objectStore('saleItems').index('by-sale').getAll(id)
-    for (const item of items) {
-      if (item.productId) {
-        const product = await tx.objectStore('products').get(item.productId)
-        if (product) {
-          await tx.objectStore('products').put({
-            ...product,
-            quantity: product.quantity + item.quantity,
-            updatedAt: nowISO(),
-          })
-        }
-      }
-    }
-
-    // حذف الأصناف أولاً
-    const itemKeys = await tx.objectStore('saleItems').index('by-sale').getAllKeys(id)
-    await Promise.all(itemKeys.map((k) => tx.objectStore('saleItems').delete(k)))
-
-    // حذف الفاتورة
-    await tx.objectStore('sales').delete(id)
-
-    await tx.done
+    await apiDelete(`/api/sales/${id}`)
+    dataChangeEmitter.notifyDelete('sales')
+    dataChangeEmitter.notifyUpdate('treasuryTransactions')
+    dataChangeEmitter.notifyUpdate('products')
   }
 }
 

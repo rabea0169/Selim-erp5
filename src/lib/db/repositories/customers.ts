@@ -1,78 +1,33 @@
+'use client'
 import { BaseRepository } from './base'
-import { getDB } from '../connection'
+import { apiGet } from '../../api-client'
 import type { Customer, Sale } from '../types'
 
 class CustomerRepository extends BaseRepository<Customer> {
-  constructor() {
-    super('customers', true)
-  }
+  constructor() { super('/api/customers', 'customers') }
 
   async search(query: string): Promise<Customer[]> {
-    const all = await this.getAll()
-    if (!query) return all
-    const q = query.toLowerCase()
-    return all.filter(
-      (c) =>
-        c.name.toLowerCase().includes(q) ||
-        (c.phone || '').includes(q) ||
-        (c.address || '').toLowerCase().includes(q)
-    )
+    if (!query) return this.getAll()
+    return this.getAll({ q: query })
   }
 
-  async getWithStats(customerId: string): Promise<{
-    customer: Customer
-    totalSales: number
-    totalPaid: number
-    totalRemaining: number
-    salesCount: number
-    sales: Sale[]
-  } | null> {
-    const customer = await this.getById(customerId)
-    if (!customer) return null
-
-    const db = await getDB()
-    const sales = await db.getAllFromIndex('sales', 'by-customer', customerId)
-      .then((s) => s.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()))
-
-    const totalSales = sales.reduce((s, x) => s + x.total, 0)
-    const totalPaid = sales.reduce((s, x) => s + x.paid, 0)
-
-    return {
-      customer,
-      totalSales,
-      totalPaid,
-      totalRemaining: totalSales - totalPaid,
-      salesCount: sales.length,
-      sales,
-    }
-  }
-
-  async getAllWithStats(): Promise<Array<Customer & {
-    totalSales: number
-    totalPaid: number
-    totalRemaining: number
-    salesCount: number
-  }>> {
-    const customers = await this.getAll()
-    const result: Array<Customer & {
-      totalSales: number
-      totalPaid: number
-      totalRemaining: number
-      salesCount: number
-    }> = []
-    for (const c of customers) {
-      const stats = await this.getWithStats(c.id)
-      if (stats) {
-        result.push({
-          ...c,
-          totalSales: stats.totalSales,
-          totalPaid: stats.totalPaid,
-          totalRemaining: stats.totalRemaining,
-          salesCount: stats.salesCount,
-        })
+  async getWithStats(customerId: string): Promise<{ customer: Customer; totalSales: number; totalPaid: number; totalRemaining: number; salesCount: number; sales: Sale[] } | null> {
+    try {
+      const res = await apiGet<any>(`/api/customer-report/${customerId}`)
+      return {
+        customer: res.customer,
+        totalSales: res.totalSales || 0,
+        totalPaid: res.totalPaid || 0,
+        totalRemaining: res.totalRemaining || 0,
+        salesCount: (res.sales || []).length,
+        sales: res.sales || [],
       }
-    }
-    return result.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    } catch { return null }
+  }
+
+  async getAllWithStats(): Promise<Array<Customer & { totalSales: number; totalPaid: number; totalRemaining: number; salesCount: number }>> {
+    const customers = await this.getAll()
+    return customers
   }
 }
 
