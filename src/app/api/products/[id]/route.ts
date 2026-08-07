@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
 
 // GET /api/products/[id]
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const user = await getCurrentUser()
     const { id } = await params
-    const product = await db.product.findUnique({
-      where: { id },
+    const product = await db.product.findFirst({
+      where: { id, ...(user?.companyId ? { companyId: user.companyId } : {}) },
       include: { warehouse: true },
     })
     if (!product) {
@@ -23,6 +25,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 // PUT /api/products/[id]
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const user = await getCurrentUser()
     const { id } = await params
     const body = await req.json()
     const { name, category, unit, halfWholesalePrice, warehouseId, reorderLevel, notes } = body
@@ -34,7 +37,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: 'الوحدة مطلوبة' }, { status: 400 })
     }
 
-    const existing = await db.product.findUnique({ where: { id } })
+    // فحص وجود المنتج وتبعيته للشركة (حماية IDOR)
+    const existing = await db.product.findFirst({
+      where: { id, ...(user?.companyId ? { companyId: user.companyId } : {}) },
+    })
     if (!existing) {
       return NextResponse.json({ error: 'المنتج غير موجود' }, { status: 404 })
     }
@@ -51,7 +57,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     }
 
     if (warehouseId) {
-      const warehouse = await db.warehouse.findUnique({ where: { id: warehouseId } })
+      const warehouse = await db.warehouse.findFirst({
+        where: { id: warehouseId, ...(user?.companyId ? { companyId: user.companyId } : {}) },
+      })
       if (!warehouse) {
         return NextResponse.json({ error: 'المخزن المحدد غير موجود' }, { status: 404 })
       }
@@ -85,11 +93,17 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 // DELETE /api/products/[id]
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const user = await getCurrentUser()
     const { id } = await params
-    const existing = await db.product.findUnique({ where: { id } })
+
+    // فحص وجود المنتج وتبعيته للشركة (حماية IDOR)
+    const existing = await db.product.findFirst({
+      where: { id, ...(user?.companyId ? { companyId: user.companyId } : {}) },
+    })
     if (!existing) {
       return NextResponse.json({ error: 'المنتج غير موجود' }, { status: 404 })
     }
+
     await db.product.delete({ where: { id } })
     return NextResponse.json({ success: true })
   } catch (e) {

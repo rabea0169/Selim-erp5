@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
 
 // GET /api/warehouses/[id]
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const user = await getCurrentUser()
     const { id } = await params
-    const warehouse = await db.warehouse.findUnique({
-      where: { id },
+    const warehouse = await db.warehouse.findFirst({
+      where: { id, ...(user?.companyId ? { companyId: user.companyId } : {}) },
       include: { _count: { select: { materials: true, products: true } } },
     })
     if (!warehouse) {
@@ -22,6 +24,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 // PUT /api/warehouses/[id]
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const user = await getCurrentUser()
     const { id } = await params
     const body = await req.json()
     const { name, type, location, notes } = body
@@ -33,7 +36,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: 'نوع المخزن مطلوب' }, { status: 400 })
     }
 
-    const existing = await db.warehouse.findUnique({ where: { id } })
+    // فحص وجود المخزن وتبعيته للشركة (حماية IDOR)
+    const existing = await db.warehouse.findFirst({
+      where: { id, ...(user?.companyId ? { companyId: user.companyId } : {}) },
+    })
     if (!existing) {
       return NextResponse.json({ error: 'المخزن غير موجود' }, { status: 404 })
     }
@@ -58,9 +64,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 // DELETE /api/warehouses/[id]
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const user = await getCurrentUser()
     const { id } = await params
-    const existing = await db.warehouse.findUnique({
-      where: { id },
+    // فحص وجود المخزن وتبعيته للشركة (حماية IDOR)
+    const existing = await db.warehouse.findFirst({
+      where: { id, ...(user?.companyId ? { companyId: user.companyId } : {}) },
       include: { _count: { select: { materials: true, products: true } } },
     })
     if (!existing) {

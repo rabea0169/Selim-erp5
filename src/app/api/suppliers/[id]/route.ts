@@ -1,26 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const user = await getCurrentUser()
     const { id } = await params
     const body = await req.json()
     const { name, phone, address, notes } = body
 
     if (!name?.trim()) {
-      return NextResponse.json(
-        { error: 'اسم المورد مطلوب' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'اسم المورد مطلوب' }, { status: 400 })
     }
 
-    const existing = await db.supplier.findUnique({ where: { id } })
+    // فحص وجود المورد وتبعيته للشركة (حماية IDOR)
+    const existing = await db.supplier.findFirst({
+      where: { id, ...(user?.companyId ? { companyId: user.companyId } : {}) },
+    })
     if (!existing) {
-      return NextResponse.json(
-        { error: 'المورد غير موجود' },
-        { status: 404 }
-      )
+      return NextResponse.json({ error: 'المورد غير موجود' }, { status: 404 })
     }
 
     const supplier = await db.supplier.update({
@@ -34,27 +33,36 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     })
     return NextResponse.json({ supplier })
   } catch (e) {
-    const { error, status } = safeError(e); return NextResponse.json({ error }, { status })
+    const { error, status } = safeError(e)
+    return NextResponse.json({ error }, { status })
   }
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const user = await getCurrentUser()
     const { id } = await params
 
-    // Fix G: Wrap in transaction
+    // فحص وجود المورد وتبعيته للشركة (حماية IDOR)
+    const existing = await db.supplier.findFirst({
+      where: { id, ...(user?.companyId ? { companyId: user.companyId } : {}) },
+    })
+    if (!existing) {
+      return NextResponse.json({ error: 'المورد غير موجود' }, { status: 404 })
+    }
+
     await db.$transaction(async (tx) => {
       // فصل المشتريات المرتبطة بهذا المورد
       await tx.purchase.updateMany({
         where: { supplierId_ref: id },
         data: { supplierId_ref: null },
       })
-
       await tx.supplier.delete({ where: { id } })
     })
 
     return NextResponse.json({ success: true })
   } catch (e) {
-    const { error, status } = safeError(e); return NextResponse.json({ error }, { status })
+    const { error, status } = safeError(e)
+    return NextResponse.json({ error }, { status })
   }
 }
