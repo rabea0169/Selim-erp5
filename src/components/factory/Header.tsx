@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useRef } from 'react'
-import { Factory, Database, LogOut, Printer, Search, Bell, Sun, Moon, Wifi, WifiOff, X } from 'lucide-react'
+import { useState, useRef, useEffect } from 'react'
+import { Factory, Database, LogOut, Printer, Search, Sun, Moon, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -12,11 +12,10 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog'
-import { useToast } from '@/hooks/use-toast'
 import { globalSearchService, type SearchResult } from '@/lib/db'
 import { useTheme } from '@/lib/use-theme'
 import { useConnectionStatus } from '@/lib/use-connection-status'
-import { formatCurrency, formatDate } from '@/lib/format'
+import { formatCurrency } from '@/lib/format'
 import type { TabKey } from './BottomNav'
 
 interface HeaderProps {
@@ -45,6 +44,31 @@ export function Header({
   const [searchResults, setSearchResults] = useState<SearchResult[]>([])
   const [searching, setSearching] = useState(false)
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Fix: قائمة الإعدادات كانت تعمل بالـ hover فقط فلا تستجيب على الشاشات اللمسية
+  // الآن تُفتح وتُغلق بالنقر، وتُغلق عند النقر خارجها
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!menuOpen) return
+    const handleOutside = (e: MouseEvent | TouchEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleOutside)
+    document.addEventListener('touchstart', handleOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleOutside)
+      document.removeEventListener('touchstart', handleOutside)
+    }
+  }, [menuOpen])
+
+  const handleMenuAction = (action: () => void) => {
+    setMenuOpen(false)
+    action()
+  }
 
   const handleSearch = async (q: string) => {
     setSearchQuery(q)
@@ -120,45 +144,64 @@ export function Header({
               {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
 
-            {/* More menu */}
-            <div className="relative group">
-              <button className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 transition-colors">
+            {/* More menu — يُفتح بالنقر (يدعم اللمس والماوس) */}
+            <div className="relative" ref={menuRef}>
+              <button
+                onClick={() => setMenuOpen((v) => !v)}
+                aria-expanded={menuOpen}
+                aria-haspopup="menu"
+                aria-label="قائمة الإعدادات"
+                title="الإعدادات"
+                className={cn(
+                  'w-8 h-8 rounded-lg flex items-center justify-center transition-colors',
+                  menuOpen ? 'bg-slate-300 text-slate-800' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                )}
+              >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10" />
                 </svg>
               </button>
               {/* Dropdown */}
-              <div className="absolute left-0 top-full mt-1 w-48 bg-white rounded-xl shadow-xl border border-slate-100 py-1 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
-                <button
-                  onClick={onOpenFactory}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+              {menuOpen && (
+                <div
+                  role="menu"
+                  className="absolute left-0 top-full mt-1 w-48 bg-white rounded-xl shadow-xl border border-slate-100 py-1 z-50"
                 >
-                  <Factory className="w-4 h-4 text-amber-600" />
-                  بيانات المصنع
-                </button>
-                <button
-                  onClick={onOpenPrint}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
-                >
-                  <Printer className="w-4 h-4 text-slate-600" />
-                  إعدادات الطباعة
-                </button>
-                <button
-                  onClick={onOpenBackup}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
-                >
-                  <Database className="w-4 h-4 text-slate-600" />
-                  نسخ احتياطي
-                </button>
-                <div className="border-t border-slate-100 my-1" />
-                <button
-                  onClick={onLogout}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-rose-600 hover:bg-rose-50"
-                >
-                  <LogOut className="w-4 h-4" />
-                  تسجيل الخروج
-                </button>
-              </div>
+                  <button
+                    role="menuitem"
+                    onClick={() => handleMenuAction(onOpenFactory)}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                  >
+                    <Factory className="w-4 h-4 text-amber-600" />
+                    بيانات المصنع
+                  </button>
+                  <button
+                    role="menuitem"
+                    onClick={() => handleMenuAction(onOpenPrint)}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                  >
+                    <Printer className="w-4 h-4 text-slate-600" />
+                    إعدادات الطباعة
+                  </button>
+                  <button
+                    role="menuitem"
+                    onClick={() => handleMenuAction(onOpenBackup)}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                  >
+                    <Database className="w-4 h-4 text-slate-600" />
+                    نسخ احتياطي
+                  </button>
+                  <div className="border-t border-slate-100 my-1" />
+                  <button
+                    role="menuitem"
+                    onClick={() => handleMenuAction(onLogout)}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-rose-600 hover:bg-rose-50"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    تسجيل الخروج
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
