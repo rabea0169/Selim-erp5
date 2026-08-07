@@ -28,7 +28,8 @@ export async function GET(req: NextRequest) {
       db.saleReturn.findMany({ where, orderBy: { date: 'desc' }, skip: (page - 1) * limit, take: limit }),
       db.saleReturn.count({ where }),
     ])
-    return NextResponse.json({ returns, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } })
+    // المفتاح saleReturns كما يتوقع العميل (contract fix)
+    return NextResponse.json({ saleReturns: returns, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } })
   } catch (e) {
     const { error, status } = safeError(e); return NextResponse.json({ error }, { status })
   }
@@ -104,7 +105,8 @@ export async function POST(req: NextRequest) {
       return saleReturn
     })
 
-    return NextResponse.json({ return: ret })
+    // المفتاح saleReturn كما يتوقع العميل (contract fix)
+    return NextResponse.json({ saleReturn: ret })
   } catch (e) {
     if (e instanceof Error && e.message.includes('غير موجود')) {
       return NextResponse.json({ error: e.message }, { status: 404 })

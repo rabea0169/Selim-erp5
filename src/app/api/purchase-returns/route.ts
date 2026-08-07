@@ -29,7 +29,8 @@ export async function GET(req: NextRequest) {
       db.purchaseReturn.count({ where }),
     ])
 
-    return NextResponse.json({ returns, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } })
+    // المفتاح purchaseReturns كما يتوقع العميل (contract fix)
+    return NextResponse.json({ purchaseReturns: returns, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } })
   } catch (e) {
     const { error, status } = safeError(e); return NextResponse.json({ error }, { status })
   }
@@ -115,7 +116,8 @@ export async function POST(req: NextRequest) {
       return ret
     })
 
-    return NextResponse.json({ return: purchaseReturn })
+    // المفتاح purchaseReturn كما يتوقع العميل (contract fix)
+    return NextResponse.json({ purchaseReturn })
   } catch (e) {
     if (e instanceof Error && e.message.includes('غير موجود')) {
       return NextResponse.json({ error: e.message }, { status: 404 })
