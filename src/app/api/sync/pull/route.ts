@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
-import { requireAdmin } from '@/lib/admin-check'
+import { requireCompanyAdmin } from '@/lib/company-scope'
 import { safeError } from '@/lib/safe-error'
 
 // حقول مستبعدة من التصدير (مثل كلمة المرور)
@@ -36,13 +36,24 @@ const EXPORT_SELECT: Record<string, any> = {
   auditLog: { id: true, userId: true, userName: true, action: true, entityType: true, entityId: true, description: true, metadata: true, timestamp: true },
 }
 
+// فلتر العزل لكل جدول — companyId يُفرض من الجلسة فقط
+// الجداول الفرعية (لا تملك companyId) تُفلتر عبر السجل الأب
+function buildWhere(table: string, companyId: string): any {
+  if (table === 'saleItem') return { sale: { companyId } }
+  if (table === 'purchaseItem') return { purchase: { companyId } }
+  return { companyId }
+}
+
 // Fix O: Changed from GET to POST
+// POST /api/sync/pull - تنزيل بيانات شركة الجلسة فقط (admin داخل الشركة)
 export async function POST(_req: NextRequest) {
   try {
-    const admin = await requireAdmin()
-    if (!admin.ok) {
-      return NextResponse.json({ error: admin.error }, { status: admin.status })
+    // تحقق admin + فرض نطاق الشركة من الجلسة (عزل المستأجرين)
+    const scope = await requireCompanyAdmin()
+    if (!scope.ok) {
+      return NextResponse.json({ error: scope.error }, { status: scope.status })
     }
+    const companyId = scope.companyId
 
     const data: Record<string, any[]> = {}
 
@@ -51,6 +62,7 @@ export async function POST(_req: NextRequest) {
         // auditLog يستخدم timestamp بدل createdAt
         const orderByField = table === 'auditLog' ? { timestamp: 'asc' as const } : { createdAt: 'asc' as const }
         const records = await (db as any)[table].findMany({
+          where: buildWhere(table, companyId),
           orderBy: orderByField,
           select,
         })
@@ -67,7 +79,7 @@ export async function POST(_req: NextRequest) {
           return processed
         })
       } catch (e: any) {
-        console.error(`[Sync] Error pulling ${table}:`, e.message)
+        console.error(`[Sync] Error pulling ${table}:`, e?.message)
         data[table] = []
       }
     }

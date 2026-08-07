@@ -1,19 +1,18 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db-server'
-import { requireAdmin } from '@/lib/admin-check'
-import { safeError } from '@/lib/safe-error'
-
 // حقول محظورة من التزامن (لا يسمح للعميل بتعديلها)
+// ملاحظة أمنية: companyId لا يُقبل أبداً من جسم الطلب — يُفرض دائماً من جلسة المستخدم
 const FORBIDDEN_FIELDS: Record<string, string[]> = {
-  user: ['passwordHash', 'role'],
+  user: ['passwordHash', 'role', 'companyId'],
 }
+
+// نماذج لا تحتوي حقل companyId (ترتبط بالشركة عبر السجل الأب)
+const MODELS_WITHOUT_COMPANY = new Set(['saleItem', 'purchaseItem'])
 
 // حقول مسموحة لكل نموذج (أمان بالسماح لا بالمنع)
 const ALLOWED_FIELDS: Record<string, string[]> = {
   factorySettings: ['id', 'factoryName', 'factoryNameEn', 'slogan', 'phone', 'whatsapp', 'email', 'address', 'taxNumber', 'commercialRegister', 'logo', 'currency', 'invoicePrefix', 'invoiceFooter', 'defaultPaperSize', 'taxRate', 'updatedAt'],
   worker: ['id', 'name', 'phone', 'job', 'type', 'hourlyRate', 'overtimeRate', 'workStartTime', 'workHoursPerDay', 'monthlySalary', 'notes', 'createdAt', 'updatedAt'],
-  workerAdvance: ['id', 'workerId', 'companyId', 'amount', 'date', 'notes', 'createdAt'],
-  workerReceipt: ['id', 'workerId', 'companyId', 'amount', 'date', 'notes', 'createdAt'],
+  workerAdvance: ['id', 'workerId', 'amount', 'date', 'notes', 'createdAt'],
+  workerReceipt: ['id', 'workerId', 'amount', 'date', 'notes', 'createdAt'],
   workerAttendance: ['id', 'workerId', 'date', 'checkIn', 'checkOut', 'status', 'notes', 'workHours', 'overtimeHours', 'lateMinutes', 'createdAt'],
   production: ['id', 'workerId', 'date', 'modelName', 'quantity', 'unitPrice', 'total', 'productId', 'addToInventory', 'notes', 'createdAt'],
   customer: ['id', 'name', 'phone', 'address', 'notes', 'creditLimit', 'loyaltyPoints', 'openingBalance', 'createdAt'],
@@ -41,14 +40,34 @@ const MODELS_WITH_UPDATED_AT = new Set([
   'factorySettings', 'worker', 'sale', 'purchase', 'material', 'product', 'productionOrder',
 ])
 
-// POST /api/sync/push - رفع بيانات من IndexedDB للسيرفر (admin فقط)
+// التحقق أن السجل الأب (sale/purchase) ينتمي لشركة الجلسة قبل رفع عناصره
+async function parentBelongsToCompany(modelName: string, record: any, companyId: string): Promise<boolean> {
+  try {
+    if (modelName === 'saleItem') {
+      if (!record.saleId) return false
+      const parent = await db.sale.findFirst({ where: { id: record.saleId, companyId }, select: { id: true } })
+      return !!parent
+    }
+    if (modelName === 'purchaseItem') {
+      if (!record.purchaseId) return false
+      const parent = await db.purchase.findFirst({ where: { id: record.purchaseId, companyId }, select: { id: true } })
+      return !!parent
+    }
+    return true
+  } catch {
+    return false
+  }
+}
+
+// POST /api/sync/push - رفع بيانات من IndexedDB للسيرفر (admin فقط داخل شركة الجلسة)
 export async function POST(req: NextRequest) {
   try {
-    // تحقق admin
-    const admin = await requireAdmin()
-    if (!admin.ok) {
-      return NextResponse.json({ error: admin.error }, { status: admin.status })
+    // تحقق admin + فرض نطاق الشركة من الجلسة (لا يُقبل companyId من العميل)
+    const scope = await requireCompanyAdmin()
+    if (!scope.ok) {
+      return NextResponse.json({ error: scope.error }, { status: scope.status })
     }
+    const companyId = scope.companyId
 
     const body = await req.json()
     const { data } = body
@@ -61,8 +80,6 @@ export async function POST(req: NextRequest) {
 
     const tableMap: Record<string, any> = {
       // ⚠️ users و auditLogs مستثنيان من المزامنة لحماية الصلاحيات وسجل التدقيق
-      // users: 'user',          // GAP-01 fix: لا يسمح بمزامنة بيانات المستخدمين (يمنع تصعيد الصلاحيات)
-      // auditLogs: 'auditLog',  // GAP-01 fix: لا يسمح بمزامنة سجل التدقيق
       factorySettings: 'factorySettings',
       workers: 'worker',
       workerAdvances: 'workerAdvance',
@@ -104,11 +121,29 @@ export async function POST(req: NextRequest) {
         try {
           if (!record.id) { failedCount++; continue }
 
+          // عزل المستأجرين: للنماذج الفرعية نتحقق أن الأب ينتمي لشركة الجلسة
+          if (MODELS_WITHOUT_COMPANY.has(modelName)) {
+            const ok = await parentBelongsToCompany(modelName, record, companyId)
+            if (!ok) { failedCount++; continue }
+          } else {
+            // لا نسمح بتعديل سجل مملوك لشركة أخرى
+            const existing = await (db as any)[modelName].findUnique({
+              where: { id: record.id },
+              select: { companyId: true },
+            })
+            if (existing && existing.companyId && existing.companyId !== companyId) {
+              failedCount++
+              continue
+            }
+          }
+
           // فلترة الحقول المسموحة فقط
           const processed: any = {}
           for (const [key, value] of Object.entries(record)) {
             // تجاهل الحقول المحظورة
             if (forbidden.includes(key)) continue
+            // companyId لا يؤخذ من العميل إطلاقاً
+            if (key === 'companyId') continue
 
             // تحويل التواريخ
             if (typeof value === 'string' && (key.includes('date') || key.includes('At') || key === 'checkIn' || key === 'checkOut')) {
@@ -124,6 +159,11 @@ export async function POST(req: NextRequest) {
             }
           }
 
+          // فرض companyId من الجلسة دائماً
+          if (!MODELS_WITHOUT_COMPANY.has(modelName)) {
+            processed.companyId = companyId
+          }
+
           // updatedAt فقط للنماذج اللي عندها الحقل ده
           if (MODELS_WITH_UPDATED_AT.has(modelName)) {
             processed.updatedAt = new Date()
@@ -136,7 +176,7 @@ export async function POST(req: NextRequest) {
           })
           successCount++
         } catch (e: any) {
-          console.error(`[Sync] Error in ${modelName} record ${record.id}:`, e.message)
+          console.error(`[Sync] Error in ${modelName} record ${record.id}:`, e?.message)
           failedCount++
         }
       }
