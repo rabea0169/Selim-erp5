@@ -4,6 +4,29 @@ import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
 import { assertValidPaid } from '@/lib/calc'
 
+// GET /api/sales/[id] — جلب فاتورة بيع واحدة (معزولة بالشركة)
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    const companyId = user.companyId ?? null
+    const { id } = await params
+
+    // findFirst بدلاً من findUnique لضمان تبعية الفاتورة للشركة الحالية (حماية IDOR)
+    const sale = await db.sale.findFirst({
+      where: { id, companyId },
+      include: { items: true },
+    })
+    if (!sale) {
+      return NextResponse.json({ error: 'الفاتورة غير موجودة' }, { status: 404 })
+    }
+    return NextResponse.json({ sale })
+  } catch (e) {
+    const { error, status } = safeError(e, 500)
+    return NextResponse.json({ error }, { status })
+  }
+}
+
 // PUT /api/sales/[id] — تحديث المدفوع على الفاتورة (استلام دفعة)
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
