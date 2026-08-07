@@ -9,29 +9,29 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     if (!user) {
       return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
     }
-
-    const { id } = await params
     const companyId = user.companyId ?? null
-    const existing = await db.expenseCategory.findFirst({
+    const { id } = await params
+
+    // فحص وجود الحركة وتبعيتها للشركة (حماية IDOR)
+    const tx = await db.treasuryTransaction.findFirst({
       where: { id, companyId },
-      include: { _count: { select: { expenses: true } } },
     })
-    if (!existing) {
-      return NextResponse.json({ error: 'الفئة غير موجودة' }, { status: 404 })
+    if (!tx) {
+      return NextResponse.json({ error: 'المعاملة غير موجودة' }, { status: 404 })
     }
 
-    // يُمنع حذف بند له مصروفات مرتبطة (حفاظاً على سلامة البيانات المحاسبية)
-    if (existing._count.expenses > 0) {
+    // حركة مرتبطة بمصروف تُحذف فقط عبر حذف المصروف نفسه (حفاظاً على الترابط المحاسبي)
+    if (tx.referenceType === 'expense' && tx.referenceId) {
       return NextResponse.json(
-        { error: `لا يمكن حذف هذا البند — مرتبط بـ ${existing._count.expenses} مصروف. احذف المصروفات أولاً.` },
+        { error: 'هذه الحركة مرتبطة بمصروف — احذف المصروف من شاشة المصاريف' },
         { status: 400 }
       )
     }
 
-    await db.expenseCategory.delete({ where: { id } })
+    await db.treasuryTransaction.delete({ where: { id } })
     return NextResponse.json({ success: true })
   } catch (e) {
-    const { error, status } = safeError(e)
+    const { error, status } = safeError(e, 500)
     return NextResponse.json({ error }, { status })
   }
 }

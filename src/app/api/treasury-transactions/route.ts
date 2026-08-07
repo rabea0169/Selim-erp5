@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
     const to = searchParams.get('to')
     const category = searchParams.get('category')
     const page = Math.max(1, Number(searchParams.get('page')) || 1)
-    const limit = Math.min(100, Math.max(1, Number(searchParams.get('limit')) || 50))
+    const limit = Math.min(1000, Math.max(1, Number(searchParams.get('limit')) || 50))
 
     // Fix Q: Date validation
     const fromDate = from ? new Date(from) : undefined

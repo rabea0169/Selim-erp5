@@ -50,18 +50,23 @@ export function CategoryManager({ open, onOpenChange, categories, onSaved }: Cat
   }
 
   const deleteCategory = async (id: string, count: number = 0) => {
-    const msg = count > 0
-      ? `هذا البند مرتبط بـ ${count} مصروف. سيتم حذفهم جميعاً. هل أنت متأكد؟`
-      : 'حذف هذا البند؟'
-    if (!confirm(msg)) return
+    if (count > 0) {
+      toast({
+        title: 'لا يمكن الحذف',
+        description: `هذا البند مرتبط بـ ${count} مصروف. احذف المصروفات المرتبطة أولاً.`,
+        variant: 'destructive',
+      })
+      return
+    }
+    if (!confirm('حذف هذا البند؟')) return
     try {
       await expenseCategoryRepository.delete(id)
       dataChangeEmitter.notifyDelete('expenseCategories')
       dataChangeEmitter.notifyDelete('expenses')
       toast({ title: 'تم الحذف' })
       onSaved()
-    } catch {
-      toast({ title: 'خطأ', variant: 'destructive' })
+    } catch (e: any) {
+      toast({ title: 'خطأ', description: e.message, variant: 'destructive' })
     }
   }
 
