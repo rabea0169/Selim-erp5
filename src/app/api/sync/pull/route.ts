@@ -38,6 +38,10 @@ const CHILD_TABLES: Record<string, { parentModel: string; parentField: string }>
   purchaseItem: { parentModel: 'purchase', parentField: 'purchaseId' },
 }
 
+// جداول لا تملك حقل createdAt في الـ schema — الترتيب بها يكون بالـ id
+// (بدون هذا الاستثناء كان الاستعلام يفشل ويُبتلع الخطأ فتُسحب أصناف الفواتير فارغة دائماً)
+const TABLES_WITHOUT_CREATED_AT = new Set(['saleItem', 'purchaseItem'])
+
 // POST /api/sync/pull - تحميل بيانات الشركة الحالية فقط (admin فقط)
 export async function POST(_req: NextRequest) {
   try {
@@ -56,7 +60,9 @@ export async function POST(_req: NextRequest) {
           ? { timestamp: 'asc' as const }
           : table === 'factorySettings'
             ? { updatedAt: 'asc' as const }
-            : { createdAt: 'asc' as const }
+            : TABLES_WITHOUT_CREATED_AT.has(table)
+              ? { id: 'asc' as const }
+              : { createdAt: 'asc' as const }
 
         // عزل الشركات: كل جدول يُفلتر بشركة المستخدم الحالي فقط
         let where: any
