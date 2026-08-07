@@ -3,6 +3,18 @@ import { db } from '@/lib/db-server'
 import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
 
+// نمط تاريخ اليوم YYYY-MM-DD
+const DAY_KEY_RE = /^\d{4}-\d{2}-\d{2}$/
+
+// Fix TZ: توحيد تمثيل "اليوم" — يُخزَّن ظهراً UTC (T12:00Z) فيظهر في نفس اليوم
+// بكل المناطق الزمنية (±12 ساعة)، والفلترة تتم بنافذة UTC صريحة
+function dayWindowUTC(dayKey: string): { start: Date; end: Date; noon: Date } {
+  const start = new Date(`${dayKey}T00:00:00.000Z`)
+  const end = new Date(start)
+  end.setUTCDate(end.getUTCDate() + 1)
+  return { start, end, noon: new Date(`${dayKey}T12:00:00.000Z`) }
+}
+
 export async function GET(req: NextRequest) {
   try {
     const user = await getCurrentUser()
@@ -19,20 +31,23 @@ export async function GET(req: NextRequest) {
     if (workerId) where.workerId = workerId
 
     if (date) {
-      // فلترة بيوم محدد
-      const d = new Date(date)
-      d.setHours(0, 0, 0, 0)
-      const next = new Date(d)
-      next.setDate(next.getDate() + 1)
-      where.date = { gte: d, lt: next }
+      // فلترة بيوم محدد — نافذة UTC صريحة (تطابق التخزين ظهراً UTC)
+      if (DAY_KEY_RE.test(date)) {
+        const { start, end } = dayWindowUTC(date)
+        where.date = { gte: start, lt: end }
+      } else {
+        const d = new Date(date)
+        d.setUTCHours(0, 0, 0, 0)
+        const next = new Date(d)
+        next.setUTCDate(next.getUTCDate() + 1)
+        where.date = { gte: d, lt: next }
+      }
     } else if (from || to) {
       where.date = {}
-      if (from) where.date.gte = new Date(from)
-      if (to) {
-        const toDate = new Date(to)
-        toDate.setHours(23, 59, 59, 999)
-        where.date.lte = toDate
-      }
+      if (from) where.date.gte = DAY_KEY_RE.test(from) ? new Date(`${from}T00:00:00.000Z`) : new Date(from)
+      if (to) where.date.lt = DAY_KEY_RE.test(to)
+        ? (() => { const d = new Date(`${to}T00:00:00.000Z`); d.setUTCDate(d.getUTCDate() + 1); return d })()
+        : (() => { const d = new Date(to); d.setUTCHours(23, 59, 59, 999); return d })()
     }
 
     const records = await db.workerAttendance.findMany({
@@ -75,11 +90,23 @@ export async function POST(req: NextRequest) {
       ? status
       : 'present'
 
-    // تحديد بداية ونهاية اليوم المحدد
-    const dayStart = new Date(date)
-    dayStart.setHours(0, 0, 0, 0)
-    const dayEnd = new Date(dayStart)
-    dayEnd.setDate(dayEnd.getDate() + 1)
+    // تحديد بداية ونهاية اليوم المحدد — UTC صريح
+    const isDayKey = DAY_KEY_RE.test(date)
+    let dayStart: Date
+    let dayEnd: Date
+    let storeDate: Date
+    if (isDayKey) {
+      const w = dayWindowUTC(date)
+      dayStart = w.start
+      dayEnd = w.end
+      storeDate = w.noon
+    } else {
+      dayStart = new Date(date)
+      dayStart.setUTCHours(0, 0, 0, 0)
+      dayEnd = new Date(dayStart)
+      dayEnd.setUTCDate(dayEnd.getUTCDate() + 1)
+      storeDate = new Date(date)
+    }
 
     // Fix J: Wrap check+create in transaction to prevent race condition
     const result = await db.$transaction(async (tx) => {
@@ -99,10 +126,11 @@ export async function POST(req: NextRequest) {
       })
 
       if (existing) {
-        // تحديث السجل الموجود
+        // تحديث السجل الموجود — مع توحيد تاريخ التخزين ظهراً UTC
         const updated = await tx.workerAttendance.update({
           where: { id: existing.id },
           data: {
+            date: storeDate,
             checkIn: checkIn ? new Date(checkIn) : existing.checkIn,
             checkOut: checkOut ? new Date(checkOut) : existing.checkOut,
             status: validStatus,
@@ -118,7 +146,7 @@ export async function POST(req: NextRequest) {
         data: {
           companyId,
           workerId,
-          date: new Date(date),
+          date: storeDate,
           checkIn: checkIn ? new Date(checkIn) : null,
           checkOut: checkOut ? new Date(checkOut) : null,
           status: validStatus,
