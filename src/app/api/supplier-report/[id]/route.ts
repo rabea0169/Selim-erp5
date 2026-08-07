@@ -47,8 +47,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const totalReturns = returns.reduce((s, x) => s + x.total, 0)
     const totalPayments = payments.reduce((s, x) => s + x.amount, 0)
     const totalPaid = purchases.reduce((s, x) => s + x.paid, 0)
-    // الرصيد المتبقي = إجمالي المشتريات - المدفوع (يشمل المدفوعات المستقلة) - إجمالي المرتجعات
-    const totalRemaining = totalPurchases - totalPaid - totalReturns
+    // fix(receivables): السدادات العامة (بدون فاتورة) لا تُحدِّث paid على أي فاتورة شراء،
+    // فيجب خصمها منفصلة من المستحق — والمرتبطة بفاتورة محسوبة ضمن totalPaid (منع الاحتساب المزدوج).
+    const standalonePayments = payments.filter((p) => !p.invoiceId).reduce((s, x) => s + x.amount, 0)
+    // الرصيد المتبقي = إجمالي المشتريات - المدفوع على الفواتير - المرتجعات - السدادات العامة
+    const totalRemaining = totalPurchases - totalPaid - totalReturns - standalonePayments
 
     return NextResponse.json({
       supplier,
@@ -61,6 +64,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         totalReturns,
         totalPayments,
         totalPaid,
+        standalonePayments,
         totalRemaining: Math.max(0, totalRemaining),
       },
       purchases,

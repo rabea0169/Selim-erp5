@@ -47,8 +47,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const totalReturns = returns.reduce((s, x) => s + x.total, 0)
     const totalPayments = payments.reduce((s, x) => s + x.amount, 0)
     const totalPaid = sales.reduce((s, x) => s + x.paid, 0)
-    // الرصيد المتبقي = إجمالي المبيعات - المدفوع (يشمل المدفوعات المستقلة) - إجمالي المرتجعات
-    const totalRemaining = totalSales - totalPaid - totalReturns
+    // fix(receivables): المدفوعات غير المرتبطة بفاتورة (سداد عام) لا تُحدِّث paid على أي فاتورة،
+    // فيجب خصمها منفصلة من الرصيد — وإلا بقيت الذمة ظاهرة رغم تسجيل التحصيل.
+    // المدفوعات المرتبطة بفاتورة محسوبة أصلاً ضمن totalPaid (تحدِّث sale.paid) فلا تُخصم مجدداً (منع الاحتساب المزدوج).
+    const standalonePayments = payments.filter((p) => !p.invoiceId).reduce((s, x) => s + x.amount, 0)
+    // الرصيد المتبقي = إجمالي المبيعات - المدفوع على الفواتير - المرتجعات - السدادات العامة
+    const totalRemaining = totalSales - totalPaid - totalReturns - standalonePayments
 
     return NextResponse.json({
       customer,
@@ -61,6 +65,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         totalReturns,
         totalPayments,
         totalPaid,
+        standalonePayments,
         totalRemaining: Math.max(0, totalRemaining),
       },
       sales,
