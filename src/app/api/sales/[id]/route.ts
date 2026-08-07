@@ -27,11 +27,33 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   }
 }
 
+// حساب الكميات المُرتجعة سابقاً لكل منتج من مرتجعات الفاتورة (restockItems=true)
+// items مخزنة كـ JSON في SaleReturn — كل عنصر: { itemName, productId?, saleItemId?, quantity, unitPrice }
+// المفتاح productId لأن إعادة التخزين عند المرتجع تتم بالمنتج (نفس نمط getReturnedQtyByMaterial في المشتريات)
+async function getReturnedQtyByProduct(tx: any, saleId: string, companyId: string | null) {
+  const returnedQty = new Map<string, number>()
+  const returns = await tx.saleReturn.findMany({
+    where: { saleId, companyId, restockItems: true },
+    select: { items: true },
+  })
+  for (const r of returns) {
+    const rItems = Array.isArray(r.items) ? (r.items as any[]) : []
+    for (const ri of rItems) {
+      if (ri?.productId && Number(ri.quantity) > 0) {
+        returnedQty.set(ri.productId, (returnedQty.get(ri.productId) || 0) + Number(ri.quantity))
+      }
+    }
+  }
+  return returnedQty
+}
+
 // PUT /api/sales/[id]
 // وضعان:
 //  1) تعديل كامل للفاتورة (عند إرسال items): العميل/رقم الفاتورة/التاريخ/الملاحظات/المدفوع/الأصناف/الخصم/الضريبة/المصاريف
 //     مع عكس مخزون الأصناف القديمة وخصم مخزون الجديدة وإعادة حساب الإجماليات في السيرفر — كل ذلك ذرّياً.
-//  2) تحديث المدفوع/الملاحظات فقط (استلام دفعة) — السلوك السابق كما هو.
+//     ملاحظة: يُمنع التعديل الكامل على فاتورة عليها مرتجعات (المرتجعات تشير لأصناف قد تُحذف،
+//     ولأن المرتجعات أعادت كمياتها للمخزون فالعكس الكامل سيضخّم المخزون) — احذف المرتجعات أولاً.
+//  2) تحديث المدفوع/الملاحظات فقط (استلام دفعة) — السلوك السابق كما هو ويعمل دائماً.
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await getCurrentUser()
@@ -112,7 +134,17 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
           throw new Error('__NOT_FOUND__')
         }
 
+        // منع التعديل الكامل على فاتورة عليها مرتجعات — المرتجعات أعادت كمياتها للمخزون
+        // وستبقى تشير لأصناف لم تعد موجودة بعد التعديل؛ احذف المرتجعات أولاً (الأبسط والأكثر أماناً)
+        const returnsCount = await tx.saleReturn.count({
+          where: { saleId: id, companyId },
+        })
+        if (returnsCount > 0) {
+          throw new Error('__HAS_RETURNS__')
+        }
+
         // 2) عكس مخزون الأصناف القديمة: إرجاع الكميات للمنتجات ذرّياً
+        //    (بعد المنع أعلاه لا توجد مرتجعات، فالصافي = كامل كمية الفاتورة)
         for (const item of existing.items) {
           if (item.productId) {
             await tx.product.update({
@@ -283,6 +315,12 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       if (e.message === '__NOT_FOUND__') {
         return NextResponse.json({ error: 'الفاتورة غير موجودة' }, { status: 404 })
       }
+      if (e.message === '__HAS_RETURNS__') {
+        return NextResponse.json(
+          { error: 'لا يمكن تعديل أصناف فاتورة عليها مرتجعات — احذف المرتجعات أولاً' },
+          { status: 400 }
+        )
+      }
       if (e.message.includes('المنتج') || e.message.includes('الكمية') || e.message.includes('العميل')) {
         return NextResponse.json({ error: e.message }, { status: 400 })
       }
@@ -309,13 +347,19 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     }
 
     await db.$transaction(async (tx) => {
-      // 1) إرجاع كميات المنتجات للمخزون
+      // 1) إرجاع كميات المنتجات للمخزون — صافي الكمية فقط
+      //    إصلاح التضخيم المزدوج: المرتجعات (restockItems=true) سبق أن أعادت كمياتها للمخزون،
+      //    لذا نعيد فقط صافي الكمية = max(0, كمية الفاتورة − الكميات المُرتجعة سابقاً لنفس المنتج)
+      const returnedQty = await getReturnedQtyByProduct(tx, id, companyId)
       for (const item of sale.items) {
         if (item.productId) {
-          await tx.product.update({
-            where: { id: item.productId },
-            data: { quantity: { increment: item.quantity }, updatedAt: new Date() },
-          })
+          const netQty = Math.max(0, item.quantity - (returnedQty.get(item.productId) || 0))
+          if (netQty > 0) {
+            await tx.product.update({
+              where: { id: item.productId },
+              data: { quantity: { increment: netQty }, updatedAt: new Date() },
+            })
+          }
         }
       }
 
@@ -327,6 +371,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
       }
 
       // 3) حذف المدفوعات المرتبطة بالفاتورة + حركات الخزينة الخاصة بها (referenceType: payment)
+      //    ذرّياً داخل نفس الـ transaction حتى لا تبقى دفعات يتيمة تُبالغ في ذمم العملاء
       const salePayments = await tx.payment.findMany({
         where: { invoiceId: id, companyId },
         select: { id: true },
