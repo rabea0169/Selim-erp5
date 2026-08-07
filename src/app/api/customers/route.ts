@@ -46,6 +46,9 @@ export async function GET(req: NextRequest) {
         phone: c.phone,
         address: c.address,
         notes: c.notes,
+        creditLimit: c.creditLimit,
+        loyaltyPoints: c.loyaltyPoints,
+        openingBalance: c.openingBalance,
         createdAt: c.createdAt,
         totalSales,
         totalPaid,
@@ -66,7 +69,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
     }
     const body = await req.json()
-    const { name, phone, address, notes } = body
+    const { name, phone, address, notes, creditLimit, openingBalance } = body
 
     if (!name?.trim()) {
       return NextResponse.json(
@@ -82,6 +85,8 @@ export async function POST(req: NextRequest) {
         phone: phone?.trim() || null,
         address: address?.trim() || null,
         notes: notes?.trim() || null,
+        creditLimit: Number(creditLimit) > 0 ? Number(creditLimit) : null,
+        openingBalance: Number(openingBalance) > 0 ? Number(openingBalance) : 0,
       },
     })
     return NextResponse.json({ customer })

@@ -14,12 +14,14 @@ class CustomerRepository extends BaseRepository<Customer> {
   async getWithStats(customerId: string): Promise<{ customer: Customer; totalSales: number; totalPaid: number; totalRemaining: number; salesCount: number; sales: Sale[] } | null> {
     try {
       const res = await apiGet<any>(`/api/customer-report/${customerId}`)
+      // العقد الفعلي للسيرفر: { customer, range, summary: { totalSales, totalPaid, totalRemaining, salesCount, ... }, sales, returns, payments }
+      const summary = res.summary || {}
       return {
         customer: res.customer,
-        totalSales: res.totalSales || 0,
-        totalPaid: res.totalPaid || 0,
-        totalRemaining: res.totalRemaining || 0,
-        salesCount: (res.sales || []).length,
+        totalSales: summary.totalSales || 0,
+        totalPaid: summary.totalPaid || 0,
+        totalRemaining: summary.totalRemaining || 0,
+        salesCount: summary.salesCount ?? (res.sales || []).length,
         sales: res.sales || [],
       }
     } catch { return null }
