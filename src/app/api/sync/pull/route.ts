@@ -52,6 +52,8 @@ export async function POST(_req: NextRequest) {
     const companyId = admin.companyId ?? null
 
     const data: Record<string, any[]> = {}
+    // Fix: الإبلاغ عن الجداول التي فشل سحبها بدل ابتلاع الخطأ بصمت
+    const errors: Record<string, string> = {}
 
     for (const [table, select] of Object.entries(EXPORT_SELECT)) {
       try {
@@ -102,12 +104,14 @@ export async function POST(_req: NextRequest) {
       } catch (e: any) {
         console.error(`[Sync] Error pulling ${table}:`, e.message)
         data[table] = []
+        errors[table] = e?.message || 'unknown error'
       }
     }
 
     return NextResponse.json({
-      success: true,
+      success: Object.keys(errors).length === 0,
       data,
+      errors,
       pulledAt: new Date().toISOString(),
     })
   } catch (e) {
