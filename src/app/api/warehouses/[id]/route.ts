@@ -3,6 +3,8 @@ import { db } from '@/lib/db-server'
 import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
 
+const VALID_WAREHOUSE_TYPES = ['raw_materials', 'finished_goods', 'general']
+
 // GET /api/warehouses/[id]
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -42,6 +44,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     }
     if (!type?.trim()) {
       return NextResponse.json({ error: 'نوع المخزن مطلوب' }, { status: 400 })
+    }
+    if (!VALID_WAREHOUSE_TYPES.includes(type.trim())) {
+      return NextResponse.json({ error: 'نوع المستودع غير صالح' }, { status: 400 })
     }
 
     // فحص وجود المخزن وتبعيته للشركة (حماية IDOR) — الفلتر إجباري
