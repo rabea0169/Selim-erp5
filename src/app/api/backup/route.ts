@@ -3,6 +3,18 @@ import { db } from '@/lib/db-server'
 import { requireAdmin } from '@/lib/admin-check'
 import { safeError } from '@/lib/safe-error'
 
+// تنفيذ استعلام كيان واحد بشكل مستقل — عند الفشل نسجل الخطأ ونعيد مصفوفة فارغة
+// حتى لا يُسقط استعلام فاشل واحد (جدول/عمود مفقود) التصدير بالكامل بـ 500
+async function tryQuery<T>(name: string, warnings: string[], fn: () => Promise<T[]>): Promise<T[]> {
+  try {
+    return await fn()
+  } catch (e) {
+    console.error('[backup] entity failed:', name, e)
+    warnings.push(name)
+    return []
+  }
+}
+
 // GET /api/backup - تصدير بيانات الشركة الحالية فقط بصيغة JSON (admin فقط)
 export async function GET() {
   try {
@@ -11,10 +23,11 @@ export async function GET() {
       return NextResponse.json({ error: admin.error }, { status: admin.status })
     }
     const companyId = admin.companyId ?? null
+    const warnings: string[] = []
 
     // Fix: عزل كامل بالشركة — الجداول الفرعية (saleItems/purchaseItems) عبر معرفات الآباء
-    const sales = await db.sale.findMany({ where: { companyId } })
-    const purchases = await db.purchase.findMany({ where: { companyId } })
+    const sales = await tryQuery('sales', warnings, () => db.sale.findMany({ where: { companyId } }))
+    const purchases = await tryQuery('purchases', warnings, () => db.purchase.findMany({ where: { companyId } }))
     const saleIds = sales.map((s) => s.id)
     const purchaseIds = purchases.map((p) => p.id)
 
@@ -42,28 +55,28 @@ export async function GET() {
       factorySettings,
       auditLogs,
     ] = await Promise.all([
-      db.worker.findMany({ where: { companyId } }),
-      db.workerAdvance.findMany({ where: { companyId } }),
-      db.workerReceipt.findMany({ where: { companyId } }),
-      db.workerAttendance.findMany({ where: { companyId } }),
-      db.production.findMany({ where: { companyId } }),
-      db.customer.findMany({ where: { companyId } }),
-      db.supplier.findMany({ where: { companyId } }),
-      db.saleItem.findMany({ where: { saleId: { in: saleIds } } }),
-      db.purchaseItem.findMany({ where: { purchaseId: { in: purchaseIds } } }),
-      db.expenseCategory.findMany({ where: { companyId } }),
-      db.expense.findMany({ where: { companyId } }),
-      db.product.findMany({ where: { companyId } }),
-      db.warehouse.findMany({ where: { companyId } }),
-      db.material.findMany({ where: { companyId } }),
-      db.materialTransaction.findMany({ where: { companyId } }),
-      db.treasuryTransaction.findMany({ where: { companyId } }),
-      db.productionOrder.findMany({ where: { companyId } }),
-      db.payment.findMany({ where: { companyId } }),
-      db.saleReturn.findMany({ where: { companyId } }),
-      db.purchaseReturn.findMany({ where: { companyId } }),
-      db.factorySettings.findMany({ where: { companyId: companyId ?? '__none__' } }),
-      db.auditLog.findMany({ where: { companyId } }),
+      tryQuery('workers', warnings, () => db.worker.findMany({ where: { companyId } })),
+      tryQuery('workerAdvances', warnings, () => db.workerAdvance.findMany({ where: { companyId } })),
+      tryQuery('workerReceipts', warnings, () => db.workerReceipt.findMany({ where: { companyId } })),
+      tryQuery('workerAttendance', warnings, () => db.workerAttendance.findMany({ where: { companyId } })),
+      tryQuery('production', warnings, () => db.production.findMany({ where: { companyId } })),
+      tryQuery('customers', warnings, () => db.customer.findMany({ where: { companyId } })),
+      tryQuery('suppliers', warnings, () => db.supplier.findMany({ where: { companyId } })),
+      tryQuery('saleItems', warnings, () => db.saleItem.findMany({ where: { saleId: { in: saleIds } } })),
+      tryQuery('purchaseItems', warnings, () => db.purchaseItem.findMany({ where: { purchaseId: { in: purchaseIds } } })),
+      tryQuery('expenseCategories', warnings, () => db.expenseCategory.findMany({ where: { companyId } })),
+      tryQuery('expenses', warnings, () => db.expense.findMany({ where: { companyId } })),
+      tryQuery('products', warnings, () => db.product.findMany({ where: { companyId } })),
+      tryQuery('warehouses', warnings, () => db.warehouse.findMany({ where: { companyId } })),
+      tryQuery('materials', warnings, () => db.material.findMany({ where: { companyId } })),
+      tryQuery('materialTransactions', warnings, () => db.materialTransaction.findMany({ where: { companyId } })),
+      tryQuery('treasuryTransactions', warnings, () => db.treasuryTransaction.findMany({ where: { companyId } })),
+      tryQuery('productionOrders', warnings, () => db.productionOrder.findMany({ where: { companyId } })),
+      tryQuery('payments', warnings, () => db.payment.findMany({ where: { companyId } })),
+      tryQuery('saleReturns', warnings, () => db.saleReturn.findMany({ where: { companyId } })),
+      tryQuery('purchaseReturns', warnings, () => db.purchaseReturn.findMany({ where: { companyId } })),
+      tryQuery('factorySettings', warnings, () => db.factorySettings.findMany({ where: { companyId: companyId ?? '__none__' } })),
+      tryQuery('auditLogs', warnings, () => db.auditLog.findMany({ where: { companyId } })),
     ])
 
     const backup = {
@@ -71,6 +84,8 @@ export async function GET() {
       app: 'clothing-factory-management',
       companyId,
       exportedAt: new Date().toISOString(),
+      // أسماء الكيانات التي تعذّر تصديرها (فارغة في الحالة الطبيعية)
+      warnings,
       data: {
         workers,
         workerAdvances: advances,

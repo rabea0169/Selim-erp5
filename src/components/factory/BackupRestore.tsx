@@ -47,6 +47,7 @@ const COUNT_LABELS: Record<string, string> = {
   purchaseReturns: 'مرتجعات المشتريات',
   treasuryTransactions: 'حركات الخزينة',
   factorySettings: 'إعدادات المصنع',
+  auditLogs: 'سجل التدقيق',
 }
 
 export function BackupRestore({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
@@ -70,7 +71,17 @@ export function BackupRestore({ open, onOpenChange }: { open: boolean; onOpenCha
       a.download = `selim-erp-backup-${stamp}.json`
       a.click()
       URL.revokeObjectURL(url)
-      toast({ title: 'تم تنزيل النسخة الاحتياطية' })
+      const warnings: string[] = Array.isArray(data?.warnings) ? data.warnings : []
+      if (warnings.length > 0) {
+        // بعض الكيانات تعذّر تصديرها — نُعلم المستخدم مع استمرار التنزيل
+        const names = warnings.map((w) => COUNT_LABELS[w] || w).join('، ')
+        toast({
+          title: 'تم إنشاء النسخة مع تحذيرات',
+          description: `تعذّر تصدير: ${names}`,
+        })
+      } else {
+        toast({ title: 'تم تنزيل النسخة الاحتياطية' })
+      }
     } catch (e: any) {
       toast({ title: 'خطأ', description: e.message, variant: 'destructive' })
     } finally {
