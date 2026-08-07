@@ -6,6 +6,7 @@ import {
   Boxes,
   ChevronLeft,
   Trash2,
+  Pencil,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { formatCurrency } from '@/lib/format'
@@ -17,9 +18,10 @@ interface WarehouseCardProps {
   materials: Material[]
   onClick: () => void
   onDelete?: (id: string) => void
+  onEdit?: (warehouse: Warehouse) => void
 }
 
-export function WarehouseCard({ warehouse, materials, onClick, onDelete }: WarehouseCardProps) {
+export function WarehouseCard({ warehouse, materials, onClick, onDelete, onEdit }: WarehouseCardProps) {
   const wMaterials = materials.filter((m) => m.warehouseId === warehouse.id)
   const wValue = wMaterials.reduce((s, m) => s + m.quantity * m.unitCost, 0)
   const style = WAREHOUSE_TYPE_STYLES[warehouse.type]
@@ -74,6 +76,18 @@ export function WarehouseCard({ warehouse, materials, onClick, onDelete }: Wareh
           </div>
         </div>
         <div className="flex items-center gap-1">
+          {onEdit && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                onEdit(warehouse)
+              }}
+              className="p-1.5 text-slate-400 hover:text-blue-500 transition-colors"
+              aria-label="تعديل المخزن"
+            >
+              <Pencil className="w-4 h-4" />
+            </button>
+          )}
           {onDelete && (
             <button
               onClick={(e) => {

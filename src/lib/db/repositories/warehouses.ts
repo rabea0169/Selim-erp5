@@ -40,6 +40,13 @@ class MaterialRepository extends BaseRepository<Material> {
     dataChangeEmitter.notifyCreate('materialTransactions')
   }
 
+  /** تسوية جرد — newQuantity هو الرصيد الجديد المطلق */
+  async adjustStock(materialId: string, newQuantity: number, reason: string, notes?: string): Promise<void> {
+    await apiPost('/api/materials/stock', { materialId, quantity: newQuantity, type: 'adjustment', reason, notes })
+    dataChangeEmitter.notifyUpdate('materials')
+    dataChangeEmitter.notifyCreate('materialTransactions')
+  }
+
   async getTransactions(materialId: string): Promise<MaterialTransaction[]> {
     try { return await apiGet<MaterialTransaction[]>(`/api/materials/${materialId}/transactions`) } catch { return [] }
   }
