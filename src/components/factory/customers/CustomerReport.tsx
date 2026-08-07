@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { FileText, TrendingUp, CreditCard, RotateCcw, ArrowDownToLine, ArrowUpFromLine, Wallet, ShoppingCart } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -29,6 +29,7 @@ import {
   buildFactoryHeader,
   buildFactoryFooter,
 } from '@/lib/factory-header'
+import { PrintButton } from '../PrintButton'
 import type { CustomerWithStats } from './CustomerCard'
 
 interface CustomerReportProps {
@@ -50,137 +51,235 @@ export function CustomerReport({ customer, onClose }: CustomerReportProps) {
   const [from, setFrom] = useState(startOfMonth())
   const [to, setTo] = useState(todayStr())
   const [exporting, setExporting] = useState(false)
+  const [printHtml, setPrintHtml] = useState('')
   const { toast } = useToast()
 
   const { data, loading, reload } = useLiveData<any>(async () => {
-    let stats: Awaited<ReturnType<typeof customerRepository.getWithStats>> = null
-    let loadError: any = null
-    try {
-      const [statsRes, payments, allReturns] = await Promise.all([
-        customerRepository.getWithStats(customer.id),
-        paymentRepository.getByParty(customer.id),
-        saleReturnRepository.getByDateRange(),
-      ])
-      stats = statsRes
+    const [stats, payments, allReturns] = await Promise.all([
+      customerRepository.getWithStats(customer.id),
+      paymentRepository.getByParty(customer.id),
+      saleReturnRepository.getByDateRange(),
+    ])
 
-      if (!stats) {
-        // fix(reports): كان الفشل يُبتلع بصمت (getWithStats يعيد null) فلا يظهر أي شيء للمستخدم
-        throw new Error('تعذر جلب بيانات التقرير من السيرفر')
+    if (!stats) return null
+
+    const customerPayments = payments
+      .filter((p) => p.type === 'customer_payment')
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+
+    const customerReturns = allReturns
+      .filter((r) => r.customerId_ref === customer.id)
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+
+    const fromTime = from ? new Date(from).getTime() : 0
+    const toTime = to ? new Date(to).getTime() + 24 * 60 * 60 * 1000 - 1 : Date.now()
+
+    const filteredSales = stats.sales.filter((s) => {
+      const t = new Date(s.date).getTime()
+      return t >= fromTime && t <= toTime
+    })
+    const filteredPayments = customerPayments.filter((p) => {
+      const t = new Date(p.date).getTime()
+      return t >= fromTime && t <= toTime
+    })
+    const filteredReturns = customerReturns.filter((r) => {
+      const t = new Date(r.date).getTime()
+      return t >= fromTime && t <= toTime
+    })
+
+    const totalSales = filteredSales.reduce((sum, s) => sum + s.total, 0)
+    const totalPaid = filteredPayments.reduce((sum, p) => sum + p.amount, 0)
+    const totalReturns = filteredReturns.reduce((sum, r) => sum + r.total, 0)
+    const totalRemaining = totalSales - totalPaid - totalReturns
+
+    // بناء كشف الحساب
+    const statementEntries: StatementEntry[] = []
+    let runningBalance = 0
+
+    type AnyEntry =
+      | { kind: 'sale'; date: string; id: string; total: number; invoiceNo?: string }
+      | { kind: 'payment'; date: string; id: string; amount: number; method?: string }
+      | { kind: 'return'; date: string; id: string; total: number; returnNumber: string }
+
+    const allEntries: AnyEntry[] = [
+      ...filteredSales.map((s) => ({ kind: 'sale' as const, date: s.date, id: s.id, total: s.total, invoiceNo: s.invoiceNo })),
+      ...filteredPayments.map((p) => ({ kind: 'payment' as const, date: p.date, id: p.id, amount: p.amount, method: p.method })),
+      ...filteredReturns.map((r) => ({ kind: 'return' as const, date: r.date, id: r.id, total: r.total, returnNumber: r.returnNumber })),
+    ].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+
+    for (const entry of allEntries) {
+      let debit = 0
+      let credit = 0
+      let description = ''
+      let type: StatementEntry['type'] = 'sale'
+
+      if (entry.kind === 'sale') {
+        debit = entry.total
+        description = `فاتورة مبيعات ${entry.invoiceNo ? `(${entry.invoiceNo})` : ''}`
+        type = 'sale'
+      } else if (entry.kind === 'payment') {
+        credit = entry.amount
+        const methodLabel = entry.method === 'transfer' ? ' - تحويل' : entry.method === 'card' ? ' - بطاقة' : ''
+        description = `سداد${methodLabel}`
+        type = 'payment'
+      } else {
+        credit = entry.total
+        description = `مرتجع (${entry.returnNumber})`
+        type = 'return'
       }
 
-      const customerPayments = payments
-        .filter((p) => p.type === 'customer_payment')
-        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-
-      const customerReturns = allReturns
-        .filter((r) => r.customerId_ref === customer.id)
-        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-
-      const fromTime = from ? new Date(from).getTime() : 0
-      const toTime = to ? new Date(to).getTime() + 24 * 60 * 60 * 1000 - 1 : Date.now()
-
-      const filteredSales = stats.sales.filter((s) => {
-        const t = new Date(s.date).getTime()
-        return t >= fromTime && t <= toTime
+      runningBalance += debit - credit
+      statementEntries.push({
+        id: entry.id,
+        date: entry.date,
+        description,
+        type,
+        debit,
+        credit,
+        balance: runningBalance,
       })
-      const filteredPayments = customerPayments.filter((p) => {
-        const t = new Date(p.date).getTime()
-        return t >= fromTime && t <= toTime
-      })
-      const filteredReturns = customerReturns.filter((r) => {
-        const t = new Date(r.date).getTime()
-        return t >= fromTime && t <= toTime
-      })
+    }
 
-      const totalSales = filteredSales.reduce((sum, s) => sum + s.total, 0)
-      const totalPaid = filteredPayments.reduce((sum, p) => sum + p.amount, 0)
-      const totalReturns = filteredReturns.reduce((sum, r) => sum + r.total, 0)
-      const totalRemaining = totalSales - totalPaid - totalReturns
-
-      // بناء كشف الحساب
-      const statementEntries: StatementEntry[] = []
-      let runningBalance = 0
-
-      type AnyEntry =
-        | { kind: 'sale'; date: string; id: string; total: number; invoiceNo?: string }
-        | { kind: 'payment'; date: string; id: string; amount: number; method?: string }
-        | { kind: 'return'; date: string; id: string; total: number; returnNumber: string }
-
-      const allEntries: AnyEntry[] = [
-        ...filteredSales.map((s) => ({ kind: 'sale' as const, date: s.date, id: s.id, total: s.total, invoiceNo: s.invoiceNo })),
-        ...filteredPayments.map((p) => ({ kind: 'payment' as const, date: p.date, id: p.id, amount: p.amount, method: p.method })),
-        ...filteredReturns.map((r) => ({ kind: 'return' as const, date: r.date, id: r.id, total: r.total, returnNumber: r.returnNumber })),
-      ].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-
-      for (const entry of allEntries) {
-        let debit = 0
-        let credit = 0
-        let description = ''
-        let type: StatementEntry['type'] = 'sale'
-
-        if (entry.kind === 'sale') {
-          debit = entry.total
-          description = `فاتورة مبيعات ${entry.invoiceNo ? `(${entry.invoiceNo})` : ''}`
-          type = 'sale'
-        } else if (entry.kind === 'payment') {
-          credit = entry.amount
-          const methodLabel = entry.method === 'transfer' ? ' - تحويل' : entry.method === 'card' ? ' - بطاقة' : ''
-          description = `سداد${methodLabel}`
-          type = 'payment'
-        } else {
-          credit = entry.total
-          description = `مرتجع (${entry.returnNumber})`
-          type = 'return'
-        }
-
-        runningBalance += debit - credit
-        statementEntries.push({
-          id: entry.id,
-          date: entry.date,
-          description,
-          type,
-          debit,
-          credit,
-          balance: runningBalance,
-        })
-      }
-
-      return {
-        ...stats,
-        sales: filteredSales,
-        payments: filteredPayments,
-        returns: filteredReturns,
-        statement: statementEntries,
+    return {
+      ...stats,
+      sales: filteredSales,
+      payments: filteredPayments,
+      returns: filteredReturns,
+      statement: statementEntries,
+      totalSales,
+      totalPaid,
+      totalReturns,
+      totalRemaining,
+      salesCount: filteredSales.length,
+      paymentsCount: filteredPayments.length,
+      returnsCount: filteredReturns.length,
+      summary: {
+        salesCount: filteredSales.length,
+        paymentsCount: filteredPayments.length,
+        returnsCount: filteredReturns.length,
         totalSales,
         totalPaid,
         totalReturns,
         totalRemaining,
-        salesCount: filteredSales.length,
-        paymentsCount: filteredPayments.length,
-        returnsCount: filteredReturns.length,
-        summary: {
-          salesCount: filteredSales.length,
-          paymentsCount: filteredPayments.length,
-          returnsCount: filteredReturns.length,
-          totalSales,
-          totalPaid,
-          totalReturns,
-          totalRemaining,
-        },
-      }
-    } catch (e: any) {
-      loadError = e
-      return null
-    } finally {
-      if (loadError || !stats) {
-        toast({
-          title: 'خطأ في تحميل التقرير',
-          description: loadError?.message || 'تعذر تحميل بيانات العميل — تحقق من الاتصال ثم أعد المحاولة',
-          variant: 'destructive',
-        })
-      }
+      },
     }
   }, ['sales', 'payments', 'saleReturns'])
+
+  // بناء HTML التقرير الكامل (ترويسة المصنع + كشف الحساب + الفواتير + التذييل)
+  // يُستخدم لتصدير PDF وللطباعة المباشرة
+  const buildReportHtml = async (): Promise<string> => {
+    const settings = await getFactorySettings()
+    const header = buildFactoryHeader(settings)
+    const footer = buildFactoryFooter(settings)
+
+    const salesRows = (data.sales || [])
+      .map(
+        (s: any) => `
+        <tr>
+          <td style="padding: 6px; border: 1px solid #e2e8f0; text-align: center;">${formatDate(s.date)}</td>
+          <td style="padding: 6px; border: 1px solid #e2e8f0; text-align: center;">${s.invoiceNo || '-'}</td>
+          <td style="padding: 6px; border: 1px solid #e2e8f0; text-align: center;">${s.items?.length || 0}</td>
+          <td style="padding: 6px; border: 1px solid #e2e8f0; text-align: center; color: #059669; font-weight: bold;">${formatCurrency(s.total)}</td>
+          <td style="padding: 6px; border: 1px solid #e2e8f0; text-align: center;">${formatCurrency(s.paid)}</td>
+          <td style="padding: 6px; border: 1px solid #e2e8f0; text-align: center; color: #d97706; font-weight: bold;">${formatCurrency(s.total - s.paid)}</td>
+        </tr>`
+      )
+      .join('')
+
+    const statementRows = (data.statement || [])
+      .map(
+        (s: StatementEntry) => `
+        <tr>
+          <td style="padding: 5px; border: 1px solid #e2e8f0; text-align: center; font-size: 11px;">${formatDate(s.date)}</td>
+          <td style="padding: 5px; border: 1px solid #e2e8f0; text-align: right; font-size: 11px;">${s.description}</td>
+          <td style="padding: 5px; border: 1px solid #e2e8f0; text-align: center; font-size: 11px; color: ${s.debit > 0 ? '#059669' : '#94a3b8'}; font-weight: ${s.debit > 0 ? 'bold' : 'normal'};">${s.debit > 0 ? formatCurrency(s.debit) : '-'}</td>
+          <td style="padding: 5px; border: 1px solid #e2e8f0; text-align: center; font-size: 11px; color: ${s.credit > 0 ? '#d97706' : '#94a3b8'}; font-weight: ${s.credit > 0 ? 'bold' : 'normal'};">${s.credit > 0 ? formatCurrency(s.credit) : '-'}</td>
+          <td style="padding: 5px; border: 1px solid #e2e8f0; text-align: center; font-size: 11px; font-weight: bold;">${formatCurrency(s.balance)}</td>
+        </tr>`
+      )
+      .join('')
+
+    return `
+      ${header}
+      <div style="margin-bottom: 20px; padding: 16px; background: #f0fdf4; border-radius: 8px;">
+        <h2 style="margin: 0 0 8px; color: #1e293b;">بيانات العميل</h2>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 13px;">
+          <p><strong>الاسم:</strong> ${customer.name}</p>
+          <p><strong>الهاتف:</strong> ${customer.phone || '-'}</p>
+          <p><strong>العنوان:</strong> ${customer.address || '-'}</p>
+          <p><strong>الفترة:</strong> ${formatDate(from)} إلى ${formatDate(to)}</p>
+        </div>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px;">
+        <div style="padding: 12px; background: #f0fdf4; border-radius: 8px; text-align: center;">
+          <p style="margin: 0; font-size: 11px; color: #047857;">عدد الفواتير</p>
+          <p style="margin: 4px 0 0; font-size: 18px; font-weight: bold; color: #065f46;">${data.summary.salesCount}</p>
+        </div>
+        <div style="padding: 12px; background: #fef3c7; border-radius: 8px; text-align: center;">
+          <p style="margin: 0; font-size: 11px; color: #92400e;">إجمالي المبيعات</p>
+          <p style="margin: 4px 0 0; font-size: 14px; font-weight: bold; color: #78350f;">${formatCurrency(data.summary.totalSales)}</p>
+        </div>
+        <div style="padding: 12px; background: #dbeafe; border-radius: 8px; text-align: center;">
+          <p style="margin: 0; font-size: 11px; color: #1e40af;">المدفوع</p>
+          <p style="margin: 4px 0 0; font-size: 14px; font-weight: bold; color: #1e3a8a;">${formatCurrency(data.summary.totalPaid)}</p>
+        </div>
+        <div style="padding: 12px; background: #fee2e2; border-radius: 8px; text-align: center;">
+          <p style="margin: 0; font-size: 11px; color: #b91c1c;">المتبقي</p>
+          <p style="margin: 4px 0 0; font-size: 14px; font-weight: bold; color: #7f1d1d;">${formatCurrency(data.summary.totalRemaining)}</p>
+        </div>
+      </div>
+      <h3 style="color: #1e293b; margin: 16px 0 8px;">كشف حساب العميل</h3>
+      <table style="width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 20px;">
+        <thead>
+          <tr style="background: #f1f5f9;">
+            <th style="padding: 8px; border: 1px solid #e2e8f0;">التاريخ</th>
+            <th style="padding: 8px; border: 1px solid #e2e8f0;">البيان</th>
+            <th style="padding: 8px; border: 1px solid #e2e8f0;">مدين (عليه)</th>
+            <th style="padding: 8px; border: 1px solid #e2e8f0;">دائن (له)</th>
+            <th style="padding: 8px; border: 1px solid #e2e8f0;">الرصيد</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${statementRows || '<tr><td colspan="5" style="padding: 12px; text-align: center; color: #94a3b8;">لا توجد عمليات في هذه الفترة</td></tr>'}
+        </tbody>
+      </table>
+      <h3 style="color: #1e293b; margin: 16px 0 8px;">تفاصيل الفواتير</h3>
+      <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+        <thead>
+          <tr style="background: #f1f5f9;">
+            <th style="padding: 8px; border: 1px solid #e2e8f0;">التاريخ</th>
+            <th style="padding: 8px; border: 1px solid #e2e8f0;">رقم الفاتورة</th>
+            <th style="padding: 8px; border: 1px solid #e2e8f0;">عدد الأصناف</th>
+            <th style="padding: 8px; border: 1px solid #e2e8f0;">الإجمالي</th>
+            <th style="padding: 8px; border: 1px solid #e2e8f0;">المدفوع</th>
+            <th style="padding: 8px; border: 1px solid #e2e8f0;">المتبقي</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${salesRows || '<tr><td colspan="6" style="padding: 12px; text-align: center; color: #94a3b8;">لا توجد فواتير في هذه الفترة</td></tr>'}
+        </tbody>
+      </table>
+      ${footer}
+    `
+  }
+
+  // تحضير HTML الطباعة عند تغير البيانات (لزر الطباعة المباشرة)
+  useEffect(() => {
+    let cancelled = false
+    if (!data) {
+      setPrintHtml('')
+      return
+    }
+    buildReportHtml()
+      .then((h) => {
+        if (!cancelled) setPrintHtml(h)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, from, to])
 
   const exportPDF = async () => {
     if (!data) return
@@ -189,99 +288,7 @@ export function CustomerReport({ customer, onClose }: CustomerReportProps) {
       const { exportElementToPDF, shareViaWhatsApp, createReportContainer, cleanupContainer } =
         await import('@/lib/pdf-export')
 
-      const settings = await getFactorySettings()
-      const header = buildFactoryHeader(settings)
-      const footer = buildFactoryFooter(settings)
-
-      const salesRows = (data.sales || [])
-        .map(
-          (s: any) => `
-          <tr>
-            <td style="padding: 6px; border: 1px solid #e2e8f0; text-align: center;">${formatDate(s.date)}</td>
-            <td style="padding: 6px; border: 1px solid #e2e8f0; text-align: center;">${s.invoiceNo || '-'}</td>
-            <td style="padding: 6px; border: 1px solid #e2e8f0; text-align: center;">${s.items?.length || 0}</td>
-            <td style="padding: 6px; border: 1px solid #e2e8f0; text-align: center; color: #059669; font-weight: bold;">${formatCurrency(s.total)}</td>
-            <td style="padding: 6px; border: 1px solid #e2e8f0; text-align: center;">${formatCurrency(s.paid)}</td>
-            <td style="padding: 6px; border: 1px solid #e2e8f0; text-align: center; color: #d97706; font-weight: bold;">${formatCurrency(s.total - s.paid)}</td>
-          </tr>`
-        )
-        .join('')
-
-      const statementRows = (data.statement || [])
-        .map(
-          (s: StatementEntry) => `
-          <tr>
-            <td style="padding: 5px; border: 1px solid #e2e8f0; text-align: center; font-size: 11px;">${formatDate(s.date)}</td>
-            <td style="padding: 5px; border: 1px solid #e2e8f0; text-align: right; font-size: 11px;">${s.description}</td>
-            <td style="padding: 5px; border: 1px solid #e2e8f0; text-align: center; font-size: 11px; color: ${s.debit > 0 ? '#059669' : '#94a3b8'}; font-weight: ${s.debit > 0 ? 'bold' : 'normal'};">${s.debit > 0 ? formatCurrency(s.debit) : '-'}</td>
-            <td style="padding: 5px; border: 1px solid #e2e8f0; text-align: center; font-size: 11px; color: ${s.credit > 0 ? '#d97706' : '#94a3b8'}; font-weight: ${s.credit > 0 ? 'bold' : 'normal'};">${s.credit > 0 ? formatCurrency(s.credit) : '-'}</td>
-            <td style="padding: 5px; border: 1px solid #e2e8f0; text-align: center; font-size: 11px; font-weight: bold;">${formatCurrency(s.balance)}</td>
-          </tr>`
-        )
-        .join('')
-
-      const contentHtml = `
-        ${header}
-        <div style="margin-bottom: 20px; padding: 16px; background: #f0fdf4; border-radius: 8px;">
-          <h2 style="margin: 0 0 8px; color: #1e293b;">بيانات العميل</h2>
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 13px;">
-            <p><strong>الاسم:</strong> ${customer.name}</p>
-            <p><strong>الهاتف:</strong> ${customer.phone || '-'}</p>
-            <p><strong>العنوان:</strong> ${customer.address || '-'}</p>
-            <p><strong>الفترة:</strong> ${formatDate(from)} إلى ${formatDate(to)}</p>
-          </div>
-        </div>
-        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px;">
-          <div style="padding: 12px; background: #f0fdf4; border-radius: 8px; text-align: center;">
-            <p style="margin: 0; font-size: 11px; color: #047857;">عدد الفواتير</p>
-            <p style="margin: 4px 0 0; font-size: 18px; font-weight: bold; color: #065f46;">${data.summary.salesCount}</p>
-          </div>
-          <div style="padding: 12px; background: #fef3c7; border-radius: 8px; text-align: center;">
-            <p style="margin: 0; font-size: 11px; color: #92400e;">إجمالي المبيعات</p>
-            <p style="margin: 4px 0 0; font-size: 14px; font-weight: bold; color: #78350f;">${formatCurrency(data.summary.totalSales)}</p>
-          </div>
-          <div style="padding: 12px; background: #dbeafe; border-radius: 8px; text-align: center;">
-            <p style="margin: 0; font-size: 11px; color: #1e40af;">المدفوع</p>
-            <p style="margin: 4px 0 0; font-size: 14px; font-weight: bold; color: #1e3a8a;">${formatCurrency(data.summary.totalPaid)}</p>
-          </div>
-          <div style="padding: 12px; background: #fee2e2; border-radius: 8px; text-align: center;">
-            <p style="margin: 0; font-size: 11px; color: #b91c1c;">المتبقي</p>
-            <p style="margin: 4px 0 0; font-size: 14px; font-weight: bold; color: #7f1d1d;">${formatCurrency(data.summary.totalRemaining)}</p>
-          </div>
-        </div>
-        <h3 style="color: #1e293b; margin: 16px 0 8px;">كشف حساب العميل</h3>
-        <table style="width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 20px;">
-          <thead>
-            <tr style="background: #f1f5f9;">
-              <th style="padding: 8px; border: 1px solid #e2e8f0;">التاريخ</th>
-              <th style="padding: 8px; border: 1px solid #e2e8f0;">البيان</th>
-              <th style="padding: 8px; border: 1px solid #e2e8f0;">مدين (عليه)</th>
-              <th style="padding: 8px; border: 1px solid #e2e8f0;">دائن (له)</th>
-              <th style="padding: 8px; border: 1px solid #e2e8f0;">الرصيد</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${statementRows || '<tr><td colspan="5" style="padding: 12px; text-align: center; color: #94a3b8;">لا توجد عمليات في هذه الفترة</td></tr>'}
-          </tbody>
-        </table>
-        <h3 style="color: #1e293b; margin: 16px 0 8px;">تفاصيل الفواتير</h3>
-        <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
-          <thead>
-            <tr style="background: #f1f5f9;">
-              <th style="padding: 8px; border: 1px solid #e2e8f0;">التاريخ</th>
-              <th style="padding: 8px; border: 1px solid #e2e8f0;">رقم الفاتورة</th>
-              <th style="padding: 8px; border: 1px solid #e2e8f0;">عدد الأصناف</th>
-              <th style="padding: 8px; border: 1px solid #e2e8f0;">الإجمالي</th>
-              <th style="padding: 8px; border: 1px solid #e2e8f0;">المدفوع</th>
-              <th style="padding: 8px; border: 1px solid #e2e8f0;">المتبقي</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${salesRows || '<tr><td colspan="6" style="padding: 12px; text-align: center; color: #94a3b8;">لا توجد فواتير في هذه الفترة</td></tr>'}
-          </tbody>
-        </table>
-        ${footer}
-      `
+      const contentHtml = await buildReportHtml()
 
       const container = createReportContainer(`تقرير العميل: ${customer.name}`, contentHtml)
       await new Promise((r) => setTimeout(r, 100))
@@ -543,14 +550,25 @@ export function CustomerReport({ customer, onClose }: CustomerReportProps) {
                 </TabsContent>
               </Tabs>
 
-              <Button
-                onClick={exportPDF}
-                disabled={exporting}
-                className="w-full bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white"
-              >
-                <TrendingUp className="w-4 h-4 ml-1" />
-                {exporting ? 'جارٍ التصدير...' : 'تصدير PDF ومشاركة واتساب'}
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  onClick={exportPDF}
+                  disabled={exporting}
+                  className="flex-1 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white"
+                >
+                  <TrendingUp className="w-4 h-4 ml-1" />
+                  {exporting ? 'جارٍ التصدير...' : 'تصدير PDF وواتساب'}
+                </Button>
+                {printHtml && (
+                  <PrintButton
+                    contentHtml={printHtml}
+                    title={`كشف حساب العميل: ${customer.name}`}
+                    variant="outline"
+                    className="border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                    label="طباعة"
+                  />
+                )}
+              </div>
             </>
           )}
         </div>
