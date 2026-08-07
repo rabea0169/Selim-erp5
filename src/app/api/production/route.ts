@@ -44,8 +44,9 @@ export async function GET(req: NextRequest) {
       db.production.count({ where }),
     ])
 
+    // المفتاح production كما يتوقع العميل (contract fix)
     return NextResponse.json({
-      productions,
+      production: productions,
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     })
   } catch (e) {
