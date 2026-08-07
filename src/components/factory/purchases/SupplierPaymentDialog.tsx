@@ -190,16 +190,17 @@ export function SupplierPaymentDialog({ open, onOpenChange, purchase }: Supplier
           </div>
         </div>
 
+        {/* الأزرار: الإجراء الأساسي (دفع) أولاً، ثم الإلغاء في النهاية */}
         <DialogFooter className="gap-2 px-1 pb-6">
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
-            إلغاء
-          </Button>
           <Button
             onClick={save}
             disabled={saving || !amount || Number(amount) <= 0}
             className="bg-amber-600 hover:bg-amber-700 text-white"
           >
             {saving ? 'جارٍ الحفظ...' : `دفع ${formatCurrency(Number(amount) || 0)}`}
+          </Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
+            إلغاء
           </Button>
         </DialogFooter>
       </DialogContent>

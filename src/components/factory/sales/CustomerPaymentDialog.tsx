@@ -197,16 +197,17 @@ export function CustomerPaymentDialog({ open, onOpenChange, sale }: CustomerPaym
           </div>
         </div>
 
+        {/* الأزرار: الإجراء الأساسي (استلام) أولاً، ثم الإلغاء في النهاية */}
         <DialogFooter className="gap-2 px-1 pb-6">
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
-            إلغاء
-          </Button>
           <Button
             onClick={save}
             disabled={saving || !amount || Number(amount) <= 0}
             className="bg-emerald-600 hover:bg-emerald-700 text-white"
           >
             {saving ? 'جارٍ الحفظ...' : `استلام ${formatCurrency(Number(amount) || 0)}`}
+          </Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
+            إلغاء
           </Button>
         </DialogFooter>
       </DialogContent>
