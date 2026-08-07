@@ -1,11 +1,9 @@
 'use client'
 
 /**
- * API Client — generic fetch wrapper for server-only data access
- * Replaces all IndexedDB local operations with server API calls
+ * API Client — generic fetch wrapper for server API access
+ * Normalizes all paths to prevent duplicate /api/api/ prefix issues
  */
-
-const API_BASE = '/api'
 
 class ApiError extends Error {
   status: number
@@ -16,16 +14,24 @@ class ApiError extends Error {
   }
 }
 
+function normalizePath(path: string): string {
+  if (path.startsWith('/api/')) return path
+  if (path.startsWith('api/')) return `/${path}`
+  return `/api${path.startsWith('/') ? path : `/${path}`}`
+}
+
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
-    let message = 'خطأ في الاتصال بالسيرفر'
+    let message = 'حدث خطأ أثناء التواصل مع السيرفر'
     try {
       const body = await response.json()
       if (body.error) message = body.error
     } catch {
       if (response.status === 401) message = 'غير مصرح — يجب تسجيل الدخول أولاً'
+      else if (response.status === 403) message = 'غير مصرح — صلاحيات غير كافية'
+      else if (response.status === 404) message = 'المسار المطلوب غير موجود على السيرفر'
       else if (response.status === 429) message = 'طلبات كثيرة جداً. حاول لاحقاً'
-      else if (response.status >= 500) message = 'خطأ في السيرفر. حاول مرة أخرى'
+      else if (response.status >= 500) message = 'خطأ داخلي في السيرفر. حاول مرة أخرى'
     }
     throw new ApiError(message, response.status)
   }
@@ -35,7 +41,8 @@ async function handleResponse<T>(response: Response): Promise<T> {
 
 /** GET request */
 export async function apiGet<T = any>(path: string, params?: Record<string, string>): Promise<T> {
-  const url = new URL(path, window.location.origin)
+  const fullPath = normalizePath(path)
+  const url = new URL(fullPath, window.location.origin)
   if (params) {
     for (const [key, value] of Object.entries(params)) {
       if (value !== undefined && value !== null && value !== '') {
@@ -52,7 +59,8 @@ export async function apiGet<T = any>(path: string, params?: Record<string, stri
 
 /** POST request */
 export async function apiPost<T = any>(path: string, body?: any): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
+  const fullPath = normalizePath(path)
+  const response = await fetch(fullPath, {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
@@ -63,7 +71,8 @@ export async function apiPost<T = any>(path: string, body?: any): Promise<T> {
 
 /** PUT request */
 export async function apiPut<T = any>(path: string, body?: any): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
+  const fullPath = normalizePath(path)
+  const response = await fetch(fullPath, {
     method: 'PUT',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
@@ -74,7 +83,8 @@ export async function apiPut<T = any>(path: string, body?: any): Promise<T> {
 
 /** DELETE request */
 export async function apiDelete(path: string): Promise<void> {
-  const response = await fetch(`${API_BASE}${path}`, {
+  const fullPath = normalizePath(path)
+  const response = await fetch(fullPath, {
     method: 'DELETE',
     credentials: 'include',
   })

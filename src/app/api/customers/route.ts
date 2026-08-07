@@ -1,17 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
 
 export async function GET(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
     const { searchParams } = new URL(req.url)
     const q = searchParams.get('q') || ''
-    const where: any = {}
+    const where: any = user?.companyId ? { companyId: user.companyId } : {}
     if (q) {
-      where.OR = [
-        { name: { contains: q } },
-        { phone: { contains: q } },
-        { address: { contains: q } },
+      where.AND = [
+        user?.companyId ? { companyId: user.companyId } : {},
+        {
+          OR: [
+            { name: { contains: q } },
+            { phone: { contains: q } },
+            { address: { contains: q } },
+          ],
+        },
       ]
     }
     const customers = await db.customer.findMany({
@@ -48,6 +55,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
     const body = await req.json()
     const { name, phone, address, notes } = body
 
@@ -60,6 +68,7 @@ export async function POST(req: NextRequest) {
 
     const customer = await db.customer.create({
       data: {
+        companyId: user?.companyId || null,
         name: name.trim(),
         phone: phone?.trim() || null,
         address: address?.trim() || null,
