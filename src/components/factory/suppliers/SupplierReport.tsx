@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import { FileText, TrendingUp, CreditCard, RotateCcw, ArrowDownToLine, ArrowUpFromLine, Wallet } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -29,6 +29,7 @@ import {
   buildFactoryHeader,
   buildFactoryFooter,
 } from '@/lib/factory-header'
+import { PrintButton } from '../PrintButton'
 import type { SupplierWithStats } from './SupplierCard'
 
 interface SupplierReportProps {
@@ -50,6 +51,7 @@ export function SupplierReport({ supplier, onClose }: SupplierReportProps) {
   const [from, setFrom] = useState(startOfMonth())
   const [to, setTo] = useState(todayStr())
   const [exporting, setExporting] = useState(false)
+  const [printHtml, setPrintHtml] = useState('')
   const { toast } = useToast()
 
   const { data, loading, reload } = useLiveData<any>(async () => {
@@ -164,6 +166,122 @@ export function SupplierReport({ supplier, onClose }: SupplierReportProps) {
     }
   }, ['purchases', 'payments', 'purchaseReturns'])
 
+  // بناء HTML التقرير الكامل (ترويسة المصنع + كشف الحساب + الفواتير + التذييل)
+  // يُستخدم لتصدير PDF وللطباعة المباشرة
+  const buildReportHtml = async (): Promise<string> => {
+    const settings = await getFactorySettings()
+    const header = buildFactoryHeader(settings)
+    const footer = buildFactoryFooter(settings)
+
+    const purchaseRows = (data.purchases || [])
+      .map(
+        (p: any) => `
+        <tr>
+          <td style="padding: 6px; border: 1px solid #e2e8f0; text-align: center;">${formatDate(p.date)}</td>
+          <td style="padding: 6px; border: 1px solid #e2e8f0; text-align: center;">${p.invoiceNo || '-'}</td>
+          <td style="padding: 6px; border: 1px solid #e2e8f0; text-align: center;">${p.items?.length || 0}</td>
+          <td style="padding: 6px; border: 1px solid #e2e8f0; text-align: center; color: #d97706; font-weight: bold;">${formatCurrency(p.total)}</td>
+          <td style="padding: 6px; border: 1px solid #e2e8f0; text-align: center;">${formatCurrency(p.paid)}</td>
+          <td style="padding: 6px; border: 1px solid #e2e8f0; text-align: center; color: #b91c1c; font-weight: bold;">${formatCurrency(p.total - p.paid)}</td>
+        </tr>`
+      )
+      .join('')
+
+    const statementRows = (data.statement || [])
+      .map(
+        (s: StatementEntry) => `
+        <tr>
+          <td style="padding: 5px; border: 1px solid #e2e8f0; text-align: center; font-size: 11px;">${formatDate(s.date)}</td>
+          <td style="padding: 5px; border: 1px solid #e2e8f0; text-align: right; font-size: 11px;">${s.description}</td>
+          <td style="padding: 5px; border: 1px solid #e2e8f0; text-align: center; font-size: 11px; color: ${s.debit > 0 ? '#d97706' : '#94a3b8'}; font-weight: ${s.debit > 0 ? 'bold' : 'normal'};">${s.debit > 0 ? formatCurrency(s.debit) : '-'}</td>
+          <td style="padding: 5px; border: 1px solid #e2e8f0; text-align: center; font-size: 11px; color: ${s.credit > 0 ? '#059669' : '#94a3b8'}; font-weight: ${s.credit > 0 ? 'bold' : 'normal'};">${s.credit > 0 ? formatCurrency(s.credit) : '-'}</td>
+          <td style="padding: 5px; border: 1px solid #e2e8f0; text-align: center; font-size: 11px; font-weight: bold;">${formatCurrency(s.balance)}</td>
+        </tr>`
+      )
+      .join('')
+
+    return `
+      ${header}
+      <div style="margin-bottom: 20px; padding: 16px; background: #fffbeb; border-radius: 8px;">
+        <h2 style="margin: 0 0 8px; color: #1e293b;">بيانات المورد</h2>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 13px;">
+          <p><strong>الاسم:</strong> ${supplier.name}</p>
+          <p><strong>الهاتف:</strong> ${supplier.phone || '-'}</p>
+          <p><strong>العنوان:</strong> ${supplier.address || '-'}</p>
+          <p><strong>الفترة:</strong> ${formatDate(from)} إلى ${formatDate(to)}</p>
+        </div>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px;">
+        <div style="padding: 12px; background: #fffbeb; border-radius: 8px; text-align: center;">
+          <p style="margin: 0; font-size: 11px; color: #92400e;">عدد الفواتير</p>
+          <p style="margin: 4px 0 0; font-size: 18px; font-weight: bold; color: #78350f;">${data.summary.purchasesCount}</p>
+        </div>
+        <div style="padding: 12px; background: #fef3c7; border-radius: 8px; text-align: center;">
+          <p style="margin: 0; font-size: 11px; color: #92400e;">إجمالي المشتريات</p>
+          <p style="margin: 4px 0 0; font-size: 14px; font-weight: bold; color: #78350f;">${formatCurrency(data.summary.totalPurchases)}</p>
+        </div>
+        <div style="padding: 12px; background: #dbeafe; border-radius: 8px; text-align: center;">
+          <p style="margin: 0; font-size: 11px; color: #1e40af;">المدفوع</p>
+          <p style="margin: 4px 0 0; font-size: 14px; font-weight: bold; color: #1e3a8a;">${formatCurrency(data.summary.totalPaid)}</p>
+        </div>
+        <div style="padding: 12px; background: #fee2e2; border-radius: 8px; text-align: center;">
+          <p style="margin: 0; font-size: 11px; color: #b91c1c;">المتبقي للمورد</p>
+          <p style="margin: 4px 0 0; font-size: 14px; font-weight: bold; color: #7f1d1d;">${formatCurrency(data.summary.totalRemaining)}</p>
+        </div>
+      </div>
+      <h3 style="color: #1e293b; margin: 16px 0 8px;">كشف حساب المورد</h3>
+      <table style="width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 20px;">
+        <thead>
+          <tr style="background: #f1f5f9;">
+            <th style="padding: 8px; border: 1px solid #e2e8f0;">التاريخ</th>
+            <th style="padding: 8px; border: 1px solid #e2e8f0;">البيان</th>
+            <th style="padding: 8px; border: 1px solid #e2e8f0;">مدين (عليه)</th>
+            <th style="padding: 8px; border: 1px solid #e2e8f0;">دائن (له)</th>
+            <th style="padding: 8px; border: 1px solid #e2e8f0;">الرصيد</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${statementRows || '<tr><td colspan="5" style="padding: 12px; text-align: center; color: #94a3b8;">لا توجد عمليات في هذه الفترة</td></tr>'}
+        </tbody>
+      </table>
+      <h3 style="color: #1e293b; margin: 16px 0 8px;">تفاصيل الفواتير</h3>
+      <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+        <thead>
+          <tr style="background: #f1f5f9;">
+            <th style="padding: 8px; border: 1px solid #e2e8f0;">التاريخ</th>
+            <th style="padding: 8px; border: 1px solid #e2e8f0;">رقم الفاتورة</th>
+            <th style="padding: 8px; border: 1px solid #e2e8f0;">عدد الأصناف</th>
+            <th style="padding: 8px; border: 1px solid #e2e8f0;">الإجمالي</th>
+            <th style="padding: 8px; border: 1px solid #e2e8f0;">المدفوع</th>
+            <th style="padding: 8px; border: 1px solid #e2e8f0;">المتبقي</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${purchaseRows || '<tr><td colspan="6" style="padding: 12px; text-align: center; color: #94a3b8;">لا توجد فواتير في هذه الفترة</td></tr>'}
+        </tbody>
+      </table>
+      ${footer}
+    `
+  }
+
+  // تحضير HTML الطباعة عند تغير البيانات (لزر الطباعة المباشرة)
+  useEffect(() => {
+    let cancelled = false
+    if (!data) {
+      setPrintHtml('')
+      return
+    }
+    buildReportHtml()
+      .then((h) => {
+        if (!cancelled) setPrintHtml(h)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, from, to])
+
   const exportPDF = async () => {
     if (!data) return
     setExporting(true)
@@ -171,99 +289,7 @@ export function SupplierReport({ supplier, onClose }: SupplierReportProps) {
       const { exportElementToPDF, shareViaWhatsApp, createReportContainer, cleanupContainer } =
         await import('@/lib/pdf-export')
 
-      const settings = await getFactorySettings()
-      const header = buildFactoryHeader(settings)
-      const footer = buildFactoryFooter(settings)
-
-      const purchaseRows = (data.purchases || [])
-        .map(
-          (p: any) => `
-          <tr>
-            <td style="padding: 6px; border: 1px solid #e2e8f0; text-align: center;">${formatDate(p.date)}</td>
-            <td style="padding: 6px; border: 1px solid #e2e8f0; text-align: center;">${p.invoiceNo || '-'}</td>
-            <td style="padding: 6px; border: 1px solid #e2e8f0; text-align: center;">${p.items?.length || 0}</td>
-            <td style="padding: 6px; border: 1px solid #e2e8f0; text-align: center; color: #d97706; font-weight: bold;">${formatCurrency(p.total)}</td>
-            <td style="padding: 6px; border: 1px solid #e2e8f0; text-align: center;">${formatCurrency(p.paid)}</td>
-            <td style="padding: 6px; border: 1px solid #e2e8f0; text-align: center; color: #b91c1c; font-weight: bold;">${formatCurrency(p.total - p.paid)}</td>
-          </tr>`
-        )
-        .join('')
-
-      const statementRows = (data.statement || [])
-        .map(
-          (s: StatementEntry) => `
-          <tr>
-            <td style="padding: 5px; border: 1px solid #e2e8f0; text-align: center; font-size: 11px;">${formatDate(s.date)}</td>
-            <td style="padding: 5px; border: 1px solid #e2e8f0; text-align: right; font-size: 11px;">${s.description}</td>
-            <td style="padding: 5px; border: 1px solid #e2e8f0; text-align: center; font-size: 11px; color: ${s.debit > 0 ? '#d97706' : '#94a3b8'}; font-weight: ${s.debit > 0 ? 'bold' : 'normal'};">${s.debit > 0 ? formatCurrency(s.debit) : '-'}</td>
-            <td style="padding: 5px; border: 1px solid #e2e8f0; text-align: center; font-size: 11px; color: ${s.credit > 0 ? '#059669' : '#94a3b8'}; font-weight: ${s.credit > 0 ? 'bold' : 'normal'};">${s.credit > 0 ? formatCurrency(s.credit) : '-'}</td>
-            <td style="padding: 5px; border: 1px solid #e2e8f0; text-align: center; font-size: 11px; font-weight: bold;">${formatCurrency(s.balance)}</td>
-          </tr>`
-        )
-        .join('')
-
-      const contentHtml = `
-        ${header}
-        <div style="margin-bottom: 20px; padding: 16px; background: #fffbeb; border-radius: 8px;">
-          <h2 style="margin: 0 0 8px; color: #1e293b;">بيانات المورد</h2>
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 13px;">
-            <p><strong>الاسم:</strong> ${supplier.name}</p>
-            <p><strong>الهاتف:</strong> ${supplier.phone || '-'}</p>
-            <p><strong>العنوان:</strong> ${supplier.address || '-'}</p>
-            <p><strong>الفترة:</strong> ${formatDate(from)} إلى ${formatDate(to)}</p>
-          </div>
-        </div>
-        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px;">
-          <div style="padding: 12px; background: #fffbeb; border-radius: 8px; text-align: center;">
-            <p style="margin: 0; font-size: 11px; color: #92400e;">عدد الفواتير</p>
-            <p style="margin: 4px 0 0; font-size: 18px; font-weight: bold; color: #78350f;">${data.summary.purchasesCount}</p>
-          </div>
-          <div style="padding: 12px; background: #fef3c7; border-radius: 8px; text-align: center;">
-            <p style="margin: 0; font-size: 11px; color: #92400e;">إجمالي المشتريات</p>
-            <p style="margin: 4px 0 0; font-size: 14px; font-weight: bold; color: #78350f;">${formatCurrency(data.summary.totalPurchases)}</p>
-          </div>
-          <div style="padding: 12px; background: #dbeafe; border-radius: 8px; text-align: center;">
-            <p style="margin: 0; font-size: 11px; color: #1e40af;">المدفوع</p>
-            <p style="margin: 4px 0 0; font-size: 14px; font-weight: bold; color: #1e3a8a;">${formatCurrency(data.summary.totalPaid)}</p>
-          </div>
-          <div style="padding: 12px; background: #fee2e2; border-radius: 8px; text-align: center;">
-            <p style="margin: 0; font-size: 11px; color: #b91c1c;">المتبقي للمورد</p>
-            <p style="margin: 4px 0 0; font-size: 14px; font-weight: bold; color: #7f1d1d;">${formatCurrency(data.summary.totalRemaining)}</p>
-          </div>
-        </div>
-        <h3 style="color: #1e293b; margin: 16px 0 8px;">كشف حساب المورد</h3>
-        <table style="width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 20px;">
-          <thead>
-            <tr style="background: #f1f5f9;">
-              <th style="padding: 8px; border: 1px solid #e2e8f0;">التاريخ</th>
-              <th style="padding: 8px; border: 1px solid #e2e8f0;">البيان</th>
-              <th style="padding: 8px; border: 1px solid #e2e8f0;">مدين (عليه)</th>
-              <th style="padding: 8px; border: 1px solid #e2e8f0;">دائن (له)</th>
-              <th style="padding: 8px; border: 1px solid #e2e8f0;">الرصيد</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${statementRows || '<tr><td colspan="5" style="padding: 12px; text-align: center; color: #94a3b8;">لا توجد عمليات في هذه الفترة</td></tr>'}
-          </tbody>
-        </table>
-        <h3 style="color: #1e293b; margin: 16px 0 8px;">تفاصيل الفواتير</h3>
-        <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
-          <thead>
-            <tr style="background: #f1f5f9;">
-              <th style="padding: 8px; border: 1px solid #e2e8f0;">التاريخ</th>
-              <th style="padding: 8px; border: 1px solid #e2e8f0;">رقم الفاتورة</th>
-              <th style="padding: 8px; border: 1px solid #e2e8f0;">عدد الأصناف</th>
-              <th style="padding: 8px; border: 1px solid #e2e8f0;">الإجمالي</th>
-              <th style="padding: 8px; border: 1px solid #e2e8f0;">المدفوع</th>
-              <th style="padding: 8px; border: 1px solid #e2e8f0;">المتبقي</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${purchaseRows || '<tr><td colspan="6" style="padding: 12px; text-align: center; color: #94a3b8;">لا توجد فواتير في هذه الفترة</td></tr>'}
-          </tbody>
-        </table>
-        ${footer}
-      `
+      const contentHtml = await buildReportHtml()
 
       const container = createReportContainer(`تقرير المورد: ${supplier.name}`, contentHtml)
       await new Promise((r) => setTimeout(r, 100))
@@ -527,14 +553,25 @@ export function SupplierReport({ supplier, onClose }: SupplierReportProps) {
                 </TabsContent>
               </Tabs>
 
-              <Button
-                onClick={exportPDF}
-                disabled={exporting}
-                className="w-full bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white"
-              >
-                <TrendingUp className="w-4 h-4 ml-1" />
-                {exporting ? 'جارٍ التصدير...' : 'تصدير PDF ومشاركة واتساب'}
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  onClick={exportPDF}
+                  disabled={exporting}
+                  className="flex-1 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white"
+                >
+                  <TrendingUp className="w-4 h-4 ml-1" />
+                  {exporting ? 'جارٍ التصدير...' : 'تصدير PDF وواتساب'}
+                </Button>
+                {printHtml && (
+                  <PrintButton
+                    contentHtml={printHtml}
+                    title={`كشف حساب المورد: ${supplier.name}`}
+                    variant="outline"
+                    className="border-amber-300 text-amber-700 hover:bg-amber-50"
+                    label="طباعة"
+                  />
+                )}
+              </div>
             </>
           )}
         </div>
