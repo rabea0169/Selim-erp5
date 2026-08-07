@@ -11,7 +11,7 @@ class SupplierRepository extends BaseRepository<Supplier> {
     return this.getAll({ q: query })
   }
 
-  async getWithStats(supplierId: string): Promise<{ supplier: Supplier; totalPurchases: number; totalPaid: number; totalRemaining: number; purchasesCount: number; purchases: Purchase[] } | null> {
+  async getWithStats(supplierId: string): Promise<{ supplier: Supplier; totalPurchases: number; totalPaid: number; totalReturns: number; standalonePayments: number; totalRemaining: number; purchasesCount: number; purchases: Purchase[]; returns: any[]; payments: any[] } | null> {
     try {
       const res = await apiGet<any>(`/api/supplier-report/${supplierId}`)
       // العقد: GET /api/supplier-report/[id] → { supplier, range, summary, purchases, returns, payments }
@@ -20,9 +20,13 @@ class SupplierRepository extends BaseRepository<Supplier> {
         supplier: res.supplier,
         totalPurchases: summary.totalPurchases ?? res.totalPurchases ?? 0,
         totalPaid: summary.totalPaid ?? res.totalPaid ?? 0,
+        totalReturns: summary.totalReturns ?? 0,
+        standalonePayments: summary.standalonePayments ?? 0,
         totalRemaining: summary.totalRemaining ?? res.totalRemaining ?? 0,
         purchasesCount: summary.purchasesCount ?? (res.purchases || []).length,
         purchases: res.purchases || [],
+        returns: res.returns || [],
+        payments: res.payments || [],
       }
     } catch { return null }
   }

@@ -34,19 +34,44 @@ export async function GET(req: NextRequest) {
       },
       orderBy: { createdAt: 'desc' },
     })
+
+    // fix(receivables): تجميع مرتجعات الشراء والسدادات العامة لكل مورد + إرجاع openingBalance/creditLimit
+    const ids = suppliers.map((s) => s.id)
+    const [returnAgg, standaloneAgg] = ids.length
+      ? await Promise.all([
+          db.purchaseReturn.groupBy({
+            by: ['supplierId_ref'],
+            where: { companyId, supplierId_ref: { in: ids } },
+            _sum: { total: true },
+          }),
+          db.payment.groupBy({
+            by: ['partyId'],
+            where: { companyId, type: 'supplier_payment', invoiceId: null, partyId: { in: ids } },
+            _sum: { amount: true },
+          }),
+        ])
+      : [[], []]
+    const returnsMap = new Map((returnAgg as any[]).map((r) => [r.supplierId_ref, r._sum?.total || 0]))
+    const standaloneMap = new Map((standaloneAgg as any[]).map((p) => [p.partyId, p._sum?.amount || 0]))
+
     const withTotals = suppliers.map((s) => {
       const totalPurchases = s.purchases.reduce((sum, x) => sum + x.total, 0)
       const totalPaid = s.purchases.reduce((sum, x) => sum + x.paid, 0)
+      const totalReturns = returnsMap.get(s.id) || 0
+      const standalonePayments = standaloneMap.get(s.id) || 0
       return {
         id: s.id,
         name: s.name,
         phone: s.phone,
         address: s.address,
         notes: s.notes,
+        creditLimit: s.creditLimit,
+        openingBalance: s.openingBalance,
         createdAt: s.createdAt,
         totalPurchases,
         totalPaid,
-        totalRemaining: totalPurchases - totalPaid,
+        totalReturns,
+        totalRemaining: Math.max(0, totalPurchases - totalPaid - totalReturns - standalonePayments),
         purchasesCount: s._count.purchases,
       }
     })
@@ -62,7 +87,7 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
 
     const body = await req.json()
-    const { name, phone, address, notes } = body
+    const { name, phone, address, notes, creditLimit, openingBalance } = body
 
     if (!name?.trim()) {
       return NextResponse.json(
@@ -78,6 +103,8 @@ export async function POST(req: NextRequest) {
         phone: phone?.trim() || null,
         address: address?.trim() || null,
         notes: notes?.trim() || null,
+        creditLimit: Number(creditLimit) > 0 ? Number(creditLimit) : null,
+        openingBalance: Number(openingBalance) > 0 ? Number(openingBalance) : 0,
       },
     })
     return NextResponse.json({ supplier })

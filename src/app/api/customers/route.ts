@@ -37,9 +37,32 @@ export async function GET(req: NextRequest) {
       },
       orderBy: { createdAt: 'desc' },
     })
+
+    // fix(receivables): تجميع المرتجعات والسدادات العامة (غير المرتبطة بفاتورة) لكل عميل
+    // حتى يكون totalRemaining = مبيعات - مدفوع - مرتجعات - سدادات عامة (مطابقاً لكشف الحساب)
+    const ids = customers.map((c) => c.id)
+    const [returnAgg, standaloneAgg] = ids.length
+      ? await Promise.all([
+          db.saleReturn.groupBy({
+            by: ['customerId_ref'],
+            where: { companyId, customerId_ref: { in: ids } },
+            _sum: { total: true },
+          }),
+          db.payment.groupBy({
+            by: ['partyId'],
+            where: { companyId, type: 'customer_payment', invoiceId: null, partyId: { in: ids } },
+            _sum: { amount: true },
+          }),
+        ])
+      : [[], []]
+    const returnsMap = new Map((returnAgg as any[]).map((r) => [r.customerId_ref, r._sum?.total || 0]))
+    const standaloneMap = new Map((standaloneAgg as any[]).map((p) => [p.partyId, p._sum?.amount || 0]))
+
     const withTotals = customers.map((c) => {
       const totalSales = c.sales.reduce((s, x) => s + x.total, 0)
       const totalPaid = c.sales.reduce((s, x) => s + x.paid, 0)
+      const totalReturns = returnsMap.get(c.id) || 0
+      const standalonePayments = standaloneMap.get(c.id) || 0
       return {
         id: c.id,
         name: c.name,
@@ -52,7 +75,8 @@ export async function GET(req: NextRequest) {
         createdAt: c.createdAt,
         totalSales,
         totalPaid,
-        totalRemaining: totalSales - totalPaid,
+        totalReturns,
+        totalRemaining: Math.max(0, totalSales - totalPaid - totalReturns - standalonePayments),
         salesCount: c._count.sales,
       }
     })

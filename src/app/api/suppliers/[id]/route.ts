@@ -12,7 +12,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const companyId = user.companyId ?? null
     const { id } = await params
     const body = await req.json()
-    const { name, phone, address, notes } = body
+    const { name, phone, address, notes, creditLimit, openingBalance } = body
 
     if (!name?.trim()) {
       return NextResponse.json({ error: 'اسم المورد مطلوب' }, { status: 400 })
@@ -33,6 +33,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         phone: phone?.trim() || null,
         address: address?.trim() || null,
         notes: notes?.trim() || null,
+        creditLimit: Number(creditLimit) > 0 ? Number(creditLimit) : null,
+        openingBalance: Number(openingBalance) > 0 ? Number(openingBalance) : 0,
       },
     })
     return NextResponse.json({ supplier })
