@@ -31,6 +31,7 @@ import { SaleForm } from './sales/SaleForm'
 
 export function SalesView() {
   const [open, setOpen] = useState(false)
+  const [editingSale, setEditingSale] = useState<Sale | null>(null)
   const [search, setSearch] = useState('')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
@@ -63,6 +64,18 @@ export function SalesView() {
       console.error(e)
       toast({ title: 'خطأ في حذف الفاتورة', description: e.message, variant: 'destructive' })
     }
+  }
+
+  // فتح نموذج التعديل مع الفاتورة المحددة
+  const handleEdit = (sale: Sale) => {
+    setEditingSale(sale)
+    setOpen(true)
+  }
+
+  // إغلاق النموذج + مسح وضع التعديل
+  const handleOpenChange = (v: boolean) => {
+    setOpen(v)
+    if (!v) setEditingSale(null)
   }
 
   const salesList = sales || []
@@ -417,16 +430,17 @@ export function SalesView() {
       ) : (
         <div className="space-y-2">
           {filteredSales.map((sale) => (
-            <SaleCard key={sale.id} sale={sale} onDelete={handleDelete} />
+            <SaleCard key={sale.id} sale={sale} onDelete={handleDelete} onEdit={handleEdit} />
           ))}
         </div>
       )}
 
       <SaleForm
         open={open}
-        onOpenChange={setOpen}
-        onSaved={() => setOpen(false)}
+        onOpenChange={handleOpenChange}
+        onSaved={() => handleOpenChange(false)}
         customers={customersList}
+        sale={editingSale}
       />
 
       {showCustomers && (
