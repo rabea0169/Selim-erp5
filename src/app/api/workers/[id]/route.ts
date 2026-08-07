@@ -10,6 +10,29 @@ function optNum(v: any): number | null {
   return isNaN(n) ? null : n
 }
 
+// GET /api/workers/[id] — جلب موظف واحد (مقيد بالشركة — حماية IDOR)
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const user = await getCurrentUser()
+    if (!user) {
+      return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    }
+    const companyId = user.companyId ?? null
+    const { id } = await params
+
+    const worker = await db.worker.findFirst({
+      where: { id, companyId },
+    })
+    if (!worker) {
+      return NextResponse.json({ error: 'الموظف غير موجود' }, { status: 404 })
+    }
+    return NextResponse.json({ worker })
+  } catch (e) {
+    const { error, status } = safeError(e)
+    return NextResponse.json({ error }, { status })
+  }
+}
+
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await getCurrentUser()

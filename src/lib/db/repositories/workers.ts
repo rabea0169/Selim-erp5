@@ -6,6 +6,16 @@ import type { Worker, WorkerAdvance, WorkerReceipt } from '../types'
 class WorkerRepository extends BaseRepository<Worker> {
   constructor() { super('/api/workers', 'workers') }
 
+  /** جلب موظف واحد — السيرفر يعيد { worker } لذا نفك التغليف */
+  async getById(id: string): Promise<Worker | undefined> {
+    try {
+      const res: any = await apiGet<any>(`${this.basePath}/${id}`)
+      return res?.worker ?? res
+    } catch {
+      return undefined
+    }
+  }
+
   async search(query: string): Promise<Worker[]> {
     if (!query) return this.getAll()
     return this.getAll({ q: query })
