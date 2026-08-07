@@ -7,9 +7,13 @@ import { safeError } from '@/lib/safe-error'
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await getCurrentUser()
+    if (!user) {
+      return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    }
+    const companyId = user.companyId ?? null
     const { id } = await params
     const warehouse = await db.warehouse.findFirst({
-      where: { id, ...(user?.companyId ? { companyId: user.companyId } : {}) },
+      where: { id, companyId },
       include: { _count: { select: { materials: true, products: true } } },
     })
     if (!warehouse) {
@@ -25,6 +29,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await getCurrentUser()
+    if (!user) {
+      return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    }
+    const companyId = user.companyId ?? null
     const { id } = await params
     const body = await req.json()
     const { name, type, location, notes } = body
@@ -36,9 +44,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: 'نوع المخزن مطلوب' }, { status: 400 })
     }
 
-    // فحص وجود المخزن وتبعيته للشركة (حماية IDOR)
+    // فحص وجود المخزن وتبعيته للشركة (حماية IDOR) — الفلتر إجباري
     const existing = await db.warehouse.findFirst({
-      where: { id, ...(user?.companyId ? { companyId: user.companyId } : {}) },
+      where: { id, companyId },
     })
     if (!existing) {
       return NextResponse.json({ error: 'المخزن غير موجود' }, { status: 404 })
@@ -65,10 +73,14 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await getCurrentUser()
+    if (!user) {
+      return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    }
+    const companyId = user.companyId ?? null
     const { id } = await params
     // فحص وجود المخزن وتبعيته للشركة (حماية IDOR)
     const existing = await db.warehouse.findFirst({
-      where: { id, ...(user?.companyId ? { companyId: user.companyId } : {}) },
+      where: { id, companyId },
       include: { _count: { select: { materials: true, products: true } } },
     })
     if (!existing) {

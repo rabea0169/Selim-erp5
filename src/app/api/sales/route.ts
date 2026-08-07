@@ -1,10 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
 
 // GET /api/sales?from=&to=&q=&page=1&limit=50
 export async function GET(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
+    if (!user) {
+      return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    }
+    const companyId = user.companyId ?? null
+
     const { searchParams } = new URL(req.url)
     const from = searchParams.get('from')
     const to = searchParams.get('to')
@@ -12,7 +19,8 @@ export async function GET(req: NextRequest) {
     const page = Math.max(1, Number(searchParams.get('page')) || 1)
     const limit = Math.min(200, Math.max(1, Number(searchParams.get('limit')) || 50))
 
-    const where: any = {}
+    // عزل الشركات: لا تظهر إلا مبيعات الشركة الحالية
+    const where: any = { companyId }
     if (from || to) {
       where.date = {}
       if (from) {
@@ -28,10 +36,15 @@ export async function GET(req: NextRequest) {
       }
     }
     if (q) {
-      where.OR = [
-        { customerName: { contains: q } },
-        { invoiceNo: { contains: q } },
-        { notes: { contains: q } },
+      where.AND = [
+        { companyId },
+        {
+          OR: [
+            { customerName: { contains: q } },
+            { invoiceNo: { contains: q } },
+            { notes: { contains: q } },
+          ],
+        },
       ]
     }
 
@@ -59,6 +72,12 @@ export async function GET(req: NextRequest) {
 // POST /api/sales
 export async function POST(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
+    if (!user) {
+      return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    }
+    const companyId = user.companyId ?? null
+
     const body = await req.json()
     const {
       customerName,
@@ -85,7 +104,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'التاريخ غير صالح' }, { status: 400 })
     }
     if (!Array.isArray(items) || items.length === 0) {
-      return NextResponse.json({ error: 'يجب إضافة صنف واحد على الأقل' }, { status: 400 })
+      return NextResponse.json({ error: 'يجب إضافة صنف واحداً على الأقل' }, { status: 400 })
     }
 
     const validItems = items.filter(
@@ -119,10 +138,12 @@ export async function POST(req: NextRequest) {
     }
 
     const sale = await db.$transaction(async (tx) => {
-      // فحص المخزون داخل الـ transaction (TOCTOU fix)
+      // فحص المخزون داخل الـ transaction (TOCTOU fix) — مع عزل الشركة
       for (const it of validItems) {
         if (it.productId) {
-          const product = await tx.product.findUnique({ where: { id: it.productId } })
+          const product = await tx.product.findFirst({
+            where: { id: it.productId, companyId },
+          })
           if (!product) {
             throw new Error(`المنتج "${it.itemName}" غير موجود في قاعدة البيانات`)
           }
@@ -132,9 +153,11 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // التحقق من العميل داخل الـ transaction
+      // التحقق من العميل داخل الـ transaction — مع عزل الشركة
       if (customerId_ref) {
-        const customer = await tx.customer.findUnique({ where: { id: customerId_ref } })
+        const customer = await tx.customer.findFirst({
+          where: { id: customerId_ref, companyId },
+        })
         if (!customer) {
           throw new Error('العميل المحدد غير موجود')
         }
@@ -142,6 +165,7 @@ export async function POST(req: NextRequest) {
 
       const newSale = await tx.sale.create({
         data: {
+          companyId,
           customerName: customerName.trim(),
           customerId_ref: customerId_ref || null,
           invoiceNo: invoiceNo?.trim() || null,
@@ -180,10 +204,11 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // إنشاء حركة خزينة
+      // إنشاء حركة خزينة — مرتبطة بنفس الشركة
       if (paidAmount > 0) {
         await tx.treasuryTransaction.create({
           data: {
+            companyId,
             type: 'deposit',
             amount: paidAmount,
             date: dateObj,

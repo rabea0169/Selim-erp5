@@ -7,9 +7,13 @@ import { safeError } from '@/lib/safe-error'
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await getCurrentUser()
+    if (!user) {
+      return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    }
+    const companyId = user.companyId ?? null
     const { id } = await params
     const product = await db.product.findFirst({
-      where: { id, ...(user?.companyId ? { companyId: user.companyId } : {}) },
+      where: { id, companyId },
       include: { warehouse: true },
     })
     if (!product) {
@@ -26,6 +30,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await getCurrentUser()
+    if (!user) {
+      return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    }
+    const companyId = user.companyId ?? null
     const { id } = await params
     const body = await req.json()
     const { name, category, unit, halfWholesalePrice, warehouseId, reorderLevel, notes } = body
@@ -37,9 +45,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: 'الوحدة مطلوبة' }, { status: 400 })
     }
 
-    // فحص وجود المنتج وتبعيته للشركة (حماية IDOR)
+    // فحص وجود المنتج وتبعيته للشركة (حماية IDOR) — الفلتر إجباري
     const existing = await db.product.findFirst({
-      where: { id, ...(user?.companyId ? { companyId: user.companyId } : {}) },
+      where: { id, companyId },
     })
     if (!existing) {
       return NextResponse.json({ error: 'المنتج غير موجود' }, { status: 404 })
@@ -58,7 +66,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
     if (warehouseId) {
       const warehouse = await db.warehouse.findFirst({
-        where: { id: warehouseId, ...(user?.companyId ? { companyId: user.companyId } : {}) },
+        where: { id: warehouseId, companyId },
       })
       if (!warehouse) {
         return NextResponse.json({ error: 'المخزن المحدد غير موجود' }, { status: 404 })
@@ -94,11 +102,15 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await getCurrentUser()
+    if (!user) {
+      return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    }
+    const companyId = user.companyId ?? null
     const { id } = await params
 
     // فحص وجود المنتج وتبعيته للشركة (حماية IDOR)
     const existing = await db.product.findFirst({
-      where: { id, ...(user?.companyId ? { companyId: user.companyId } : {}) },
+      where: { id, companyId },
     })
     if (!existing) {
       return NextResponse.json({ error: 'المنتج غير موجود' }, { status: 404 })

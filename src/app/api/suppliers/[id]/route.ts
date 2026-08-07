@@ -6,6 +6,10 @@ import { safeError } from '@/lib/safe-error'
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await getCurrentUser()
+    if (!user) {
+      return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    }
+    const companyId = user.companyId ?? null
     const { id } = await params
     const body = await req.json()
     const { name, phone, address, notes } = body
@@ -14,9 +18,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: 'اسم المورد مطلوب' }, { status: 400 })
     }
 
-    // فحص وجود المورد وتبعيته للشركة (حماية IDOR)
+    // فحص وجود المورد وتبعيته للشركة (حماية IDOR) — الفلتر إجباري
     const existing = await db.supplier.findFirst({
-      where: { id, ...(user?.companyId ? { companyId: user.companyId } : {}) },
+      where: { id, companyId },
     })
     if (!existing) {
       return NextResponse.json({ error: 'المورد غير موجود' }, { status: 404 })
@@ -41,20 +45,24 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await getCurrentUser()
+    if (!user) {
+      return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    }
+    const companyId = user.companyId ?? null
     const { id } = await params
 
     // فحص وجود المورد وتبعيته للشركة (حماية IDOR)
     const existing = await db.supplier.findFirst({
-      where: { id, ...(user?.companyId ? { companyId: user.companyId } : {}) },
+      where: { id, companyId },
     })
     if (!existing) {
       return NextResponse.json({ error: 'المورد غير موجود' }, { status: 404 })
     }
 
     await db.$transaction(async (tx) => {
-      // فصل المشتريات المرتبطة بهذا المورد
+      // فصل المشتريات المرتبطة بهذا المورد — داخل نفس الشركة فقط
       await tx.purchase.updateMany({
-        where: { supplierId_ref: id },
+        where: { supplierId_ref: id, companyId },
         data: { supplierId_ref: null },
       })
       await tx.supplier.delete({ where: { id } })

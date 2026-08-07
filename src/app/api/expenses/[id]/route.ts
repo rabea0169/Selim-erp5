@@ -6,13 +6,17 @@ import { safeError } from '@/lib/safe-error'
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await getCurrentUser()
+    if (!user) {
+      return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    }
+    const companyId = user.companyId ?? null
     const { id } = await params
     const body = await req.json()
     const { amount, date, categoryId, categoryName, notes } = body
 
-    // فحص وجود المصروف وتبعيته للشركة (حماية IDOR)
+    // فحص وجود المصروف وتبعيته للشركة (حماية IDOR) — الفلتر إجباري
     const existing = await db.expense.findFirst({
-      where: { id, ...(user?.companyId ? { companyId: user.companyId } : {}) },
+      where: { id, companyId },
     })
     if (!existing) {
       return NextResponse.json({ error: 'المصروف غير موجود' }, { status: 404 })
@@ -43,20 +47,24 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await getCurrentUser()
+    if (!user) {
+      return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    }
+    const companyId = user.companyId ?? null
     const { id } = await params
 
     // فحص وجود المصروف وتبعيته للشركة (حماية IDOR)
     const expense = await db.expense.findFirst({
-      where: { id, ...(user?.companyId ? { companyId: user.companyId } : {}) },
+      where: { id, companyId },
     })
     if (!expense) {
       return NextResponse.json({ error: 'المصروف غير موجود' }, { status: 404 })
     }
 
     await db.$transaction(async (tx) => {
-      // حذف حركة الخزينة المرتبطة بهذا المصروف
+      // حذف حركة الخزينة المرتبطة بهذا المصروف — داخل نفس الشركة فقط
       await tx.treasuryTransaction.deleteMany({
-        where: { referenceType: 'expense', referenceId: id },
+        where: { referenceType: 'expense', referenceId: id, companyId },
       })
       // حذف المصروف
       await tx.expense.delete({ where: { id } })

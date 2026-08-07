@@ -6,6 +6,10 @@ import { safeError } from '@/lib/safe-error'
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await getCurrentUser()
+    if (!user) {
+      return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    }
+    const companyId = user.companyId ?? null
     const { id } = await params
     const body = await req.json()
     const { name, phone, job, type, notes, dailyWage, monthlySalary } = body
@@ -14,9 +18,9 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: 'اسم الموظف مطلوب' }, { status: 400 })
     }
 
-    // فحص وجود الموظف وتبعيته للشركة (حماية IDOR)
+    // فحص وجود الموظف وتبعيته للشركة (حماية IDOR) — الفلتر إجباري حتى لو companyId null
     const existing = await db.worker.findFirst({
-      where: { id, ...(user?.companyId ? { companyId: user.companyId } : {}) },
+      where: { id, companyId },
     })
     if (!existing) {
       return NextResponse.json({ error: 'الموظف غير موجود' }, { status: 404 })
@@ -48,11 +52,15 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await getCurrentUser()
+    if (!user) {
+      return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    }
+    const companyId = user.companyId ?? null
     const { id } = await params
 
     // فحص وجود الموظف وتبعيته للشركة (حماية IDOR)
     const existing = await db.worker.findFirst({
-      where: { id, ...(user?.companyId ? { companyId: user.companyId } : {}) },
+      where: { id, companyId },
     })
     if (!existing) {
       return NextResponse.json({ error: 'الموظف غير موجود' }, { status: 404 })
