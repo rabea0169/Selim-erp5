@@ -64,15 +64,14 @@ export async function getCurrentUser(): Promise<{
 }
 
 export async function isRegistrationAllowed(): Promise<boolean> {
-  const count = await db.user.count()
-  return count === 0
+  return true
 }
 
 // تسجيل الدخول
 export async function loginUser(username: string, password: string): Promise<{
   success: boolean
   error?: string
-  user?: { id: string; username: string; name: string; role: string }
+  user?: { id: string; username: string; name: string; role: string; companyId?: string | null }
 }> {
   const user = await db.user.findUnique({ where: { username } })
   if (!user) {
@@ -96,7 +95,7 @@ export async function loginUser(username: string, password: string): Promise<{
 
   return {
     success: true,
-    user: { id: user.id, username: user.username, name: user.name, role: user.role },
+    user: { id: user.id, username: user.username, name: user.name, role: user.role, companyId: user.companyId },
   }
 }
 
@@ -114,7 +113,7 @@ export async function registerUser(
 ): Promise<{
   success: boolean
   error?: string
-  user?: { id: string; username: string; name: string; role: string }
+  user?: { id: string; username: string; name: string; role: string; companyId?: string | null }
 }> {
   if (!username?.trim() || username.length < 3) {
     return { success: false, error: 'اسم المستخدم يجب أن يكون 3 أحرف على الأقل' }
@@ -122,22 +121,25 @@ export async function registerUser(
   if (!password || password.length < 6) {
     return { success: false, error: 'كلمة المرور يجب أن تكون 6 أحرف على الأقل' }
   }
-    if (!/[a-zA-Z]/.test(password) || !/[0-9]/.test(password)) {
-      return { success: false, error: 'كلمة المرور يجب أن تحتوي على أحرف وأرقام' }
-    }
+  if (!/[a-zA-Z]/.test(password) || !/[0-9]/.test(password)) {
+    return { success: false, error: 'كلمة المرور يجب أن تحتوي على أحرف وأرقام' }
+  }
   if (!name?.trim()) {
     return { success: false, error: 'الاسم مطلوب' }
   }
 
-  // Fix M: Use interactive transaction to prevent race condition
   let user: any
   try {
     user = await db.$transaction(async (tx) => {
-      const count = await tx.user.count()
-      if (count > 0) throw new Error('التسجيل مغلق')
-
-      const existing = await tx.user.findUnique({ where: { username } })
+      const existing = await tx.user.findUnique({ where: { username: username.trim() } })
       if (existing) throw new Error('اسم المستخدم موجود بالفعل')
+
+      // إنشاء شركة خاصة بالمستخدم الجديد لضمان عزل البيانات بين الحسابات
+      const company = await tx.company.create({
+        data: {
+          name: `مصنع ${name.trim()}`,
+        },
+      })
 
       const passwordHash = await bcrypt.hash(password, 12)
       return tx.user.create({
@@ -146,18 +148,12 @@ export async function registerUser(
           passwordHash,
           name: name.trim(),
           role: 'admin',
+          companyId: company.id,
         },
       })
     })
   } catch (e: any) {
-    if (e.message === 'التسجيل مغلق') {
-      return { success: false, error: 'التسجيل مغلق — يرجى التواصل مع المدير' }
-    }
-    if (e.message === 'اسم المستخدم موجود بالفعل') {
-      return { success: false, error: 'اسم المستخدم موجود بالفعل' }
-    }
-    // Prisma P2002: unique constraint violation (race condition)
-    if (e.code === 'P2002') {
+    if (e.message === 'اسم المستخدم موجود بالفعل' || e.code === 'P2002') {
       return { success: false, error: 'اسم المستخدم موجود بالفعل' }
     }
     throw e
@@ -176,7 +172,7 @@ export async function registerUser(
 
   return {
     success: true,
-    user: { id: user.id, username: user.username, name: user.name, role: user.role },
+    user: { id: user.id, username: user.username, name: user.name, role: user.role, companyId: user.companyId },
   }
 }
 
