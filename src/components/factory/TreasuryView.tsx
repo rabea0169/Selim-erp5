@@ -2,9 +2,6 @@
 
 import { useState, useEffect } from 'react'
 import {
-  Plus,
-  Minus,
-  Search,
   Wallet,
   Calendar,
   TrendingUp,
@@ -68,17 +65,17 @@ const WITHDRAWAL_CATEGORIES = [
   'أخرى',
 ]
 
-async function fetchTreasury(from?: string, to?: string): Promise<TreasuryData> {
-  const [balance, depositsTotal, withdrawalsTotal, transactions] = await Promise.all([
-    treasuryRepository.getBalance(),
-    treasuryRepository.getDepositsTotal(),
-    treasuryRepository.getWithdrawalsTotal(),
-    treasuryRepository.getByDateRange(from || undefined, to || undefined),
+async function fetchTreasury(from?: string, to?: string, type?: string): Promise<TreasuryData> {
+  // الملخص من السيرفر (aggregate على كامل الجدول — لا يتأثر بعدد الحركات)
+  // والقائمة مفلترة بالتاريخ/النوع
+  const [summary, transactions] = await Promise.all([
+    treasuryRepository.getSummary(),
+    treasuryRepository.getByDateRange(from || undefined, to || undefined, type || undefined),
   ])
   return {
-    balance,
-    depositsTotal,
-    withdrawalsTotal,
+    balance: summary.balance,
+    depositsTotal: summary.totalDeposits,
+    withdrawalsTotal: summary.totalWithdrawals,
     transactions,
   }
 }
@@ -88,18 +85,19 @@ export function TreasuryView() {
   const [txType, setTxType] = useState<'deposit' | 'withdrawal'>('deposit')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
+  const [typeFilter, setTypeFilter] = useState<'all' | 'deposit' | 'withdrawal'>('all')
   const { toast } = useToast()
 
   // تحميل بيانات الخزينة + التحديث الفوري
   const { data, loading, reload } = useLiveData<TreasuryData>(
-    () => fetchTreasury(from || undefined, to || undefined),
+    () => fetchTreasury(from || undefined, to || undefined, typeFilter === 'all' ? undefined : typeFilter),
     ['treasuryTransactions']
   )
 
   // إعادة التحميل عند تغير الفلاتر
   useEffect(() => {
     reload()
-  }, [from, to, reload])
+  }, [from, to, typeFilter, reload])
 
   const transactions: TreasuryTransaction[] = data?.transactions || []
   const balance: number = data?.balance ?? 0
@@ -121,8 +119,8 @@ export function TreasuryView() {
       await treasuryRepository.delete(id)
       dataChangeEmitter.notifyDelete('treasuryTransactions')
       toast({ title: 'تم الحذف' })
-    } catch {
-      toast({ title: 'خطأ', variant: 'destructive' })
+    } catch (e: any) {
+      toast({ title: 'تعذر الحذف', description: e?.message, variant: 'destructive' })
     }
   }
 
@@ -196,8 +194,29 @@ export function TreasuryView() {
         </div>
       </div>
 
-      {/* فلترة بالتاريخ */}
+      {/* الفلاتر: النوع + التاريخ */}
       <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-3 space-y-2">
+        <div className="flex gap-1">
+          {(['all', 'deposit', 'withdrawal'] as const).map((v) => (
+            <Button
+              key={v}
+              size="sm"
+              variant={typeFilter === v ? 'default' : 'ghost'}
+              onClick={() => setTypeFilter(v)}
+              className={`h-8 text-xs flex-1 ${
+                typeFilter === v
+                  ? v === 'deposit'
+                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                    : v === 'withdrawal'
+                      ? 'bg-rose-600 hover:bg-rose-700 text-white'
+                      : ''
+                  : 'text-slate-500'
+              }`}
+            >
+              {v === 'all' ? 'الكل' : v === 'deposit' ? 'إيداعات' : 'سحوبات'}
+            </Button>
+          ))}
+        </div>
         <div className="grid grid-cols-2 gap-2">
           <div>
             <Label className="text-[10px] text-slate-500">من تاريخ</Label>
@@ -218,13 +237,14 @@ export function TreasuryView() {
             />
           </div>
         </div>
-        {(from || to) && (
+        {(from || to || typeFilter !== 'all') && (
           <Button
             variant="ghost"
             size="sm"
             onClick={() => {
               setFrom('')
               setTo('')
+              setTypeFilter('all')
             }}
             className="text-xs text-slate-500 h-9"
           >
@@ -251,6 +271,7 @@ export function TreasuryView() {
         <div className="space-y-2">
           {transactions.map((t) => {
             const isDeposit = t.type === 'deposit'
+            const isLinked = Boolean((t as any).referenceId)
             return (
               <div
                 key={t.id}
@@ -306,14 +327,16 @@ export function TreasuryView() {
                     </p>
                   )}
                 </div>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-7 w-7 text-slate-400 hover:text-rose-500"
-                  onClick={() => handleDelete(t.id)}
-                >
-                  <X className="w-3.5 h-3.5" />
-                </Button>
+                {!isLinked && (
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-7 w-7 text-slate-400 hover:text-rose-500"
+                    onClick={() => handleDelete(t.id)}
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </Button>
+                )}
               </div>
             )
           })}
