@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Trash2, Calendar, HandCoins } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -21,6 +21,12 @@ export function PurchaseCard({ purchase, onDelete, onPay }: PurchaseCardProps) {
   const [printHtml, setPrintHtml] = useState('')
   const [paymentOpen, setPaymentOpen] = useState(false)
   const remaining = purchase.total - purchase.paid
+
+  // إبطال HTML الطباعة المخزن عند تغير بيانات الفاتورة (مثلاً بعد تسجيل دفعة)
+  // حتى لا تُطبع قيم المدفوع/المتبقي القديمة
+  useEffect(() => {
+    setPrintHtml('')
+  }, [purchase.paid, purchase.total])
 
   const handlePrintClick = async () => {
     const html = await buildPurchasePrintHtml(purchase)

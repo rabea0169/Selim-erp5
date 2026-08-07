@@ -59,13 +59,23 @@ export function SupplierPaymentDialog({ open, onOpenChange, purchase }: Supplier
       toast({ title: 'تنبيه', description: `المبلغ أكبر من المتبقي (${formatCurrency(remaining)})`, variant: 'destructive' })
       return
     }
+    // السيرفر (POST /api/payments) يتحقق من وجود المورد ويحدّث paid ذرّياً —
+    // لا يمكن تسجيل دفعة لفاتورة غير مرتبطة بمورد مسجل
+    if (!purchase.supplierId_ref) {
+      toast({
+        title: 'تنبيه',
+        description: 'لا يمكن تسجيل الدفعة: الفاتورة غير مرتبطة بمورد مسجل. اربطها بمورد من قائمة الموردين أولاً',
+        variant: 'destructive',
+      })
+      return
+    }
     setSaving(true)
     try {
-      // POST /api/payments يحدّث paid في الفاتورة ويسجّل حركة الخزينة ذرّياً على الخادم —
-      // لا يجوز تحديث paid من العميل هنا وإلا يُحسب المبلغ مرتين (تناقض مع الخادم)
+      // ملاحظة: السيرفر يزيد purchase.paid وينشئ حركة الخزينة ذرّياً داخل نفس الـ transaction
+      // — لا نحتاج لأي تحديث إضافي للفاتورة من العميل (كان يسبب تحديثاً مكرراً وسباق بيانات)
       await paymentRepository.create({
         type: 'supplier_payment',
-        partyId: purchase.supplierId_ref || purchase.id,
+        partyId: purchase.supplierId_ref,
         partyName: purchase.supplierName,
         invoiceId: purchase.id,
         invoiceNo: purchase.invoiceNo,
