@@ -1,13 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
 
 // GET /api/materials/[id]
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
     const { id } = await params
-    const material = await db.material.findUnique({
-      where: { id },
+    const material = await db.material.findFirst({
+      where: { id, companyId: user.companyId ?? null },
       include: { warehouse: true },
     })
     if (!material) {
@@ -23,6 +26,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 // PUT /api/materials/[id]
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    const companyId = user.companyId ?? null
     const { id } = await params
     const body = await req.json()
     const { name, unit, warehouseId, quantity, unitCost, reorderLevel, notes } = body
@@ -34,7 +40,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: 'الوحدة مطلوبة' }, { status: 400 })
     }
 
-    const existing = await db.material.findUnique({ where: { id } })
+    const existing = await db.material.findFirst({ where: { id, companyId } })
     if (!existing) {
       return NextResponse.json({ error: 'الخامة غير موجودة' }, { status: 404 })
     }
@@ -47,7 +53,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     }
 
     if (warehouseId) {
-      const warehouse = await db.warehouse.findUnique({ where: { id: warehouseId } })
+      const warehouse = await db.warehouse.findFirst({ where: { id: warehouseId, companyId } })
       if (!warehouse) {
         return NextResponse.json({ error: 'المخزن المحدد غير موجود' }, { status: 404 })
       }
@@ -77,8 +83,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 // DELETE /api/materials/[id]
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
     const { id } = await params
-    const existing = await db.material.findUnique({ where: { id } })
+    const existing = await db.material.findFirst({ where: { id, companyId: user.companyId ?? null } })
     if (!existing) {
       return NextResponse.json({ error: 'الخامة غير موجودة' }, { status: 404 })
     }

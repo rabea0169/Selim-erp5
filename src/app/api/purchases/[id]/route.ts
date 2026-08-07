@@ -1,13 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    const companyId = user.companyId ?? null
     const { id } = await params
 
-    const purchase = await db.purchase.findUnique({
-      where: { id },
+    const purchase = await db.purchase.findFirst({
+      where: { id, companyId },
       include: { items: true },
     })
     if (!purchase) {
@@ -18,7 +22,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
       // 1) إرجاع كميات المواد الخام مع إعادة حساب متوسط التكلفة المرجح (GAP-04 fix)
       for (const item of purchase.items) {
         if (item.materialId) {
-          const mat = await tx.material.findUnique({ where: { id: item.materialId } })
+          const mat = await tx.material.findFirst({ where: { id: item.materialId, companyId } })
           if (mat) {
             const removedValue = item.quantity * item.unitPrice
             const totalOldValue = mat.quantity * mat.unitCost
@@ -41,6 +45,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
             // تسجيل حركة مرتجع للمادة
             await tx.materialTransaction.create({
               data: {
+                companyId,
                 materialId: item.materialId,
                 warehouseId: mat.warehouseId,
                 type: 'out',
@@ -56,34 +61,34 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
         }
       }
 
-      // 2) حذف حركة الخزينة المرتبطة (سحب المشتريات)
+      // 2) حذف حركة الخزينة المرتبطة (سحب المشتريات) — داخل الشركة فقط
       if (purchase.paid > 0) {
         await tx.treasuryTransaction.deleteMany({
-          where: { referenceType: 'purchase', referenceId: id },
+          where: { referenceType: 'purchase', referenceId: id, companyId },
         })
       }
 
       // 3) حذف المدفوعات المرتبطة
       await tx.payment.deleteMany({
-        where: { invoiceId: id },
+        where: { invoiceId: id, companyId },
       })
 
       // 4) حذف المرتجعات المرتبطة
       const returnIds = await tx.purchaseReturn.findMany({
-        where: { purchaseId: id },
+        where: { purchaseId: id, companyId },
         select: { id: true },
       })
       if (returnIds.length > 0) {
         const ids = returnIds.map(r => r.id)
         await tx.treasuryTransaction.deleteMany({
-          where: { referenceType: 'purchase_return', referenceId: { in: ids } },
+          where: { referenceType: 'purchase_return', referenceId: { in: ids }, companyId },
         })
         await tx.purchaseReturn.deleteMany({ where: { id: { in: ids } } })
       }
 
       // 5) حذف حركات المواد المرتبطة بالشراء
       await tx.materialTransaction.deleteMany({
-        where: { referenceType: 'purchase', referenceId: id },
+        where: { referenceType: 'purchase', referenceId: id, companyId },
       })
 
       // 6) حذف أصناف الشراء ثم الفاتورة

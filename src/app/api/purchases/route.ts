@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
 
 // GET /api/purchases?from=&to=&q=&page=1&limit=50
 export async function GET(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    const companyId = user.companyId ?? null
+
     const { searchParams } = new URL(req.url)
     const from = searchParams.get('from')
     const to = searchParams.get('to')
@@ -12,7 +17,7 @@ export async function GET(req: NextRequest) {
     const page = Math.max(1, Number(searchParams.get('page')) || 1)
     const limit = Math.min(200, Math.max(1, Number(searchParams.get('limit')) || 50))
 
-    const where: any = {}
+    const where: any = { companyId }
     if (from || to) {
       where.date = {}
       if (from) {
@@ -28,10 +33,15 @@ export async function GET(req: NextRequest) {
       }
     }
     if (q) {
-      where.OR = [
-        { supplierName: { contains: q } },
-        { invoiceNo: { contains: q } },
-        { notes: { contains: q } },
+      where.AND = [
+        { companyId },
+        {
+          OR: [
+            { supplierName: { contains: q } },
+            { invoiceNo: { contains: q } },
+            { notes: { contains: q } },
+          ],
+        },
       ]
     }
 
@@ -58,6 +68,10 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    const companyId = user.companyId ?? null
+
     const body = await req.json()
     const {
       supplierName,
@@ -118,10 +132,10 @@ export async function POST(req: NextRequest) {
     }
 
     const purchase = await db.$transaction(async (tx) => {
-      // فحص المواد والعميل داخل الـ transaction (TOCTOU fix)
+      // فحص المواد والمورد داخل الـ transaction (TOCTOU fix) — مع عزل الشركة
       for (const it of validItems) {
         if (it.materialId) {
-          const material = await tx.material.findUnique({ where: { id: it.materialId } })
+          const material = await tx.material.findFirst({ where: { id: it.materialId, companyId } })
           if (!material) {
             throw new Error(`المادة "${it.itemName}" غير موجودة في قاعدة البيانات`)
           }
@@ -129,7 +143,7 @@ export async function POST(req: NextRequest) {
       }
 
       if (supplierId_ref) {
-        const supplier = await tx.supplier.findUnique({ where: { id: supplierId_ref } })
+        const supplier = await tx.supplier.findFirst({ where: { id: supplierId_ref, companyId } })
         if (!supplier) {
           throw new Error('المورد المحدد غير موجود')
         }
@@ -137,6 +151,7 @@ export async function POST(req: NextRequest) {
 
       const newPurchase = await tx.purchase.create({
         data: {
+          companyId,
           supplierName: supplierName.trim(),
           supplierId_ref: supplierId_ref || null,
           invoiceNo: invoiceNo?.trim() || null,
@@ -167,7 +182,7 @@ export async function POST(req: NextRequest) {
       // إضافة الكميات لمخزون المواد الخام
       for (const it of validItems) {
         if (it.materialId) {
-          const material = await tx.material.findUnique({ where: { id: it.materialId } })
+          const material = await tx.material.findFirst({ where: { id: it.materialId, companyId } })
           if (material) {
             const totalOldValue = material.quantity * material.unitCost
             const totalNewValue = Number(it.quantity) * Number(it.unitPrice)
@@ -185,6 +200,7 @@ export async function POST(req: NextRequest) {
 
             await tx.materialTransaction.create({
               data: {
+                companyId,
                 materialId: it.materialId,
                 warehouseId: material.warehouseId,
                 type: 'in',
@@ -203,6 +219,7 @@ export async function POST(req: NextRequest) {
       if (paidAmount > 0) {
         await tx.treasuryTransaction.create({
           data: {
+            companyId,
             type: 'withdrawal',
             amount: paidAmount,
             date: dateObj,

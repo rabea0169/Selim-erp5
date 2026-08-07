@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
 
 // GET /api/payments?type=customer_payment&partyId=xxx&from=&to=&page=1&limit=50
 export async function GET(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    const companyId = user.companyId ?? null
+
     const { searchParams } = new URL(req.url)
     const type = searchParams.get('type')
     const partyId = searchParams.get('partyId')
@@ -14,7 +19,7 @@ export async function GET(req: NextRequest) {
     const limit = Math.max(1, Math.min(200, Number(searchParams.get('limit')) || 50))
     const skip = (page - 1) * limit
 
-    const where: any = {}
+    const where: any = { companyId }
     if (type) {
       where.type = type
     }
@@ -58,6 +63,10 @@ export async function GET(req: NextRequest) {
 // POST /api/payments
 export async function POST(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    const companyId = user.companyId ?? null
+
     const body = await req.json()
     const {
       type,
@@ -112,13 +121,26 @@ export async function POST(req: NextRequest) {
 
     // تنفيذ العملية في transaction واحد
     const payment = await db.$transaction(async (tx) => {
-      // التحقق من الفاتورة وربطها حسب النوع
+      // التحقق من أن الطرف ينتمي لنفس الشركة (منع التسجيل على طرف من شركة أخرى)
+      if (type === 'customer_payment') {
+        const customer = await tx.customer.findFirst({ where: { id: partyId.trim(), companyId } })
+        if (!customer) {
+          throw new Error('العميل المحدد غير موجود')
+        }
+      } else {
+        const supplier = await tx.supplier.findFirst({ where: { id: partyId.trim(), companyId } })
+        if (!supplier) {
+          throw new Error('المورد المحدد غير موجود')
+        }
+      }
+
+      // التحقق من الفاتورة وربطها حسب النوع — داخل نفس الشركة
       let sale: any = null
       let purchase: any = null
 
       if (invoiceId?.trim()) {
         if (type === 'customer_payment') {
-          sale = await tx.sale.findUnique({ where: { id: invoiceId.trim() } })
+          sale = await tx.sale.findFirst({ where: { id: invoiceId.trim(), companyId } })
           if (!sale) {
             throw new Error('فاتورة البيع المحددة غير موجودة')
           }
@@ -128,7 +150,7 @@ export async function POST(req: NextRequest) {
             throw new Error(`المبلغ (${amountNumber}) يتجاوز الرصيد المتبقي (${remaining})`)
           }
         } else {
-          purchase = await tx.purchase.findUnique({ where: { id: invoiceId.trim() } })
+          purchase = await tx.purchase.findFirst({ where: { id: invoiceId.trim(), companyId } })
           if (!purchase) {
             throw new Error('فاتورة الشراء المحددة غير موجودة')
           }
@@ -143,9 +165,12 @@ export async function POST(req: NextRequest) {
       // إنشاء سجل السداد
       const newPayment = await tx.payment.create({
         data: {
+          companyId,
           type,
           partyId: partyId.trim(),
           partyName: partyName.trim(),
+          customerId: type === 'customer_payment' ? partyId.trim() : null,
+          supplierId: type === 'supplier_payment' ? partyId.trim() : null,
           invoiceId: invoiceId?.trim() || null,
           invoiceNo: invoiceNo?.trim() || null,
           amount: amountNumber,
@@ -166,6 +191,7 @@ export async function POST(req: NextRequest) {
         }
         await tx.treasuryTransaction.create({
           data: {
+            companyId,
             type: 'deposit',
             amount: amountNumber,
             date: new Date(date),
@@ -188,6 +214,7 @@ export async function POST(req: NextRequest) {
         }
         await tx.treasuryTransaction.create({
           data: {
+            companyId,
             type: 'withdrawal',
             amount: amountNumber,
             date: new Date(date),
@@ -211,7 +238,7 @@ export async function POST(req: NextRequest) {
     if (e instanceof Error && e.message.includes('يتجاوز الرصيد المتبقي')) {
       return NextResponse.json({ error: e.message }, { status: 400 })
     }
-    if (e instanceof Error && (e.message.includes('غير موجودة') || e.message.includes('غير صالح'))) {
+    if (e instanceof Error && (e.message.includes('غير موجودة') || e.message.includes('غير موجود') || e.message.includes('غير صالح'))) {
       return NextResponse.json({ error: e.message }, { status: 400 })
     }
     const { error, status } = safeError(e); return NextResponse.json({ error }, { status })
