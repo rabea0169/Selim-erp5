@@ -21,14 +21,21 @@ import {
 import { useToast } from '@/hooks/use-toast'
 import { formatCurrency, formatDate, todayStr } from '@/lib/format'
 import {
-  customerRepository, supplierRepository, purchaseRepository,
-  paymentRepository, dataChangeEmitter, useLiveData,
+  customerRepository, supplierRepository,
+  paymentRepository, useLiveData,
   type Customer, type Supplier, type Sale, type Purchase, type Payment,
 } from '@/lib/db'
 
 // ============================================================
 // أنواع البيانات
 // ============================================================
+interface ReturnTx {
+  id: string
+  date: string
+  total: number
+  returnNumber?: string
+}
+
 interface CustomerDebt {
   customer: Customer
   totalSales: number
@@ -37,6 +44,7 @@ interface CustomerDebt {
   openingBalance: number
   totalDebt: number
   sales: Sale[]
+  returns: ReturnTx[]
 }
 
 interface SupplierDebt {
@@ -47,6 +55,7 @@ interface SupplierDebt {
   openingBalance: number
   totalDebt: number
   purchases: Purchase[]
+  returns: ReturnTx[]
 }
 
 interface TxRow {
@@ -77,11 +86,13 @@ async function fetchCustomerDebts(search: string): Promise<{ items: CustomerDebt
     items.push({
       customer: c,
       totalSales: stats.totalSales,
-      totalPaid: stats.totalPaid,
+      // المحصّل المعروض = المدفوع على الفواتير + السدادات العامة (كل ما تم تحصيله فعلاً)
+      totalPaid: stats.totalPaid + (stats.standalonePayments || 0),
       totalRemaining: stats.totalRemaining,
       openingBalance,
       totalDebt,
       sales: stats.sales || [],
+      returns: (stats.returns || []) as ReturnTx[],
     })
   }
   items.sort((a, b) => b.totalDebt - a.totalDebt)
@@ -90,6 +101,8 @@ async function fetchCustomerDebts(search: string): Promise<{ items: CustomerDebt
 
 // ============================================================
 // جلب ذمم الموردين
+// fix(receivables): أصبح يعتمد على supplier-report (يخصم مرتجعات الشراء
+// والسدادات العامة) بدل تجميع المشتريات فقط الذي كان يبالغ في المستحق
 // ============================================================
 async function fetchSupplierDebts(search: string): Promise<{ items: SupplierDebt[]; total: number }> {
   const rawSupp = search
@@ -97,27 +110,22 @@ async function fetchSupplierDebts(search: string): Promise<{ items: SupplierDebt
     : await supplierRepository.getAll()
   const suppliers: Supplier[] = Array.isArray(rawSupp) ? rawSupp : (rawSupp as any)?.suppliers ?? []
 
-  const rawPurch = await purchaseRepository.getAll()
-  const allPurchases: Purchase[] = Array.isArray(rawPurch) ? rawPurch : (rawPurch as any)?.purchases ?? []
-
   const items: SupplierDebt[] = []
   for (const s of suppliers) {
-    const supPurchases = allPurchases.filter(
-      (p) => (p as any).supplierId_ref === s.id || p.supplierName === s.name
-    )
+    const stats = await supplierRepository.getWithStats(s.id)
+    if (!stats) continue
     const openingBalance = (s as any).openingBalance || 0
-    const totalPurchases = supPurchases.reduce((sum, p) => sum + p.total, 0)
-    const totalPaid = supPurchases.reduce((sum, p) => sum + p.paid, 0)
-    const totalDebt = totalPurchases - totalPaid + openingBalance
+    const totalDebt = stats.totalRemaining + openingBalance
     if (totalDebt <= 0) continue
     items.push({
       supplier: s,
-      totalPurchases,
-      totalPaid,
-      totalRemaining: totalPurchases - totalPaid,
+      totalPurchases: stats.totalPurchases,
+      totalPaid: stats.totalPaid + (stats.standalonePayments || 0),
+      totalRemaining: stats.totalRemaining,
       openingBalance,
       totalDebt,
-      purchases: supPurchases,
+      purchases: stats.purchases || [],
+      returns: (stats.returns || []) as ReturnTx[],
     })
   }
   items.sort((a, b) => b.totalDebt - a.totalDebt)
@@ -137,11 +145,11 @@ export function ReceivablesView({ onBack }: { onBack?: () => void }) {
 
   const { data: custData, loading: custLoading, reload: reloadCust } = useLiveData(
     () => fetchCustomerDebts(search),
-    ['customers', 'sales', 'payments']
+    ['customers', 'sales', 'payments', 'saleReturns']
   )
   const { data: suppData, loading: suppLoading, reload: reloadSupp } = useLiveData(
     () => fetchSupplierDebts(search),
-    ['suppliers', 'purchases', 'payments']
+    ['suppliers', 'purchases', 'payments', 'purchaseReturns']
   )
 
   useEffect(() => { reloadCust(); reloadSupp() }, [search, reloadCust, reloadSupp])
@@ -403,6 +411,8 @@ function CustomerPaymentDialog({ open, onOpenChange, item }: { open: boolean; on
     setSaving(true)
     try {
       const inv = invoiceId !== '__none__' ? item.sales.find((s) => s.id === invoiceId) : undefined
+      // ملاحظة: تحديث paid على الفاتورة يتم في الخادم داخل /api/payments (transaction)
+      // — لا يحدث أي تحديث يدوي هنا لتجنب الاحتساب المزدوج
       await paymentRepository.create({
         type: 'customer_payment',
         partyId: item.customer.id,
@@ -472,6 +482,7 @@ function SupplierPaymentDialog({ open, onOpenChange, item }: { open: boolean; on
     setSaving(true)
     try {
       const inv = invoiceId !== '__none__' ? item.purchases.find((p) => p.id === invoiceId) : undefined
+      // تحديث paid يتم في الخادم فقط — لا تحديث يدوي هنا (منع الاحتساب المزدوج)
       await paymentRepository.create({
         type: 'supplier_payment',
         partyId: item.supplier.id,
@@ -590,6 +601,45 @@ function SharedPaymentForm({ totalDebt, debtLabel, debtBg, debtText, debtValue, 
 }
 
 // ============================================================
+// بناء صفوف الدائن لكشف الحساب:
+// - الدفعات المسجلة (payments)
+// - المرتجعات (تُخصم من الذمة)
+// - المدفوع مقدماً عند إنشاء الفاتورة = paid - الدفعات المرتبطة بالفاتورة
+//   (حتى يتطابق الرصيد المتحرك مع الرصيد النهائي)
+// ============================================================
+function buildCreditRows(
+  invoices: { id: string; date: string; paid: number; invoiceNo?: string | null }[],
+  payments: Payment[],
+  returns: ReturnTx[],
+  paymentLabel: string,
+  initialPaidLabel: string,
+  returnLabel: string
+) {
+  const paymentRows = payments.map((p) => ({
+    id: p.id,
+    date: p.date,
+    label: `${paymentLabel}${p.invoiceNo ? ' — فاتورة ' + p.invoiceNo : ''}${p.method ? ' (' + p.method + ')' : ''}`,
+    debit: 0,
+    credit: p.amount,
+  }))
+  const returnRows = returns.map((r) => ({
+    id: r.id,
+    date: r.date,
+    label: `${returnLabel}${r.returnNumber ? ' ' + r.returnNumber : ''}`,
+    debit: 0,
+    credit: r.total,
+  }))
+  const initialPaidRows = invoices.flatMap((inv) => {
+    const linked = payments.filter((p) => (p as any).invoiceId === inv.id).reduce((a, p) => a + p.amount, 0)
+    const initial = inv.paid - linked
+    return initial > 0.0001
+      ? [{ id: inv.id + '-initial-paid', date: inv.date, label: `${initialPaidLabel}${inv.invoiceNo ? ' ' + inv.invoiceNo : ''}`, debit: 0, credit: initial }]
+      : []
+  })
+  return [...paymentRows, ...returnRows, ...initialPaidRows]
+}
+
+// ============================================================
 // كشف حساب عميل
 // ============================================================
 function CustomerStatementDialog({ open, onOpenChange, item }: { open: boolean; onOpenChange: (v: boolean) => void; item: CustomerDebt }) {
@@ -603,7 +653,7 @@ function CustomerStatementDialog({ open, onOpenChange, item }: { open: boolean; 
 
   const rows = buildTxRows(
     item.sales.map((s) => ({ id: s.id, date: s.date, label: `فاتورة${s.invoiceNo ? ' ' + s.invoiceNo : ''}`, debit: s.total, credit: 0 })),
-    payments.map((p) => ({ id: p.id, date: p.date, label: `تحصيل${p.method ? ' (' + p.method + ')' : ''}`, debit: 0, credit: p.amount })),
+    buildCreditRows(item.sales, payments, item.returns, 'تحصيل', 'مدفوع عند إنشاء فاتورة', 'مرتجع مبيعات'),
     item.openingBalance
   )
 
@@ -638,7 +688,7 @@ function SupplierStatementDialog({ open, onOpenChange, item }: { open: boolean; 
 
   const rows = buildTxRows(
     item.purchases.map((p) => ({ id: p.id, date: p.date, label: `فاتورة شراء${p.invoiceNo ? ' ' + p.invoiceNo : ''}`, debit: p.total, credit: 0 })),
-    payments.map((p) => ({ id: p.id, date: p.date, label: `سداد${p.method ? ' (' + p.method + ')' : ''}`, debit: 0, credit: p.amount })),
+    buildCreditRows(item.purchases, payments, item.returns, 'سداد', 'مدفوع عند إنشاء فاتورة شراء', 'مرتجع مشتريات'),
     item.openingBalance
   )
 
@@ -688,7 +738,7 @@ function StatementTable({ rows, openingBalance, finalBalance }: { rows: TxRow[];
         {rows.length === 0 ? (
           <p className="text-center text-xs text-slate-500 p-4">لا توجد معاملات</p>
         ) : rows.map((t, i) => (
-          <div key={i} className="flex items-start justify-between p-2 border-b border-slate-50 text-xs last:border-0">
+          <div key={t.id || i} className="flex items-start justify-between p-2 border-b border-slate-50 text-xs last:border-0">
             <div className="flex-1">
               <div className="flex items-center gap-2">
                 <Badge variant="outline" className={`text-[9px] ${t.debit > 0 ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
