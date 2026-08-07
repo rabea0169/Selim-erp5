@@ -1,5 +1,5 @@
 // Service Worker - يعمل offline 100%
-const CACHE_NAME = 'factory-app-v4'
+const CACHE_NAME = 'factory-app-v5'
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',

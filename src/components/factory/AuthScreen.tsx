@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/hooks/use-toast'
-import { login, register, hasAnyUser } from '@/lib/db/auth'
+import { login, register, hasAnyUser, getRegistrationStatus } from '@/lib/db/auth'
 
 export function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
   const [mode, setMode] = useState<'login' | 'register'>('login')
@@ -26,12 +26,19 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void })
   const [loading, setLoading] = useState(false)
   const [checking, setChecking] = useState(true)
   const [hasUsers, setHasUsers] = useState(true)
+  const [serverRegClosed, setServerRegClosed] = useState(false)
   const { toast } = useToast()
 
   useEffect(() => {
-    hasAnyUser()
-      .then(setHasUsers)
-      .catch((e) => console.error('Failed to check users:', e))
+    Promise.all([
+      hasAnyUser().then(setHasUsers).catch(() => setHasUsers(false)),
+      getRegistrationStatus().then((status) => {
+        if (status.serverReachable && !status.registrationOpen) {
+          setServerRegClosed(true)
+          setHasUsers(true)
+        }
+      }).catch(() => {}),
+    ])
       .finally(() => setChecking(false))
   }, [])
 
@@ -49,12 +56,15 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void })
         return
       }
 
+      const isLocalOnly = serverRegClosed && mode === 'register'
       toast({
         title: mode === 'login' ? 'أهلاً بك' : 'تم التسجيل',
         description:
           mode === 'login'
             ? `مرحباً ${result.user?.name}`
-            : `تم إنشاء حسابك بنجاح، أهلاً ${result.user?.name}`,
+            : isLocalOnly
+              ? `تم إنشاء حسابك محلياً، أهلاً ${result.user?.name}`
+              : `تم إنشاء حسابك بنجاح، أهلاً ${result.user?.name}`,
       })
 
       onAuthenticated()
@@ -94,7 +104,6 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void })
             <button
               type="button"
               onClick={() => setMode('login')}
-              disabled={!hasUsers && mode === 'login'}
               className={`py-2.5 rounded-lg text-sm font-bold transition-all ${
                 mode === 'login'
                   ? 'bg-white text-emerald-600 shadow-sm'
@@ -105,14 +114,24 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void })
             </button>
             <button
               type="button"
-              onClick={() => setMode('register')}
+              onClick={() => {
+                if (serverRegClosed) {
+                  toast({
+                    title: 'تنبيه',
+                    description: 'التسجيل مغلق على السيرفر. سيتم إنشاء حساب محلي على هذا الجهاز فقط.',
+                  })
+                }
+                setMode('register')
+              }}
               className={`py-2.5 rounded-lg text-sm font-bold transition-all ${
                 mode === 'register'
                   ? 'bg-white text-emerald-600 shadow-sm'
-                  : 'text-slate-500'
+                  : serverRegClosed
+                    ? 'text-amber-600'
+                    : 'text-slate-500'
               }`}
             >
-              حساب جديد
+              {serverRegClosed ? 'حساب جديد ⚠️' : 'حساب جديد'}
             </button>
           </div>
 
@@ -198,14 +217,22 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void })
           </form>
 
           {/* Info */}
-          {mode === 'register' && !hasUsers && (
+          {mode === 'register' && serverRegClosed && (
+            <div className="mt-4 bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800">
+              <p className="font-bold mb-1">⚠️ التسجيل مغلق على السيرفر</p>
+              <p>يوجد حساب مدير بالفعل. سيتم إنشاء حسابك محلياً على هذا الجهاز فقط.</p>
+              <p className="mt-1">للمزامنة مع السيرفر، سجل دخول بحساب المدير الموجود.</p>
+            </div>
+          )}
+
+          {mode === 'register' && !serverRegClosed && !hasUsers && (
             <div className="mt-4 bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-xs text-emerald-800">
               <p className="font-bold mb-1">🎉 أول مرة تستخدم فيها النظام؟</p>
               <p>أنشئ حساب المدير الأول. البيانات محفوظة محلياً على جهازك.</p>
             </div>
           )}
 
-          {mode === 'login' && !hasUsers && (
+          {mode === 'login' && !hasUsers && !serverRegClosed && (
             <div className="mt-4 bg-amber-50 border border-amber-100 rounded-xl p-3 text-xs text-amber-800">
               <p>لا يوجد مستخدمين بعد. أنشئ حساباً جديداً للبدء.</p>
             </div>

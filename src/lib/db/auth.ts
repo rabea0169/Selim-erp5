@@ -75,12 +75,9 @@ export async function login(username: string, password: string): Promise<{ succe
         if (serverReachable) {
           return { success: false, error: 'اسم المستخدم أو كلمة المرور غير صحيحة' }
         }
-        // لو السيرفر مش متاح والمحلي فاضي، أو الحساب غير موجود في قاعدة بيانات السيرفر
-        console.warn('[Auth] Both server and local login failed. Local user not found.')
-        return {
-          success: false,
-          error: 'الحساب غير موجود على السيرفر السحابي. اضغط على تبويب "حساب جديد" لتسجيل الحساب على السيرفر ليعمل من كافة الأجهزة.',
-        }
+        // لو السيرفر مش متاح والمحلي فاضي، ممكن يكون حدث مسح للبيانات المحلية
+        console.warn('[Auth] Both server and local login failed. Server was unreachable and local user not found.')
+        return { success: false, error: 'لا يمكن تسجيل الدخول حالياً. تأكد من اتصالك بالإنترنت أو أنشئ حساباً جديداً.' }
       }
 
       const sessionUser: SessionUser = {
@@ -137,7 +134,7 @@ export async function register(username: string, password: string, name: string)
     }
 
     // 1. محاولة التسجيل على السيرفر أولاً
-    let serverReachable = false
+    let serverRegistrationClosed = false
     try {
       const response = await fetch('/api/auth/register', {
         method: 'POST',
@@ -145,60 +142,80 @@ export async function register(username: string, password: string, name: string)
         body: JSON.stringify({ username, password, name }),
       })
 
-      serverReachable = true
-      const res = await response.json()
+      // تحقق إن الرد JSON صالح قبل محاولة قراءته
+      const contentType = response.headers.get('content-type') || ''
+      if (!contentType.includes('application/json')) {
+        console.warn('[Auth] Server returned non-JSON response:', response.status, contentType)
+        // السيرفر مش متاح أو يرجع HTML (502/503) — نكمل محلياً
+      } else {
+        const res = await response.json()
 
-      if (res.error) {
-        // Fix W: Check for duplicate user errors in Arabic and English
-        const isDuplicateUser = res.error.includes('موجود بالفعل')
-          || res.error.includes('already exists')
-          || res.error.includes('Unique constraint')
-        // لو السيرفر says المستخدم موجود، ممكن يكون هو نفسه المستخدم اللي بيفقد بياناته المحلية
-        // في حالة التسجيل بنفس البيانات، محاولة تسجيل الدخول بدلاً من ذلك
-        if (isDuplicateUser) {
-          console.log('[Auth] User already exists on server, attempting login instead of register')
-          const loginResult = await login(username, password)
-          if (loginResult.success) {
-            return loginResult
+        if (res.error) {
+          const isDuplicateUser = res.error.includes('موجود بالفعل')
+            || res.error.includes('already exists')
+            || res.error.includes('Unique constraint')
+
+          // لو التسجيل مغلق على السيرفر (يوجد مستخدم بالفعل)
+          if (res.error.includes('التسجيل مغلق') || res.error.includes('registration closed')) {
+            console.log('[Auth] Registration closed on server, falling back to local account')
+            serverRegistrationClosed = true
+            // لا نرجع خطأ هنا — نكمل للتسجيل المحلي
+          } else if (isDuplicateUser) {
+            console.log('[Auth] User already exists on server, attempting login instead of register')
+            const loginResult = await login(username, password)
+            if (loginResult.success) {
+              return loginResult
+            }
+            return { success: false, error: 'اسم المستخدم موجود بالفعل على السيرفر. حاول تسجيل الدخول.' }
+          } else {
+            return { success: false, error: res.error }
           }
-          return { success: false, error: 'اسم المستخدم موجود بالفعل على السيرفر. حاول تسجيل الدخول.' }
         }
-        return { success: false, error: res.error }
-      }
 
-      if (res.user) {
-        const sessionUser: SessionUser = res.user
-        localStorage.setItem(SESSION_KEY, JSON.stringify(sessionUser))
-        // إنشاء المستخدم محلياً أيضاً للعمل offline
-        try {
-          await userRepository.createWithPassword({ username, password, name })
-        } catch (localErr: any) {
-          console.warn('[Auth] Server register OK but local sync failed:', localErr.message)
+        if (res.user) {
+          const sessionUser: SessionUser = res.user
+          localStorage.setItem(SESSION_KEY, JSON.stringify(sessionUser))
+          try {
+            await userRepository.createWithPassword({ username, password, name })
+          } catch (localErr: any) {
+            console.warn('[Auth] Server register OK but local sync failed:', localErr.message)
+          }
+          return { success: true, user: sessionUser }
         }
-        return { success: true, user: sessionUser }
       }
-    } catch {
-      // لو السيرفر مش متاح، نكمل محلياً
+    } catch (err: any) {
+      console.warn('[Auth] Server register failed, falling back to local:', err?.message || 'network error')
     }
 
     // 2. التحقق المحلي
     const existing = await userRepository.getByUsername(username)
     if (existing) {
-      return { success: false, error: 'اسم المستخدم موجود بالفعل' }
+      return { success: false, error: 'اسم المستخدم موجود بالفعل محلياً. حاول تسجيل الدخول.' }
     }
 
-    const user = await userRepository.createWithPassword({ username, password, name })
-    const sessionUser: SessionUser = {
-      id: user.id,
-      username: user.username,
-      name: user.name,
-      role: user.role,
-    }
+    // 3. إنشاء الحساب محلياً (يعمل offline)
+    try {
+      const user = await userRepository.createWithPassword({ username, password, name })
+      const sessionUser: SessionUser = {
+        id: user.id,
+        username: user.username,
+        name: user.name,
+        role: user.role,
+      }
 
-    localStorage.setItem(SESSION_KEY, JSON.stringify(sessionUser))
-    return { success: true, user: sessionUser }
+      localStorage.setItem(SESSION_KEY, JSON.stringify(sessionUser))
+      console.log('[Auth] Local account created successfully:', username)
+      return { success: true, user: sessionUser }
+    } catch (localErr: any) {
+      console.error('[Auth] Local registration failed:', localErr?.message)
+      if (serverRegistrationClosed) {
+        return { success: false, error: 'التسجيل مغلق على السيرفر وفشل إنشاء حساب محلي. تأكد أن متصفحك يسمح بتخزين البيانات.' }
+      }
+      return { success: false, error: 'فشل إنشاء الحساب. تأكد أن متصفحك يسمح بتخزين البيانات محلياً.' }
+    }
   } catch (e: any) {
-    return { success: false, error: e.message }
+    console.error('[Auth] Register unexpected error:', e?.message)
+    return { success: false, error: e?.message || 'حدث خطأ غير متوقع أثناء التسجيل' }
   }
 }
 
@@ -227,8 +244,14 @@ export async function logout(): Promise<void> {
 export async function hasAnyUser(): Promise<boolean> {
   // 1. فحص السيرفر
   try {
-    const serverHas = await checkServerHasUsers()
-    if (serverHas) return true
+    const response = await fetch('/api/auth/register')
+    if (response.ok) {
+      const contentType = response.headers.get('content-type') || ''
+      if (contentType.includes('application/json')) {
+        const res = await response.json()
+        if (res.hasUsers === true) return true
+      }
+    }
   } catch {
     // السيرفر مش متاح، نكمل محلياً
   }
@@ -240,5 +263,26 @@ export async function hasAnyUser(): Promise<boolean> {
     console.error('[Auth] hasAnyUser local check failed:', e.message)
     // لو المحلي فشل، نفترض مفيش مستخدمين عشان نعرض شاشة التسجيل
     return false
+  }
+}
+
+// معلومات حالة التسجيل من السيرفر
+export async function getRegistrationStatus(): Promise<{ serverReachable: boolean; hasUsers: boolean; registrationOpen: boolean }> {
+  try {
+    const response = await fetch('/api/auth/register')
+    if (response.ok) {
+      const contentType = response.headers.get('content-type') || ''
+      if (contentType.includes('application/json')) {
+        const res = await response.json()
+        return {
+          serverReachable: true,
+          hasUsers: !!res.hasUsers,
+          registrationOpen: !!res.registrationOpen,
+        }
+      }
+    }
+    return { serverReachable: false, hasUsers: false, registrationOpen: false }
+  } catch {
+    return { serverReachable: false, hasUsers: false, registrationOpen: false }
   }
 }
