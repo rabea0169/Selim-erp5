@@ -65,10 +65,40 @@ export async function POST(req: NextRequest) {
       const sale = await tx.sale.findFirst({ where: { id: saleId, companyId }, include: { items: true } })
       if (!sale) throw new Error('الفاتورة غير موجودة')
 
-      // Validate return total does not exceed what was paid or the invoice total
+      // المرتجعات السابقة لنفس الفاتورة — للتحقق التراكمي (مجموع المرتجعات ≤ الأصل)
+      const previousReturns = await tx.saleReturn.findMany({
+        where: { saleId, companyId },
+        select: { total: true, items: true },
+      })
+
+      // Validate return total does not exceed what was paid or the invoice total (تراكمياً)
       const maxReturnable = Math.min(sale.total, sale.paid)
-      if (total > maxReturnable) {
-        throw new Error(`مبلغ المرتجع (${total}) يتجاوز الحد المسموح (${maxReturnable})`)
+      const alreadyReturnedTotal = previousReturns.reduce((s, r) => s + (Number(r.total) || 0), 0)
+      if (alreadyReturnedTotal + total > maxReturnable) {
+        throw new Error(`مبلغ المرتجع (${total}) يتجاوز الحد المسموح (${Math.max(0, maxReturnable - alreadyReturnedTotal)})`)
+      }
+
+      // تحقق كميات الأصناف: مجموع المرتجعات السابقة + الجديدة ≤ كمية الفاتورة لكل صنف
+      const returnedQtyByItem = new Map<string, number>()
+      for (const r of previousReturns) {
+        const rItems = Array.isArray(r.items) ? (r.items as any[]) : []
+        for (const ri of rItems) {
+          if (ri?.saleItemId && Number(ri.quantity) > 0) {
+            returnedQtyByItem.set(ri.saleItemId, (returnedQtyByItem.get(ri.saleItemId) || 0) + Number(ri.quantity))
+          }
+        }
+      }
+      for (const it of itemsArr) {
+        const qty = Number(it.quantity) || 0
+        if (qty <= 0) throw new Error(`كمية المرتجع غير صالحة للصنف: ${it.itemName || ''}`)
+        if (it.saleItemId) {
+          const saleItem = sale.items.find((si) => si.id === it.saleItemId)
+          if (!saleItem) throw new Error(`الصنف (${it.itemName || it.saleItemId}) لا ينتمي لهذه الفاتورة`)
+          const alreadyQty = returnedQtyByItem.get(it.saleItemId) || 0
+          if (alreadyQty + qty > saleItem.quantity) {
+            throw new Error(`كمية المرتجع للصنف (${saleItem.itemName}) تتجاوز المتبقي من الفاتورة (${Math.max(0, saleItem.quantity - alreadyQty)})`)
+          }
+        }
       }
 
       const cName = customerName || sale.customerName || ''
@@ -121,7 +151,7 @@ export async function POST(req: NextRequest) {
     if (e instanceof Error && e.message.includes('غير موجود')) {
       return NextResponse.json({ error: e.message }, { status: 404 })
     }
-    if (e instanceof Error && e.message.includes('يتجاوز الحد المسموح')) {
+    if (e instanceof Error && (e.message.includes('يتجاوز الحد المسموح') || e.message.includes('تتجاوز المتبقي') || e.message.includes('لا ينتمي') || e.message.includes('غير صالحة'))) {
       return NextResponse.json({ error: e.message }, { status: 400 })
     }
     const { error, status } = safeError(e); return NextResponse.json({ error }, { status })
