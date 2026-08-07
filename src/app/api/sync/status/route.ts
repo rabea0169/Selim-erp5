@@ -23,8 +23,10 @@ export async function GET() {
         counts[table] = await (db as any)[table].count({
           where: { companyId: scope.companyId },
         })
-      } catch {
-        counts[table] = 0
+      } catch (e: any) {
+        // نسجّل الخطأ بدل ابتلاعه بصمت ونُرجع -1 للدلالة على فشل العد
+        console.error(`[Sync] status count failed for ${table}:`, e?.message || e)
+        counts[table] = -1
       }
     }
 
