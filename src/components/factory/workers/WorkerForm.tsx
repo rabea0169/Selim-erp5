@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Contact, Clock, Calendar, Banknote } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -24,16 +24,20 @@ import {
 import { useToast } from '@/hooks/use-toast'
 import { pickContactFromPhone, isContactsPickerSupported } from '@/lib/contacts'
 import { workerRepository, dataChangeEmitter } from '@/lib/db'
+import type { WorkerWithStats } from './types'
 
 interface WorkerFormProps {
   open: boolean
   onOpenChange: (v: boolean) => void
   onSaved: () => void
+  /** عند تمريره يعمل النموذج في وضع التعديل بدلاً من الإضافة */
+  worker?: WorkerWithStats | null
 }
 
 type WorkerType = 'monthly' | 'production' | 'hourly'
 
-export function WorkerForm({ open, onOpenChange, onSaved }: WorkerFormProps) {
+export function WorkerForm({ open, onOpenChange, onSaved, worker }: WorkerFormProps) {
+  const isEdit = !!worker
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
   const [job, setJob] = useState('')
@@ -53,6 +57,25 @@ export function WorkerForm({ open, onOpenChange, onSaved }: WorkerFormProps) {
   const [picking, setPicking] = useState(false)
   const contactsSupported = isContactsPickerSupported()
   const { toast } = useToast()
+
+  // تعبئة الحقول عند الفتح في وضع التعديل، وإفراغها في وضع الإضافة
+  useEffect(() => {
+    if (!open) return
+    if (worker) {
+      setName(worker.name || '')
+      setPhone(worker.phone || '')
+      setJob(worker.job || '')
+      setType((worker.type as WorkerType) || 'monthly')
+      setNotes(worker.notes || '')
+      setHourlyRate(worker.hourlyRate != null ? String(worker.hourlyRate) : '')
+      setOvertimeRate(worker.overtimeRate != null ? String(worker.overtimeRate) : '')
+      setWorkStartTime(worker.workStartTime || '09:00')
+      setWorkHoursPerDay(worker.workHoursPerDay != null ? String(worker.workHoursPerDay) : '8')
+      setMonthlySalary(worker.monthlySalary != null ? String(worker.monthlySalary) : '')
+    } else {
+      resetForm()
+    }
+  }, [open, worker])
 
   const pickFromContacts = async () => {
     setPicking(true)
@@ -126,9 +149,15 @@ export function WorkerForm({ open, onOpenChange, onSaved }: WorkerFormProps) {
         if (workHoursPerDay) payload.workHoursPerDay = Number(workHoursPerDay)
       }
 
-      await workerRepository.create(payload)
-      dataChangeEmitter.notifyCreate('workers')
-      toast({ title: 'تم', description: 'تمت إضافة الموظف' })
+      if (isEdit && worker) {
+        await workerRepository.update(worker.id, payload)
+        dataChangeEmitter.notifyUpdate('workers')
+        toast({ title: 'تم', description: 'تم تعديل بيانات الموظف' })
+      } else {
+        await workerRepository.create(payload)
+        dataChangeEmitter.notifyCreate('workers')
+        toast({ title: 'تم', description: 'تمت إضافة الموظف' })
+      }
       resetForm()
       onSaved()
     } catch (e: any) {
@@ -147,11 +176,11 @@ export function WorkerForm({ open, onOpenChange, onSaved }: WorkerFormProps) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto" dir="rtl">
         <DialogHeader>
-          <DialogTitle className="text-right">موظف جديد</DialogTitle>
-          <DialogDescription className="sr-only">إضافة موظف جديد</DialogDescription>
+          <DialogTitle className="text-right">{isEdit ? 'تعديل الموظف' : 'موظف جديد'}</DialogTitle>
+          <DialogDescription className="sr-only">{isEdit ? 'تعديل بيانات الموظف' : 'إضافة موظف جديد'}</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
-          {contactsSupported && (
+          {contactsSupported && !isEdit && (
             <Button
               type="button"
               variant="outline"
