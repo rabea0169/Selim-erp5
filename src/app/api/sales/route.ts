@@ -115,6 +115,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'أضف صنفاً صحيحاً واحداً على الأقل' }, { status: 400 })
     }
 
+    // منع القيم السالبة للخصم/الضريبة/المصاريف (لا يثق بالعميل)
+    if (Number(discountValue) < 0 || Number(taxRate) < 0 || Number(extraFees) < 0) {
+      return NextResponse.json({ error: 'قيم الخصم والضريبة والمصاريف لا يمكن أن تكون سالبة' }, { status: 400 })
+    }
+
     // حساب الإجماليات عبر المكتبة المشتركة (مغطاة باختبارات وحدية)
     const totals = computeInvoiceTotals({ items: validItems, discountType, discountValue, taxRate, extraFees })
     const { subtotal, discountAmount, taxAmount, total } = totals
@@ -123,6 +128,14 @@ export async function POST(req: NextRequest) {
     const tRate = totals.taxRate
     const fees = totals.extraFees
     const paidAmount = Number(paid) || 0
+
+    // منع خصم أكبر من الإجمالي الفرعي (العميل يحدّه، والخادم يرفضه صراحة)
+    if (discountAmount > subtotal) {
+      return NextResponse.json({ error: 'مبلغ الخصم لا يمكن أن يتجاوز الإجمالي الفرعي' }, { status: 400 })
+    }
+    if (discType === 'percentage' && discValue > 100) {
+      return NextResponse.json({ error: 'نسبة الخصم لا يمكن أن تتجاوز 100%' }, { status: 400 })
+    }
 
     // F5-02 fix: التحقق من أن المدفوع لا يتجاوز الإجمالي ولا يكون سالباً
     const paidError = assertValidPaid(paidAmount, total)
