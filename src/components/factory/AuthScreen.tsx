@@ -103,14 +103,20 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void })
             </button>
             <button
               type="button"
-              onClick={() => setMode('register')}
+              onClick={() => {
+                if (hasUsers) {
+                  toast({ title: 'التسجيل مغلق', description: 'يوجد مستخدمون بالفعل. يرجى التواصل مع المدير.', variant: 'destructive' })
+                  return
+                }
+                setMode('register')
+              }}
               className={`py-2.5 rounded-lg text-sm font-bold transition-all ${
                 mode === 'register'
                   ? 'bg-white text-emerald-600 shadow-sm'
-                  : 'text-slate-500'
+                  : hasUsers ? 'text-slate-300 cursor-not-allowed' : 'text-slate-500'
               }`
             >
-              حساب جديد
+              {hasUsers ? 'حساب جديد 🔒' : 'حساب جديد'}
             </button>
           </div>
 
@@ -195,17 +201,24 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void })
             </Button>
           </form>
 
-          {/* Info */
+          {/* Info */}
+          {mode === 'register' && hasUsers && (
+            <div className="mt-4 bg-red-50 border border-red-100 rounded-xl p-3 text-xs text-red-800">
+              <p className="font-bold mb-1">⚠️ التسجيل مغلق</p>
+              <p>يوجد مستخدمون بالفعل على السيرفر. يرجى التواصل مع المدير لإنشاء حساب جديد.</p>
+            </div>
+          )}
+
           {mode === 'register' && !hasUsers && (
             <div className="mt-4 bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-xs text-emerald-800">
               <p className="font-bold mb-1">🎉 أول مرة تستخدم فيها النظام؟</p>
-              <p>أنشئ حساب المدير الأول.</p>
+              <p>أنشئ حساب المدير الأول على السيرفر.</p>
             </div>
           )}
 
           {mode === 'login' && !hasUsers && (
             <div className="mt-4 bg-amber-50 border border-amber-100 rounded-xl p-3 text-xs text-amber-800">
-              <p>لا يوجد مستخدمين بعد. أنشئ حساباً جديداً للبدء.</p>
+              <p>لا يوجد مستخدمين بعد على السيرفر. أنشئ حساباً جديداً للبدء.</p>
             </div>
           )}
         </div>
