@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
-import { requireCompanyScope } from '@/lib/company-scope'
+import { requireAdmin } from '@/lib/admin-check'
 import { safeError } from '@/lib/safe-error'
 
 // حقول محظورة من التزامن (لا يسمح للعميل بتعديلها)
@@ -10,7 +10,7 @@ const FORBIDDEN_FIELDS: Record<string, string[]> = {
 
 // حقول مسموحة لكل نموذج (أمان بالسماح لا بالمنع)
 const ALLOWED_FIELDS: Record<string, string[]> = {
-  factorySettings: ['id', 'factoryName', 'factoryNameEn', 'slogan', 'phone', 'whatsapp', 'email', 'address', 'taxNumber', 'commercialRegister', 'logo', 'currency', 'invoicePrefix', 'invoiceFooter', 'defaultPaperSize', 'taxRate', 'createdAt', 'updatedAt'],
+  factorySettings: ['id', 'factoryName', 'factoryNameEn', 'slogan', 'phone', 'whatsapp', 'email', 'address', 'taxNumber', 'commercialRegister', 'logo', 'currency', 'invoicePrefix', 'invoiceFooter', 'defaultPaperSize', 'taxRate', 'updatedAt'],
   worker: ['id', 'name', 'phone', 'job', 'type', 'hourlyRate', 'overtimeRate', 'workStartTime', 'workHoursPerDay', 'monthlySalary', 'notes', 'createdAt', 'updatedAt'],
   workerAdvance: ['id', 'workerId', 'companyId', 'amount', 'date', 'notes', 'createdAt'],
   workerReceipt: ['id', 'workerId', 'companyId', 'amount', 'date', 'notes', 'createdAt'],
@@ -36,37 +36,18 @@ const ALLOWED_FIELDS: Record<string, string[]> = {
   auditLog: ['id', 'action', 'entityType', 'entityId', 'description', 'userId', 'userName', 'metadata', 'timestamp'],
 }
 
-const MODELS_WITH_COMPANY = new Set([
-  'factorySettings',
-  'worker',
-  'workerAdvance',
-  'workerReceipt',
-  'workerAttendance',
-  'production',
-  'customer',
-  'supplier',
-  'sale',
-  'purchase',
-  'expenseCategory',
-  'expense',
-  'treasuryTransaction',
-  'warehouse',
-  'material',
-  'materialTransaction',
-  'product',
-  'productionOrder',
-  'payment',
-  'saleReturn',
-  'purchaseReturn',
-  'auditLog',
+// نماذج لديها حقل updatedAt في Prisma
+const MODELS_WITH_UPDATED_AT = new Set([
+  'factorySettings', 'worker', 'sale', 'purchase', 'material', 'product', 'productionOrder',
 ])
 
-// POST /api/sync/push - رفع بيانات من IndexedDB للسيرفر لأي مستخدم داخل الشركة
+// POST /api/sync/push - رفع بيانات من IndexedDB للسيرفر (admin فقط)
 export async function POST(req: NextRequest) {
   try {
-    const scope = await requireCompanyScope()
-    if (!scope.ok) {
-      return NextResponse.json({ error: scope.error }, { status: scope.status })
+    // تحقق admin
+    const admin = await requireAdmin()
+    if (!admin.ok) {
+      return NextResponse.json({ error: admin.error }, { status: admin.status })
     }
 
     const body = await req.json()
@@ -78,27 +59,69 @@ export async function POST(req: NextRequest) {
 
     const results: Record<string, { success: number; failed: number }> = {}
 
-    // الترتيب هنا مهم: الآباء قبل الأبناء حتى لا تفشل المفاتيح الأجنبية
+    // معالجة خاصة: تضمين عناصر المرتجعات في السجلات الأم
+    // الـ client يرسل saleReturnItems و purchaseReturnItems كجداول منفصلة
+    // لكن السيرفر يحفظها كـ JSON داخل saleReturn و purchaseReturn
+    const saleReturnItemsData: any[] = data.saleReturnItems || []
+    const purchaseReturnItemsData: any[] = data.purchaseReturnItems || []
+
+    // تجميع items حسب returnId
+    const saleReturnItemsMap = new Map<string, any[]>()
+    for (const item of saleReturnItemsData) {
+      const returnId = item.returnId
+      if (!saleReturnItemsMap.has(returnId)) saleReturnItemsMap.set(returnId, [])
+      saleReturnItemsMap.get(returnId)!.push(item)
+    }
+    const purchaseReturnItemsMap = new Map<string, any[]>()
+    for (const item of purchaseReturnItemsData) {
+      const returnId = item.returnId
+      if (!purchaseReturnItemsMap.has(returnId)) purchaseReturnItemsMap.set(returnId, [])
+      purchaseReturnItemsMap.get(returnId)!.push(item)
+    }
+
+    // تضمين items داخل saleReturns و purchaseReturns
+    if (data.saleReturns && saleReturnItemsMap.size > 0) {
+      for (const rec of data.saleReturns) {
+        if (saleReturnItemsMap.has(rec.id)) {
+          rec.items = saleReturnItemsMap.get(rec.id)
+        }
+      }
+    }
+    if (data.purchaseReturns && purchaseReturnItemsMap.size > 0) {
+      for (const rec of data.purchaseReturns) {
+        if (purchaseReturnItemsMap.has(rec.id)) {
+          rec.items = purchaseReturnItemsMap.get(rec.id)
+        }
+      }
+    }
+
+    // تسجيل items المضمنة كنجاح
+    results['saleReturnItems'] = { success: saleReturnItemsData.length, failed: 0 }
+    results['purchaseReturnItems'] = { success: purchaseReturnItemsData.length, failed: 0 }
+
     const tableMap: Record<string, any> = {
+      // ⚠️ users و auditLogs مستثنيان من المزامنة لحماية الصلاحيات وسجل التدقيق
+      // users: 'user',          // GAP-01 fix: لا يسمح بمزامنة بيانات المستخدمين (يمنع تصعيد الصلاحيات)
+      // auditLogs: 'auditLog',  // GAP-01 fix: لا يسمح بمزامنة سجل التدقيق
       factorySettings: 'factorySettings',
-      warehouses: 'warehouse',
       workers: 'worker',
-      customers: 'customer',
-      suppliers: 'supplier',
-      expenseCategories: 'expenseCategory',
-      products: 'product',
-      materials: 'material',
       workerAdvances: 'workerAdvance',
       workerReceipts: 'workerReceipt',
       workerAttendance: 'workerAttendance',
       production: 'production',
+      customers: 'customer',
+      suppliers: 'supplier',
       sales: 'sale',
       saleItems: 'saleItem',
       purchases: 'purchase',
       purchaseItems: 'purchaseItem',
+      expenseCategories: 'expenseCategory',
       expenses: 'expense',
       treasuryTransactions: 'treasuryTransaction',
+      warehouses: 'warehouse',
+      materials: 'material',
       materialTransactions: 'materialTransaction',
+      products: 'product',
       productionOrders: 'productionOrder',
       payments: 'payment',
       saleReturns: 'saleReturn',
@@ -116,124 +139,50 @@ export async function POST(req: NextRequest) {
       const forbidden = FORBIDDEN_FIELDS[modelName] || []
       let successCount = 0
       let failedCount = 0
+      let firstError = ''
 
       for (const record of records) {
         try {
-          if (!record.id) { failedCount++; continue }
+          if (!record.id) { failedCount++; if (!firstError) firstError = 'missing id'; continue }
 
           // فلترة الحقول المسموحة فقط
           const processed: any = {}
           for (const [key, value] of Object.entries(record)) {
+            // تجاهل الحقول المحظورة
             if (forbidden.includes(key)) continue
 
-            if (typeof value === 'string' && (key.includes('date') || key.includes('At') || key === 'checkIn' || key === 'checkOut')) {
+            // تحويل التواريخ
+            if (typeof value === 'string' && (key.includes('date') || key.includes('At') || key.includes('Date') || key === 'checkIn' || key === 'checkOut' || key === 'timestamp')) {
               const d = new Date(value)
               if (!isNaN(d.getTime())) {
                 processed[key] = d
               }
             } else if (value !== undefined && value !== null) {
+              // لو في قائمة المسموحات نستخدمها، وإلا نسقط الحقل
               if (!allowed || allowed.includes(key)) {
                 processed[key] = value
               }
             }
           }
 
-          if (allowed?.includes('updatedAt')) {
+          // updatedAt فقط للنماذج اللي عندها الحقل ده
+          if (MODELS_WITH_UPDATED_AT.has(modelName)) {
             processed.updatedAt = new Date()
-          }
-
-          const { id: _ignoredId, ...updateData } = processed
-          const createData = { ...updateData, id: record.id }
-
-          if (modelName === 'factorySettings') {
-            delete updateData.id
-            delete createData.id
-            await db.factorySettings.upsert({
-              where: { companyId: scope.companyId },
-              update: updateData,
-              create: { ...createData, companyId: scope.companyId },
-            })
-            successCount++
-            continue
-          }
-
-          if (modelName === 'saleItem') {
-            const parent = await db.sale.findFirst({
-              where: { id: record.saleId, companyId: scope.companyId },
-              select: { id: true },
-            })
-            if (!parent) { failedCount++; continue }
-
-            await db.saleItem.upsert({
-              where: { id: record.id },
-              create: createData,
-              update: updateData,
-            })
-            successCount++
-            continue
-          }
-
-          if (modelName === 'purchaseItem') {
-            const parent = await db.purchase.findFirst({
-              where: { id: record.purchaseId, companyId: scope.companyId },
-              select: { id: true },
-            })
-            if (!parent) { failedCount++; continue }
-
-            await db.purchaseItem.upsert({
-              where: { id: record.id },
-              create: createData,
-              update: updateData,
-            })
-            successCount++
-            continue
-          }
-
-          if (MODELS_WITH_COMPANY.has(modelName)) {
-            updateData.companyId = scope.companyId
-            createData.companyId = scope.companyId
-
-            const existing = await (db as any)[modelName].findUnique({
-              where: { id: record.id },
-              select: { companyId: true },
-            })
-
-            if (existing && existing.companyId !== scope.companyId) {
-              failedCount++
-              continue
-            }
           }
 
           await (db as any)[modelName].upsert({
             where: { id: record.id },
-            create: createData,
-            update: updateData,
+            create: processed,
+            update: processed,
           })
           successCount++
         } catch (e: any) {
-          console.error(`[Sync] Error in ${modelName} record ${record.id}:`, e.message)
+          console.error(`[Sync Push] ${modelName}#${record?.id || '?'}: ${e.message}`)
+          if (!firstError) firstError = e.message
           failedCount++
         }
       }
-      results[localTable] = { success: successCount, failed: failedCount }
-    }
-
-    let totalSuccess = 0
-    let totalFailed = 0
-    const failedTables: string[] = []
-    for (const [table, result] of Object.entries(results)) {
-      totalSuccess += result.success
-      totalFailed += result.failed
-      if (result.failed > 0) failedTables.push(`${table}:${result.failed}`)
-    }
-
-    if (totalFailed > 0) {
-      return NextResponse.json({
-        success: false,
-        error: `فشل رفع ${totalFailed} سجل (${failedTables.join(', ')})`,
-        results,
-        syncedAt: new Date().toISOString(),
-      })
+      results[localTable] = { success: successCount, failed: failedCount, ...(firstError ? { firstError } : {}) }
     }
 
     return NextResponse.json({
