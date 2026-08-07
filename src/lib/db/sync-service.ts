@@ -49,10 +49,7 @@ class SyncService {
     if (!this.isEnabled()) return
     if (this.intervalId) return // Already running
 
-    // مزامنة فورية قصيرة بعد تسجيل الدخول لرفع أي بيانات محلية معلقة
-    setTimeout(() => { this.sync() }, 1000)
-
-    // مزامنة كل 2 دقيقة
+    // مزامنة كل 2 دقيقة (بدون مزامنة فورية — initialPull يعملها أول)
     this.intervalId = setInterval(() => { this.sync() }, 2 * 60 * 1000)
 
     // مزامنة عند العودة online
@@ -77,27 +74,8 @@ class SyncService {
         localCount += (records as any[]).length
       }
 
-      // إذا يوجد بيانات محلية على هذا الجهاز، ارفعها أولاً حتى لا تبقى حبيسة الجهاز
-      if (localCount > 0) {
-        try {
-          const pushResponse = await fetch('/api/sync/push', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ data: localData.data }),
-          })
-          if (pushResponse.ok) {
-            const pushRes = await pushResponse.json()
-            let pushed = 0
-            for (const result of Object.values(pushRes.results || {}) as Array<{ success: number; failed: number }>) {
-              pushed += result.success
-            }
-            console.log(`✅ Initial push: ${pushed} local records uploaded before pull`)
-          }
-        } catch (pushErr: any) {
-          console.warn('Initial push failed (will retry by auto sync):', pushErr.message)
-        }
-      }
-
+      // إذا عندك بيانات محلية، اسحب من السيرفر ودمج
+      // إذا مفيش بيانات محلية، اسحب كل حاجة
       const r = await fetch('/api/sync/pull', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -230,7 +208,6 @@ class SyncService {
             } else {
               console.log('⏭️ Sync pull skipped: initialPull was recent')
             }
-          }
 
           localStorage.setItem(SYNC_STATUS_KEY, String(Date.now()))
           this.pendingChanges.clear()
@@ -318,16 +295,10 @@ class SyncService {
       if (count > 0 || localCount === 0) {
         if (res.data) {
           // importAll الآن يعمل merge (لا يمسح البيانات المحلية)
-          const importResult = await reportRepository.importAll({ data: res.data })
+          await reportRepository.importAll({ data: res.data })
           this._lastPullTime = Date.now()
-          // استخدم عدد السجلات المستوردة فعلاً بدلاً من عدد السجلات القادمة من السيرفر فقط
-          count = importResult?.counts?.totalImported ?? count
           // إشعار مجمّع
           this.notifyAllTypes()
-          // إعادة تحميل الصفحة بعد الاستيراد اليدوي لضمان قراءة الواجهة للسجلات الجديدة
-          if (typeof window !== 'undefined') {
-            setTimeout(() => window.location.reload(), 600)
-          }
         }
       } else {
         console.log('⏭️ Pull skipped: server empty, local data preserved')

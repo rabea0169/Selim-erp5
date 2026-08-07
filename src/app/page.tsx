@@ -32,12 +32,14 @@ export default function Home() {
   const [user, setUser] = useState<SessionUser | null>(null)
   const [authChecked, setAuthChecked] = useState(false)
   const [factorySettings, setFactorySettings] = useState<FactorySettings | null>(null)
+  const [initTrigger, setInitTrigger] = useState(0)
   const initializedRef = useRef<string | null>(null)
 
   const handleAuthenticated = useCallback(() => {
     initializedRef.current = null
     setUser(getCurrentUser())
     setAuthChecked(true)
+    setInitTrigger((t) => t + 1)
   }, [])
 
   // التحقق من تسجيل الدخول + تحميل بيانات المصنع
@@ -119,7 +121,8 @@ export default function Home() {
       autoBackupService.stop()
       syncService.stop()
     }
-  }, [])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initTrigger])
 
   const handleLogout = async () => {
     // TODO: Replace confirm() with a custom confirmation dialog component
