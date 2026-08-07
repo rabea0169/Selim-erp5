@@ -1,42 +1,78 @@
 import bcrypt from 'bcryptjs'
+import crypto from 'crypto'
 import { cookies } from 'next/headers'
 import { db } from '@/lib/db-server'
-import { createSessionToken, verifySessionToken } from '@/lib/session'
 
 const SESSION_COOKIE = 'factory_session'
 const SESSION_EXPIRY_DAYS = 30
+// Lazy resolution: defer TOKEN_SECRET check to runtime (not module-evaluation / build time)
+function getTokenSecret(): string {
+  const secret = process.env.TOKEN_SECRET
+  if (!secret) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('TOKEN_SECRET environment variable is required in production')
+    }
+    console.warn('[Auth] ⚠️ TOKEN_SECRET not set — using dev-only fallback. NEVER use this in production!')
+    return 'dev-only-fallback-never-use-in-prod'
+  }
+  return secret
+}
 
-export { createSessionToken, verifySessionToken }
+// إنشاء session token ببيانات المستخدم + توقيع HMAC
+function createSessionToken(userId: string, username: string, role: string = 'user'): string {
+  const expires = Date.now() + SESSION_EXPIRY_DAYS * 24 * 60 * 60 * 1000
+  const payload = JSON.stringify({ userId, username, role, expires })
+  const signature = crypto.createHmac('sha256', getTokenSecret()).update(payload).digest('hex')
+  const tokenData = JSON.stringify({ payload, sig: signature })
+  return Buffer.from(tokenData).toString('base64')
+}
 
-// الحصول على المستخدم الحالي ومُعرّف شركته من الجلسة والقاعدة
+// التحقق من session token مع التحقق من التوقيع
+export function verifySessionToken(token: string | undefined): { userId: string; username: string; role: string } | null {
+  if (!token) return null
+  try {
+    const tokenData = JSON.parse(Buffer.from(token, 'base64').toString())
+    const { payload, sig } = tokenData
+    const expectedSig = crypto.createHmac('sha256', getTokenSecret()).update(payload).digest('hex')
+    if (sig !== expectedSig) return null
+    const data = JSON.parse(payload)
+    if (data.expires < Date.now()) return null
+    return { userId: data.userId, username: data.username, role: data.role || 'user' }
+  } catch {
+    return null
+  }
+}
+
+// الحصول على المستخدم الحالي من الكوكيز
 export async function getCurrentUser(): Promise<{
   id: string
-  companyId: string | null
   username: string
   name: string
   role: string
+
 } | null> {
   const cookieStore = await cookies()
   const token = cookieStore.get(SESSION_COOKIE)?.value
-  const session = await verifySessionToken(token)
+  const session = verifySessionToken(token)
   if (!session) return null
 
   const user = await db.user.findUnique({
     where: { id: session.userId },
-    select: { id: true, companyId: true, username: true, name: true, role: true },
+    select: { id: true, username: true, name: true, role: true },
   })
   return user
 }
 
 export async function isRegistrationAllowed(): Promise<boolean> {
-  return true // السماح بتعدد الشركات لإنشاء حسابات مستقلة لكل شركة
+  const count = await db.user.count()
+  return count === 0
 }
 
 // تسجيل الدخول
 export async function loginUser(username: string, password: string): Promise<{
   success: boolean
   error?: string
-  user?: { id: string; companyId: string | null; username: string; name: string; role: string }
+  user?: { id: string; username: string; name: string; role: string }
 }> {
   const user = await db.user.findUnique({ where: { username } })
   if (!user) {
@@ -48,7 +84,7 @@ export async function loginUser(username: string, password: string): Promise<{
     return { success: false, error: 'كلمة المرور غير صحيحة' }
   }
 
-  const token = await createSessionToken(user.id, user.username, user.role, user.companyId || undefined)
+  const token = createSessionToken(user.id, user.username, user.role)
   const cookieStore = await cookies()
   cookieStore.set(SESSION_COOKIE, token, {
     httpOnly: true,
@@ -60,7 +96,7 @@ export async function loginUser(username: string, password: string): Promise<{
 
   return {
     success: true,
-    user: { id: user.id, companyId: user.companyId, username: user.username, name: user.name, role: user.role },
+    user: { id: user.id, username: user.username, name: user.name, role: user.role },
   }
 }
 
@@ -70,7 +106,7 @@ export async function logoutUser(): Promise<void> {
   cookieStore.delete(SESSION_COOKIE)
 }
 
-// إنشاء شركة جديدة ومستخدم مدير لها لتضمين تعدد الشركات وعزل البيانات 100%
+// إنشاء مستخدم جديد
 export async function registerUser(
   username: string,
   password: string,
@@ -78,7 +114,7 @@ export async function registerUser(
 ): Promise<{
   success: boolean
   error?: string
-  user?: { id: string; companyId: string | null; username: string; name: string; role: string }
+  user?: { id: string; username: string; name: string; role: string }
 }> {
   if (!username?.trim() || username.length < 3) {
     return { success: false, error: 'اسم المستخدم يجب أن يكون 3 أحرف على الأقل' }
@@ -86,29 +122,27 @@ export async function registerUser(
   if (!password || password.length < 6) {
     return { success: false, error: 'كلمة المرور يجب أن تكون 6 أحرف على الأقل' }
   }
-  if (!/[a-zA-Z]/.test(password) || !/[0-9]/.test(password)) {
-    return { success: false, error: 'كلمة المرور يجب أن تحتوي على أحرف وأرقام' }
-  }
+    if (!/[a-zA-Z]/.test(password) || !/[0-9]/.test(password)) {
+      return { success: false, error: 'كلمة المرور يجب أن تحتوي على أحرف وأرقام' }
+    }
   if (!name?.trim()) {
     return { success: false, error: 'الاسم مطلوب' }
   }
 
+  // Fix M: Use interactive transaction to prevent race condition
   let user: any
   try {
     user = await db.$transaction(async (tx) => {
-      const existing = await tx.user.findUnique({ where: { username: username.trim() } })
-      if (existing) throw new Error('اسم المستخدم موجود بالفعل')
+      const count = await tx.user.count()
+      if (count > 0) throw new Error('التسجيل مغلق')
 
-      // إنشاء شركة خاصة وحساب مدير لها
-      const company = await tx.company.create({
-        data: { name: `شركة ${name.trim()}` },
-      })
+      const existing = await tx.user.findUnique({ where: { username } })
+      if (existing) throw new Error('اسم المستخدم موجود بالفعل')
 
       const passwordHash = await bcrypt.hash(password, 12)
       return tx.user.create({
         data: {
           username: username.trim(),
-          companyId: company.id,
           passwordHash,
           name: name.trim(),
           role: 'admin',
@@ -116,14 +150,21 @@ export async function registerUser(
       })
     })
   } catch (e: any) {
+    if (e.message === 'التسجيل مغلق') {
+      return { success: false, error: 'التسجيل مغلق — يرجى التواصل مع المدير' }
+    }
     if (e.message === 'اسم المستخدم موجود بالفعل') {
+      return { success: false, error: 'اسم المستخدم موجود بالفعل' }
+    }
+    // Prisma P2002: unique constraint violation (race condition)
+    if (e.code === 'P2002') {
       return { success: false, error: 'اسم المستخدم موجود بالفعل' }
     }
     throw e
   }
 
   // تسجيل الدخول تلقائياً بعد التسجيل
-  const token = await createSessionToken(user.id, user.username, user.role, user.companyId || undefined)
+  const token = createSessionToken(user.id, user.username, user.role)
   const cookieStore = await cookies()
   cookieStore.set(SESSION_COOKIE, token, {
     httpOnly: true,
@@ -135,11 +176,11 @@ export async function registerUser(
 
   return {
     success: true,
-    user: { id: user.id, companyId: user.companyId, username: user.username, name: user.name, role: user.role },
+    user: { id: user.id, username: user.username, name: user.name, role: user.role },
   }
 }
 
-// التحقق من وجود أي مستخدم
+// التحقق من وجود أي مستخدم (لاستخدامها في شاشة تسجيل الدخول)
 export async function hasAnyUser(): Promise<boolean> {
   const count = await db.user.count()
   return count > 0

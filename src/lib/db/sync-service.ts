@@ -68,6 +68,9 @@ class SyncService {
     if (!navigator.onLine) {
       return { success: false, error: 'غير متصل بالإنترنت' }
     }
+    // منع تشغيل sync بالتوازي مع initialPull
+    if (this._isSyncing) return { success: false, error: 'sync in progress' }
+    this._isSyncing = true
 
     try {
       const { reportRepository } = await import('./repositories')
@@ -128,6 +131,8 @@ class SyncService {
     } catch (e: any) {
       console.warn('Initial pull failed (non-fatal):', e.message)
       return { success: false, error: e.message }
+    } finally {
+      this._isSyncing = false
     }
   }
 
@@ -152,12 +157,20 @@ class SyncService {
   }
 
   private debounceTimer: ReturnType<typeof setTimeout> | null = null
+  private _syncScheduled = false
 
   private debouncedSync() {
     if (this.debounceTimer) clearTimeout(this.debounceTimer)
+    // تجميع التغييرات — sync واحد فقط بعد 3 ثواني من آخر تغيير
     this.debounceTimer = setTimeout(() => {
-      Promise.resolve().then(() => this.sync())
-    }, 3000) // مزامنة بعد 3 ثواني من آخر تغيير
+      this.debounceTimer = null
+      if (!this._syncScheduled) {
+        this._syncScheduled = true
+        Promise.resolve().then(() => {
+          this.sync().finally(() => { this._syncScheduled = false })
+        })
+      }
+    }, 3000)
   }
 
   // مزامنة كاملة (push + pull) - مع حماية البيانات المحلية
@@ -174,30 +187,38 @@ class SyncService {
     try {
       // 1. Push - رفع البيانات المحلية للسيرفر
       const localData = await reportRepository.exportAll()
+      let localCount = 0
+      for (const records of Object.values(localData.data || {})) {
+        localCount += (records as any[]).length
+      }
       let pushSuccess = false
       let pushed = 0
 
-      try {
-        const pushResponse = await fetch('/api/sync/push', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ data: localData.data }),
-        })
-        if (!pushResponse.ok) throw new Error(`Push failed: ${pushResponse.status}`)
-        const pushRes = await pushResponse.json()
+      // حماية: لا ترفع بيانات فاضية — تجنب إرسال طلب ضخم بدون فائدة
+      const shouldPush = localCount > 0 || this.pendingChanges.size > 0
+      if (shouldPush) {
+        try {
+          const pushResponse = await fetch('/api/sync/push', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ data: localData.data }),
+          })
+          if (!pushResponse.ok) throw new Error(`Push failed: ${pushResponse.status}`)
+          const pushRes = await pushResponse.json()
 
-        if (pushRes.success) {
-          pushSuccess = true
-          for (const result of Object.values(pushRes.results || {}) as Array<{success: number; failed: number}>) {
-            pushed += result.success
+          if (pushRes.success) {
+            pushSuccess = true
+            for (const result of Object.values(pushRes.results || {}) as Array<{success: number; failed: number}>) {
+              pushed += result.success
+            }
           }
+        } catch (pushErr: any) {
+          console.warn('Sync push failed (will retry later):', pushErr.message)
         }
-      } catch (pushErr: any) {
-        console.warn('Sync push failed (will retry later):', pushErr.message)
-      }
+      } // end shouldPush
 
       // 2. Pull - تحميل البيانات من السيرفر
-      // فقط إذا كان Push ناجح أو كان هناك بيانات على السيرفر
+      // دائماً نسحب حتى لو لم نرفع (للحصول على بيانات من أجهزة أخرى)
       try {
         // Fix O: Use POST instead of GET
         const pullResponse = await fetch('/api/sync/pull', {
