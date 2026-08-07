@@ -41,6 +41,7 @@ export async function GET(req: NextRequest) {
     const salesTotal = salesAgg._sum.total || 0
     const salesPaid = salesAgg._sum.paid || 0
     const salesRemaining = salesTotal - salesPaid
+    const salesCount = salesAgg._count || 0
 
     // Purchases aggregation
     const purchasesAgg = await db.purchase.aggregate({
@@ -51,6 +52,7 @@ export async function GET(req: NextRequest) {
     const purchasesTotal = purchasesAgg._sum.total || 0
     const purchasesPaid = purchasesAgg._sum.paid || 0
     const purchasesRemaining = purchasesTotal - purchasesPaid
+    const purchasesCount = purchasesAgg._count || 0
 
     // Worker advances aggregation
     const advancesAgg = await db.workerAdvance.aggregate({
@@ -59,6 +61,7 @@ export async function GET(req: NextRequest) {
       _count: true,
     })
     const advancesTotal = advancesAgg._sum.amount || 0
+    const advancesCount = advancesAgg._count || 0
 
     // Worker receipts aggregation
     const receiptsAgg = await db.workerReceipt.aggregate({
@@ -67,6 +70,7 @@ export async function GET(req: NextRequest) {
       _count: true,
     })
     const receiptsTotal = receiptsAgg._sum.amount || 0
+    const receiptsCount = receiptsAgg._count || 0
 
     // Worker production aggregation
     const productionAgg = await db.production.aggregate({
@@ -76,6 +80,7 @@ export async function GET(req: NextRequest) {
     })
     const productionTotal = productionAgg._sum.total || 0
     const productionPieces = productionAgg._sum.quantity || 0
+    const productionCount = productionAgg._count || 0
 
     // Worker attendance count
     const attendanceCount = await db.workerAttendance.count({ where: dateFilter })
@@ -87,6 +92,7 @@ export async function GET(req: NextRequest) {
       _count: true,
     })
     const expensesTotal = expensesAgg._sum.amount || 0
+    const expensesCount = expensesAgg._count || 0
 
     // Sale returns aggregation (money refunded to customers)
     const saleReturnsAgg = await db.saleReturn.aggregate({
@@ -158,14 +164,21 @@ export async function GET(req: NextRequest) {
         salesTotal,
         salesPaid,
         salesRemaining,
+        salesCount,
         purchasesTotal,
         purchasesPaid,
         purchasesRemaining,
+        purchasesCount,
         advancesTotal,
+        advancesCount,
         receiptsTotal,
+        receiptsCount,
         productionTotal,
         productionPieces,
+        productionCount,
+        attendanceCount,
         expensesTotal,
+        expensesCount,
         saleReturnsTotal,
         purchaseReturnsTotal,
         netProfit,

@@ -13,9 +13,12 @@ interface ReportSummaryProps {
 
 /**
  * قسم ملخص التقرير: صافي الربح البطل + بطاقات الملخص الأربع
+ * ملاحظة: الأعداد تأتي من summary.*Count (تجميعات السيرفر) لأن المصفوفات الخام
+ * لم تعد تُرجع من الـ API (كانت تعرض صفر دائماً بعد إصلاح الأداء)
  */
 export function ReportSummary({ data, from, to }: ReportSummaryProps) {
   const isProfit = data.summary.netProfit >= 0
+  const s = data.summary
 
   return (
     <>
@@ -33,7 +36,7 @@ export function ReportSummary({ data, from, to }: ReportSummaryProps) {
               صافي الربح للفترة
             </p>
             <p className="text-2xl font-bold">
-              {formatCurrency(data.summary.netProfit)}
+              {formatCurrency(s.netProfit)}
             </p>
             <p className="text-[10px] opacity-75 mt-1">
               من {from ? formatDate(from) : 'البداية'} إلى {to ? formatDate(to) : 'اليوم'}
@@ -53,31 +56,31 @@ export function ReportSummary({ data, from, to }: ReportSummaryProps) {
       <div className="grid grid-cols-2 gap-2">
         <SummaryCard
           label="إجمالي المبيعات"
-          value={data.summary.salesTotal}
+          value={s.salesTotal}
           icon={TrendingUp}
           color="emerald"
-          count={data.sales.length}
+          count={s.salesCount ?? data.sales.length}
         />
         <SummaryCard
           label="إجمالي المشتريات"
-          value={data.summary.purchasesTotal}
+          value={s.purchasesTotal}
           icon={TrendingDown}
           color="amber"
-          count={data.purchases.length}
+          count={s.purchasesCount ?? data.purchases.length}
         />
         <SummaryCard
           label="إجمالي المصاريف"
-          value={data.summary.expensesTotal}
+          value={s.expensesTotal}
           icon={Wallet}
           color="rose"
-          count={data.expenses.length}
+          count={s.expensesCount ?? data.expenses.length}
         />
         <SummaryCard
           label="سلف الموظفين"
-          value={data.summary.advancesTotal}
+          value={s.advancesTotal}
           icon={Users}
           color="purple"
-          count={data.advances.length}
+          count={s.advancesCount ?? data.advances.length}
         />
       </div>
     </>

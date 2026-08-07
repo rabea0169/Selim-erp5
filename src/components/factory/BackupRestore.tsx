@@ -80,9 +80,17 @@ export function BackupRestore({ open, onOpenChange }: { open: boolean; onOpenCha
         'saleReturns', 'purchaseReturns', 'reports',
       ]
       allTypes.forEach((t) => dataChangeEmitter.notifyUpdate(t as any))
+      // عرض أعداد السجلات المسترجعة كما يرجعها السيرفر
+      const counts = result?.counts || {}
+      const countsText = Object.entries(counts)
+        .filter(([, v]) => typeof v === 'number' && (v as number) > 0)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join('، ')
       toast({
         title: 'تم الاسترجاع',
-        description: 'تم استرجاع البيانات بنجاح من السيرفر',
+        description: result?.message
+          ? `${result.message}${countsText ? ` — ${countsText}` : ''}`
+          : 'تم استرجاع البيانات بنجاح من السيرفر',
       })
       setConfirmRestore(null)
       onOpenChange(false)
