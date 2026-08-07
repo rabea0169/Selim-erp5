@@ -65,7 +65,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
 
       // 3) حذف المدفوعات المرتبطة
       await tx.payment.deleteMany({
-        where: { referenceType: 'purchase', referenceId: id },
+        where: { invoiceId: id, type: 'supplier_payment' },
       })
 
       // 4) حذف المرتجعات المرتبطة
