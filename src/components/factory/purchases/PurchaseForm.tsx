@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Plus, Trash2, Package } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -31,6 +31,7 @@ import {
   useLiveData,
   type Supplier,
   type Material,
+  type Purchase,
 } from '@/lib/db'
 
 interface PurchaseFormProps {
@@ -38,6 +39,7 @@ interface PurchaseFormProps {
   onOpenChange: (v: boolean) => void
   onSaved: () => void
   suppliers: Supplier[]
+  editPurchase?: Purchase | null
 }
 
 interface PurchaseItemDraft {
@@ -48,7 +50,7 @@ interface PurchaseItemDraft {
   total: number
 }
 
-export function PurchaseForm({ open, onOpenChange, onSaved, suppliers }: PurchaseFormProps) {
+export function PurchaseForm({ open, onOpenChange, onSaved, suppliers, editPurchase }: PurchaseFormProps) {
   const [supplierName, setSupplierName] = useState('')
   const [supplierId, setSupplierId] = useState('')
   const [invoiceNo, setInvoiceNo] = useState('')
@@ -60,6 +62,7 @@ export function PurchaseForm({ open, onOpenChange, onSaved, suppliers }: Purchas
   ])
   const [saving, setSaving] = useState(false)
   const { toast } = useToast()
+  const isEdit = !!editPurchase
 
   // تحميل المواد الخام (من كل المخازن) - يتحدث تلقائياً عند تغيرها
   const { data: materialsData } = useLiveData<Material[]>(
@@ -70,6 +73,29 @@ export function PurchaseForm({ open, onOpenChange, onSaved, suppliers }: Purchas
   const materials: Material[] = materialsData || []
 
   const total = items.reduce((s, it) => s + it.quantity * it.unitPrice, 0)
+
+  // تعبئة الحقول عند فتح النموذج في وضع التعديل
+  useEffect(() => {
+    if (open && editPurchase) {
+      setSupplierName(editPurchase.supplierName || '')
+      setSupplierId(editPurchase.supplierId_ref || '')
+      setInvoiceNo(editPurchase.invoiceNo || '')
+      setDate(editPurchase.date ? String(editPurchase.date).slice(0, 10) : todayStr())
+      setPaid(String(editPurchase.paid ?? ''))
+      setNotes(editPurchase.notes || '')
+      setItems(
+        editPurchase.items.length > 0
+          ? editPurchase.items.map((it) => ({
+              itemName: it.itemName,
+              materialId: it.materialId || '',
+              quantity: it.quantity,
+              unitPrice: it.unitPrice,
+              total: it.quantity * it.unitPrice,
+            }))
+          : [{ itemName: '', materialId: '', quantity: 1, unitPrice: 0, total: 0 }]
+      )
+    }
+  }, [open, editPurchase])
 
   const updateItem = (i: number, field: keyof PurchaseItemDraft, value: any) => {
     Promise.resolve().then(() => {
@@ -138,7 +164,7 @@ export function PurchaseForm({ open, onOpenChange, onSaved, suppliers }: Purchas
     }
     setSaving(true)
     try {
-      await purchaseRepository.createWithItems({
+      const payload = {
         supplierName,
         supplierId_ref: (supplierId && supplierId !== '__none__') ? supplierId : undefined,
         invoiceNo,
@@ -151,13 +177,23 @@ export function PurchaseForm({ open, onOpenChange, onSaved, suppliers }: Purchas
           quantity: Number(it.quantity),
           unitPrice: Number(it.unitPrice),
         })),
-      })
+      }
+
+      if (isEdit && editPurchase) {
+        await purchaseRepository.updateWithItems(editPurchase.id, payload)
+      } else {
+        await purchaseRepository.createWithItems(payload)
+      }
 
       // إشعار التحديثات
-      dataChangeEmitter.notifyCreate('purchases')
+      if (isEdit) {
+        dataChangeEmitter.notifyUpdate('purchases')
+      } else {
+        dataChangeEmitter.notifyCreate('purchases')
+      }
       // لو فيه أصناف مربوطة بمواد - إشعار المخازن
       const hasMaterialLinks = validItems.some((it) => it.materialId)
-      if (hasMaterialLinks) {
+      if (hasMaterialLinks || isEdit) {
         dataChangeEmitter.notifyUpdate('materials')
         dataChangeEmitter.notifyUpdate('materialTransactions')
       }
@@ -165,8 +201,8 @@ export function PurchaseForm({ open, onOpenChange, onSaved, suppliers }: Purchas
       reset()
       onSaved()
       toast({
-        title: 'تم حفظ الفاتورة',
-        description: hasMaterialLinks
+        title: isEdit ? 'تم تحديث الفاتورة' : 'تم حفظ الفاتورة',
+        description: hasMaterialLinks || isEdit
           ? 'تم تحديث مخزون المواد الخام المرتبطة'
           : undefined,
       })
@@ -182,8 +218,8 @@ export function PurchaseForm({ open, onOpenChange, onSaved, suppliers }: Purchas
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto" dir="rtl">
         <DialogHeader>
-          <DialogTitle className="text-right">فاتورة مشتريات جديدة</DialogTitle>
-          <DialogDescription className="sr-only">فاتورة مشتريات جديدة</DialogDescription>
+          <DialogTitle className="text-right">{isEdit ? 'تعديل فاتورة مشتريات' : 'فاتورة مشتريات جديدة'}</DialogTitle>
+          <DialogDescription className="sr-only">{isEdit ? 'تعديل فاتورة مشتريات' : 'فاتورة مشتريات جديدة'}</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <div>
@@ -348,7 +384,7 @@ export function PurchaseForm({ open, onOpenChange, onSaved, suppliers }: Purchas
         {/* الأزرار: الإجراء الأساسي (حفظ) أولاً، ثم الإلغاء في النهاية */}
         <DialogFooter className="gap-2">
           <Button onClick={save} disabled={saving} className="bg-amber-600 hover:bg-amber-700 text-white">
-            {saving ? 'جارٍ الحفظ...' : 'حفظ الفاتورة'}
+            {saving ? 'جارٍ الحفظ...' : isEdit ? 'حفظ التعديلات' : 'حفظ الفاتورة'}
           </Button>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
             إلغاء
