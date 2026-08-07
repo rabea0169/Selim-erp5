@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
 import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
+import { computeInvoiceTotals, assertValidPaid } from '@/lib/calc'
 
 // GET /api/sales?from=&to=&q=&page=1&limit=50
 export async function GET(req: NextRequest) {
@@ -114,27 +115,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'أضف صنفاً صحيحاً واحداً على الأقل' }, { status: 400 })
     }
 
-    const subtotal = validItems.reduce(
-      (sum: number, it: any) => sum + Number(it.quantity) * Number(it.unitPrice),
-      0
-    )
-    const discType = discountType || null
-    const discValue = Number(discountValue) || 0
-    const discountAmount = discType === 'percentage'
-      ? subtotal * (discValue / 100)
-      : discValue
-    const tRate = Number(taxRate) || 0
-    const taxAmount = (subtotal - discountAmount) * (tRate / 100)
-    const fees = Number(extraFees) || 0
-    const total = subtotal - discountAmount + taxAmount + fees
+    // حساب الإجماليات عبر المكتبة المشتركة (مغطاة باختبارات وحدية)
+    const totals = computeInvoiceTotals({ items: validItems, discountType, discountValue, taxRate, extraFees })
+    const { subtotal, discountAmount, taxAmount, total } = totals
+    const discType = totals.discountType
+    const discValue = totals.discountValue
+    const tRate = totals.taxRate
+    const fees = totals.extraFees
     const paidAmount = Number(paid) || 0
 
     // F5-02 fix: التحقق من أن المدفوع لا يتجاوز الإجمالي ولا يكون سالباً
-    if (paidAmount < 0) {
-      return NextResponse.json({ error: 'المبلغ المدفوع لا يمكن أن يكون سالباً' }, { status: 400 })
-    }
-    if (paidAmount > total) {
-      return NextResponse.json({ error: `المبلغ المدفوع (${paidAmount}) يتجاوز إجمالي الفاتورة (${total})` }, { status: 400 })
+    const paidError = assertValidPaid(paidAmount, total)
+    if (paidError) {
+      return NextResponse.json({ error: paidError }, { status: 400 })
     }
 
     const sale = await db.$transaction(async (tx) => {
