@@ -208,6 +208,7 @@ class SyncService {
             } else {
               console.log('⏭️ Sync pull skipped: initialPull was recent')
             }
+          }
 
           localStorage.setItem(SYNC_STATUS_KEY, String(Date.now()))
           this.pendingChanges.clear()
