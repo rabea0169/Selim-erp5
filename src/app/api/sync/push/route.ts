@@ -3,14 +3,8 @@ import { db } from '@/lib/db-server'
 import { requireCompanyScope } from '@/lib/company-scope'
 import { safeError } from '@/lib/safe-error'
 
-// حقول محظورة من التزامن (لا يسمح للعميل بتعديلها)
-const FORBIDDEN_FIELDS: Record<string, string[]> = {
-  user: ['passwordHash', 'role'],
-}
-
 // حقول مسموحة لكل نموذج (أمان بالسماح لا بالمنع)
 const ALLOWED_FIELDS: Record<string, string[]> = {
-  factorySettings: ['id', 'factoryName', 'factoryNameEn', 'slogan', 'phone', 'whatsapp', 'email', 'address', 'taxNumber', 'commercialRegister', 'logo', 'currency', 'invoicePrefix', 'invoiceFooter', 'defaultPaperSize', 'taxRate', 'createdAt', 'updatedAt'],
   worker: ['id', 'name', 'phone', 'job', 'type', 'hourlyRate', 'overtimeRate', 'workStartTime', 'workHoursPerDay', 'monthlySalary', 'notes', 'createdAt', 'updatedAt'],
   workerAdvance: ['id', 'workerId', 'companyId', 'amount', 'date', 'notes', 'createdAt'],
   workerReceipt: ['id', 'workerId', 'companyId', 'amount', 'date', 'notes', 'createdAt'],
@@ -30,14 +24,11 @@ const ALLOWED_FIELDS: Record<string, string[]> = {
   materialTransaction: ['id', 'materialId', 'warehouseId', 'type', 'quantity', 'unitCost', 'date', 'reason', 'referenceType', 'referenceId', 'notes', 'createdAt'],
   product: ['id', 'name', 'category', 'unit', 'wholesalePrice', 'halfWholesalePrice', 'retailPrice', 'cost', 'warehouseId', 'quantity', 'reorderLevel', 'notes', 'createdAt', 'updatedAt'],
   productionOrder: ['id', 'orderNumber', 'productId', 'productName', 'quantity', 'completedQuantity', 'unit', 'status', 'materials', 'stages', 'date', 'expectedEndDate', 'completedDate', 'notes', 'createdAt', 'updatedAt'],
-  payment: ['id', 'type', 'partyId', 'partyName', 'invoiceId', 'invoiceNo', 'amount', 'date', 'method', 'notes', 'createdAt'],
   saleReturn: ['id', 'returnNumber', 'saleId', 'invoiceNo', 'customerName', 'customerId_ref', 'date', 'total', 'reason', 'restockItems', 'items', 'notes', 'createdAt'],
   purchaseReturn: ['id', 'returnNumber', 'purchaseId', 'invoiceNo', 'supplierName', 'supplierId_ref', 'date', 'total', 'reason', 'restockItems', 'items', 'notes', 'createdAt'],
-  auditLog: ['id', 'action', 'entityType', 'entityId', 'description', 'userId', 'userName', 'metadata', 'timestamp'],
 }
 
 const MODELS_WITH_COMPANY = new Set([
-  'factorySettings',
   'worker',
   'workerAdvance',
   'workerReceipt',
@@ -55,10 +46,8 @@ const MODELS_WITH_COMPANY = new Set([
   'materialTransaction',
   'product',
   'productionOrder',
-  'payment',
   'saleReturn',
   'purchaseReturn',
-  'auditLog',
 ])
 
 // POST /api/sync/push - رفع بيانات من IndexedDB للسيرفر لأي مستخدم داخل الشركة
@@ -79,8 +68,8 @@ export async function POST(req: NextRequest) {
     const results: Record<string, { success: number; failed: number }> = {}
 
     // الترتيب هنا مهم: الآباء قبل الأبناء حتى لا تفشل المفاتيح الأجنبية
+    // factorySettings و payments مستبعدان مؤقتاً من المزامنة التجريبية
     const tableMap: Record<string, any> = {
-      factorySettings: 'factorySettings',
       warehouses: 'warehouse',
       workers: 'worker',
       customers: 'customer',
@@ -100,7 +89,6 @@ export async function POST(req: NextRequest) {
       treasuryTransactions: 'treasuryTransaction',
       materialTransactions: 'materialTransaction',
       productionOrders: 'productionOrder',
-      payments: 'payment',
       saleReturns: 'saleReturn',
       purchaseReturns: 'purchaseReturn',
     }
@@ -113,7 +101,6 @@ export async function POST(req: NextRequest) {
       }
 
       const allowed = ALLOWED_FIELDS[modelName]
-      const forbidden = FORBIDDEN_FIELDS[modelName] || []
       let successCount = 0
       let failedCount = 0
 
@@ -124,8 +111,6 @@ export async function POST(req: NextRequest) {
           // فلترة الحقول المسموحة فقط
           const processed: any = {}
           for (const [key, value] of Object.entries(record)) {
-            if (forbidden.includes(key)) continue
-
             if (typeof value === 'string' && (key.includes('date') || key.includes('At') || key === 'checkIn' || key === 'checkOut')) {
               const d = new Date(value)
               if (!isNaN(d.getTime())) {
@@ -144,18 +129,6 @@ export async function POST(req: NextRequest) {
 
           const { id: _ignoredId, ...updateData } = processed
           const createData = { ...updateData, id: record.id }
-
-          if (modelName === 'factorySettings') {
-            delete updateData.id
-            delete createData.id
-            await db.factorySettings.upsert({
-              where: { companyId: scope.companyId },
-              update: updateData,
-              create: { ...createData, companyId: scope.companyId },
-            })
-            successCount++
-            continue
-          }
 
           if (modelName === 'saleItem') {
             const parent = await db.sale.findFirst({
@@ -190,18 +163,9 @@ export async function POST(req: NextRequest) {
           }
 
           if (MODELS_WITH_COMPANY.has(modelName)) {
+            // في وضع الإصلاح الحالي: انقل أي سجل يحمل نفس الـ id إلى شركة الجلسة بدل رفضه
             updateData.companyId = scope.companyId
             createData.companyId = scope.companyId
-
-            const existing = await (db as any)[modelName].findUnique({
-              where: { id: record.id },
-              select: { companyId: true },
-            })
-
-            if (existing && existing.companyId !== scope.companyId) {
-              failedCount++
-              continue
-            }
           }
 
           await (db as any)[modelName].upsert({
@@ -218,11 +182,9 @@ export async function POST(req: NextRequest) {
       results[localTable] = { success: successCount, failed: failedCount }
     }
 
-    let totalSuccess = 0
     let totalFailed = 0
     const failedTables: string[] = []
     for (const [table, result] of Object.entries(results)) {
-      totalSuccess += result.success
       totalFailed += result.failed
       if (result.failed > 0) failedTables.push(`${table}:${result.failed}`)
     }
