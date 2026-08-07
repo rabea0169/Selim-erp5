@@ -4,6 +4,35 @@ import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
 import { computeInvoiceTotals, assertValidPaid } from '@/lib/calc'
 
+// توليد رقم فاتورة تلقائي: {invoicePrefix}{رقم تسلسلي 4 خانات}
+// يُنفَّذ داخل الـ transaction لضمان عدم تكرار الرقم عند التزامن
+async function generateInvoiceNo(tx: any, companyId: string | null): Promise<string> {
+  // قراءة بادئة الفاتورة من إعدادات المصنع الخاصة بالشركة (الافتراضي 'INV-')
+  let prefix = 'INV-'
+  if (companyId) {
+    const settings = await tx.factorySettings.findUnique({ where: { companyId } })
+    if (settings?.invoicePrefix?.trim()) {
+      prefix = settings.invoicePrefix.trim()
+    }
+  }
+
+  // آخر فاتورة لنفس الشركة بنفس البادئة
+  const last = await tx.sale.findFirst({
+    where: { companyId, invoiceNo: { startsWith: prefix } },
+    orderBy: [{ createdAt: 'desc' }, { invoiceNo: 'desc' }],
+    select: { invoiceNo: true },
+  })
+
+  let next = 1
+  if (last?.invoiceNo) {
+    const match = last.invoiceNo.slice(prefix.length).match(/\d+/)
+    if (match) {
+      next = parseInt(match[0], 10) + 1
+    }
+  }
+  return `${prefix}${String(next).padStart(4, '0')}`
+}
+
 // GET /api/sales?from=&to=&q=&page=1&limit=50
 export async function GET(req: NextRequest) {
   try {
@@ -143,92 +172,111 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: paidError }, { status: 400 })
     }
 
-    const sale = await db.$transaction(async (tx) => {
-      // فحص المخزون داخل الـ transaction (TOCTOU fix) — مع عزل الشركة
-      for (const it of validItems) {
-        if (it.productId) {
-          const product = await tx.product.findFirst({
-            where: { id: it.productId, companyId },
-          })
-          if (!product) {
-            throw new Error(`المنتج "${it.itemName}" غير موجود في قاعدة البيانات`)
+    // إن لم يرسل العميل رقم فاتورة يدوياً — سيُولَّد تلقائياً داخل الـ transaction
+    const manualInvoiceNo = invoiceNo?.trim() || null
+
+    const runCreate = () =>
+      db.$transaction(async (tx) => {
+        // توليد رقم الفاتورة داخل الـ transaction (داخل نفس الاستعلام المتسلسل لمنع التكرار)
+        const finalInvoiceNo = manualInvoiceNo ?? (await generateInvoiceNo(tx, companyId))
+
+        // فحص المخزون داخل الـ transaction (TOCTOU fix) — مع عزل الشركة
+        for (const it of validItems) {
+          if (it.productId) {
+            const product = await tx.product.findFirst({
+              where: { id: it.productId, companyId },
+            })
+            if (!product) {
+              throw new Error(`المنتج "${it.itemName}" غير موجود في قاعدة البيانات`)
+            }
+            if (product.quantity < Number(it.quantity)) {
+              throw new Error(`الكمية المتاحة من ${product.name} (${product.quantity}) أقل من المطلوب (${it.quantity})`)
+            }
           }
-          if (product.quantity < Number(it.quantity)) {
-            throw new Error(`الكمية المتاحة من ${product.name} (${product.quantity}) أقل من المطلوب (${it.quantity})`)
+        }
+
+        // التحقق من العميل داخل الـ transaction — مع عزل الشركة
+        if (customerId_ref) {
+          const customer = await tx.customer.findFirst({
+            where: { id: customerId_ref, companyId },
+          })
+          if (!customer) {
+            throw new Error('العميل المحدد غير موجود')
           }
         }
-      }
 
-      // التحقق من العميل داخل الـ transaction — مع عزل الشركة
-      if (customerId_ref) {
-        const customer = await tx.customer.findFirst({
-          where: { id: customerId_ref, companyId },
-        })
-        if (!customer) {
-          throw new Error('العميل المحدد غير موجود')
-        }
-      }
-
-      const newSale = await tx.sale.create({
-        data: {
-          companyId,
-          customerName: customerName.trim(),
-          customerId_ref: customerId_ref || null,
-          invoiceNo: invoiceNo?.trim() || null,
-          date: dateObj,
-          subtotal,
-          discountType: discType,
-          discountValue: discValue,
-          discountAmount,
-          taxRate: tRate,
-          taxAmount,
-          extraFees: fees,
-          total,
-          paid: paidAmount,
-          notes: notes?.trim() || null,
-          items: {
-            create: validItems.map((it: any) => ({
-              itemName: it.itemName.trim(),
-              productId: it.productId || null,
-              priceType: it.priceType || null,
-              quantity: Number(it.quantity),
-              unitPrice: Number(it.unitPrice),
-              total: Number(it.quantity) * Number(it.unitPrice),
-            })),
-          },
-        },
-        include: { items: true },
-      })
-
-      // خصم الكميات من مخزون المنتجات
-      for (const it of validItems) {
-        if (it.productId) {
-          await tx.product.update({
-            where: { id: it.productId },
-            data: { quantity: { decrement: Number(it.quantity) }, updatedAt: new Date() },
-          })
-        }
-      }
-
-      // إنشاء حركة خزينة — مرتبطة بنفس الشركة
-      if (paidAmount > 0) {
-        await tx.treasuryTransaction.create({
+        const newSale = await tx.sale.create({
           data: {
             companyId,
-            type: 'deposit',
-            amount: paidAmount,
+            customerName: customerName.trim(),
+            customerId_ref: customerId_ref || null,
+            invoiceNo: finalInvoiceNo,
             date: dateObj,
-            description: `مبيعات - ${customerName.trim()}`,
-            category: 'مبيعات',
-            referenceType: 'sale',
-            referenceId: newSale.id,
-            notes: invoiceNo ? `فاتورة رقم ${invoiceNo.trim()}` : null,
+            subtotal,
+            discountType: discType,
+            discountValue: discValue,
+            discountAmount,
+            taxRate: tRate,
+            taxAmount,
+            extraFees: fees,
+            total,
+            paid: paidAmount,
+            notes: notes?.trim() || null,
+            items: {
+              create: validItems.map((it: any) => ({
+                itemName: it.itemName.trim(),
+                productId: it.productId || null,
+                priceType: it.priceType || null,
+                quantity: Number(it.quantity),
+                unitPrice: Number(it.unitPrice),
+                total: Number(it.quantity) * Number(it.unitPrice),
+              })),
+            },
           },
+          include: { items: true },
         })
-      }
 
-      return newSale
-    })
+        // خصم الكميات من مخزون المنتجات
+        for (const it of validItems) {
+          if (it.productId) {
+            await tx.product.update({
+              where: { id: it.productId },
+              data: { quantity: { decrement: Number(it.quantity) }, updatedAt: new Date() },
+            })
+          }
+        }
+
+        // إنشاء حركة خزينة — مرتبطة بنفس الشركة
+        if (paidAmount > 0) {
+          await tx.treasuryTransaction.create({
+            data: {
+              companyId,
+              type: 'deposit',
+              amount: paidAmount,
+              date: dateObj,
+              description: `مبيعات - ${customerName.trim()}`,
+              category: 'مبيعات',
+              referenceType: 'sale',
+              referenceId: newSale.id,
+              notes: finalInvoiceNo ? `فاتورة رقم ${finalInvoiceNo}` : null,
+            },
+          })
+        }
+
+        return newSale
+      })
+
+    let sale
+    try {
+      sale = await runCreate()
+    } catch (e: any) {
+      // تعارض فريد (P2002) عند التوليد التلقائي — أعد المحاولة مرة واحدة برقم أعلى
+      if (!manualInvoiceNo && e?.code === 'P2002') {
+        sale = await runCreate()
+      } else {
+        throw e
+      }
+    }
 
     return NextResponse.json({ sale })
   } catch (e) {

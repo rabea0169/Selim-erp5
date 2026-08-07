@@ -23,13 +23,15 @@ import {
 } from '@/components/ui/select'
 import { useToast } from '@/hooks/use-toast'
 import { formatCurrency, todayStr } from '@/lib/format'
-import { saleRepository, productRepository, dataChangeEmitter, type Customer, type Product } from '@/lib/db'
+import { saleRepository, productRepository, dataChangeEmitter, type Customer, type Product, type Sale } from '@/lib/db'
 
 interface SaleFormProps {
   open: boolean
   onOpenChange: (v: boolean) => void
   onSaved: () => void
   customers: Customer[]
+  // فاتورة موجودة للتعديل — عند تمريرها يعمل النموذج في وضع التعديل
+  sale?: Sale | null
 }
 
 interface SaleFormItem {
@@ -43,7 +45,8 @@ interface SaleFormItem {
 
 type DiscountType = 'none' | 'percentage' | 'fixed'
 
-export function SaleForm({ open, onOpenChange, onSaved, customers }: SaleFormProps) {
+export function SaleForm({ open, onOpenChange, onSaved, customers, sale }: SaleFormProps) {
+  const isEdit = !!sale
   const [customerName, setCustomerName] = useState('')
   const [customerId, setCustomerId] = useState('')
   const [invoiceNo, setInvoiceNo] = useState('')
@@ -61,12 +64,40 @@ export function SaleForm({ open, onOpenChange, onSaved, customers }: SaleFormPro
   const [products, setProducts] = useState<Product[]>([])
   const { toast } = useToast()
 
-  // تحميل المنتجات
+  // تحميل المنتجات + تعبئة الحقول عند فتح النموذج في وضع التعديل
   useEffect(() => {
     if (open) {
       productRepository.getAll().then(setProducts).catch(() => {})
+      if (sale) {
+        setCustomerName(sale.customerName || '')
+        setCustomerId(sale.customerId_ref || '')
+        setInvoiceNo(sale.invoiceNo || '')
+        setDate((sale.date || '').split('T')[0] || todayStr())
+        setPaid(sale.paid ? String(sale.paid) : '')
+        setNotes(sale.notes || '')
+        setItems(
+          sale.items.length > 0
+            ? sale.items.map((it) => ({
+                productName: it.itemName,
+                productId: it.productId || undefined,
+                priceType: (it.priceType as SaleFormItem['priceType']) || 'custom',
+                quantity: it.quantity,
+                unitPrice: it.unitPrice,
+                total: it.quantity * it.unitPrice,
+              }))
+            : [{ productName: '', priceType: 'custom', quantity: 1, unitPrice: 0, total: 0 }]
+        )
+        const dt = sale.discountType
+        setDiscountType(dt === 'percentage' || dt === 'fixed' ? dt : 'none')
+        setDiscountValue(sale.discountValue ? String(sale.discountValue) : '')
+        setTaxRate(sale.taxRate ? String(sale.taxRate) : '')
+        setExtraFees(sale.extraFees ? String(sale.extraFees) : '')
+      } else {
+        reset()
+      }
     }
-  }, [open])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, sale])
 
   // الإجمالي الفرعي (مجموع الأصناف)
   const subtotal = items.reduce((s, it) => s + it.quantity * it.unitPrice, 0)
@@ -197,7 +228,7 @@ export function SaleForm({ open, onOpenChange, onSaved, customers }: SaleFormPro
     }
     setSaving(true)
     try {
-      await saleRepository.createWithItems({
+      const payload = {
         customerName,
         customerId_ref: (customerId && customerId !== '__none__') ? customerId : undefined,
         invoiceNo,
@@ -215,8 +246,14 @@ export function SaleForm({ open, onOpenChange, onSaved, customers }: SaleFormPro
           quantity: Number(it.quantity),
           unitPrice: Number(it.unitPrice),
         })),
-      })
-      dataChangeEmitter.notifyCreate('sales')
+      }
+      if (isEdit && sale) {
+        await saleRepository.updateWithItems(sale.id, payload)
+        dataChangeEmitter.notifyUpdate('sales')
+      } else {
+        await saleRepository.createWithItems(payload)
+        dataChangeEmitter.notifyCreate('sales')
+      }
       dataChangeEmitter.notifyUpdate('products')
       dataChangeEmitter.notifyUpdate('treasuryTransactions')
       reset()
@@ -232,8 +269,8 @@ export function SaleForm({ open, onOpenChange, onSaved, customers }: SaleFormPro
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto" dir="rtl">
         <DialogHeader>
-          <DialogTitle className="text-right">فاتورة مبيعات جديدة</DialogTitle>
-          <DialogDescription className="sr-only">فاتورة مبيعات جديدة مع الخصومات والضريبة</DialogDescription>
+          <DialogTitle className="text-right">{isEdit ? 'تعديل فاتورة مبيعات' : 'فاتورة مبيعات جديدة'}</DialogTitle>
+          <DialogDescription className="sr-only">{isEdit ? 'تعديل فاتورة مبيعات موجودة' : 'فاتورة مبيعات جديدة مع الخصومات والضريبة'}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3">
@@ -264,8 +301,8 @@ export function SaleForm({ open, onOpenChange, onSaved, customers }: SaleFormPro
               />
             </div>
             <div>
-              <Label className="text-xs">رقم الفاتورة</Label>
-              <Input value={invoiceNo} onChange={(e) => setInvoiceNo(e.target.value)} placeholder="رقم الفاتورة" className="bg-slate-50" />
+              <Label className="text-xs">رقم الفاتورة (اختياري)</Label>
+              <Input value={invoiceNo} onChange={(e) => setInvoiceNo(e.target.value)} placeholder="تلقائي (INV-0001)" className="bg-slate-50" />
             </div>
           </div>
 
@@ -522,7 +559,7 @@ export function SaleForm({ open, onOpenChange, onSaved, customers }: SaleFormPro
         {/* الأزرار: الإجراء الأساسي (حفظ) أولاً، ثم الإلغاء في النهاية */}
         <DialogFooter className="gap-2">
           <Button onClick={save} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">
-            {saving ? 'جارٍ الحفظ...' : 'حفظ الفاتورة'}
+            {saving ? 'جارٍ الحفظ...' : isEdit ? 'حفظ التعديلات' : 'حفظ الفاتورة'}
           </Button>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>إلغاء</Button>
         </DialogFooter>
