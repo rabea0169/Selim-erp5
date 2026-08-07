@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
-import { requireCompanyAdmin } from '@/lib/company-scope'
+import { requireCompanyScope } from '@/lib/company-scope'
 import { safeError } from '@/lib/safe-error'
 
 // حقول محظورة من التزامن (لا يسمح للعميل بتعديلها)
@@ -61,10 +61,10 @@ const MODELS_WITH_COMPANY = new Set([
   'auditLog',
 ])
 
-// POST /api/sync/push - رفع بيانات من IndexedDB للسيرفر (admin داخل نفس الشركة فقط)
+// POST /api/sync/push - رفع بيانات من IndexedDB للسيرفر لأي مستخدم داخل الشركة
 export async function POST(req: NextRequest) {
   try {
-    const scope = await requireCompanyAdmin()
+    const scope = await requireCompanyScope()
     if (!scope.ok) {
       return NextResponse.json({ error: scope.error }, { status: scope.status })
     }
@@ -85,6 +85,7 @@ export async function POST(req: NextRequest) {
       workerAdvances: 'workerAdvance',
       workerReceipts: 'workerReceipt',
       workerAttendance: 'workerAttendance',
+      products: 'product',
       production: 'production',
       customers: 'customer',
       suppliers: 'supplier',
@@ -98,7 +99,6 @@ export async function POST(req: NextRequest) {
       warehouses: 'warehouse',
       materials: 'material',
       materialTransactions: 'materialTransaction',
-      products: 'product',
       productionOrders: 'productionOrder',
       payments: 'payment',
       saleReturns: 'saleReturn',

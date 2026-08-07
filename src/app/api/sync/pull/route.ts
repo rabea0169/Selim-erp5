@@ -1,12 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
-import { requireCompanyAdmin } from '@/lib/company-scope'
+import { requireCompanyScope } from '@/lib/company-scope'
 import { safeError } from '@/lib/safe-error'
-
-// حقول مستبعدة من التصدير (مثل كلمة المرور)
-const EXCLUDED_FIELDS: Record<string, string[]> = {
-  user: ['passwordHash'],
-}
 
 // حقول مسموحة بتصديرها (للأمان)
 const EXPORT_SELECT: Record<string, any> = {
@@ -48,10 +43,10 @@ const CHILD_RELATION_WHERE: Record<string, (companyId: string) => any> = {
   purchaseItem: (companyId) => ({ purchase: { companyId } }),
 }
 
-// Fix O: Changed from GET to POST
+// POST /api/sync/pull - سحب بيانات شركة الجلسة لأي مستخدم داخلها
 export async function POST(_req: NextRequest) {
   try {
-    const scope = await requireCompanyAdmin()
+    const scope = await requireCompanyScope()
     if (!scope.ok) {
       return NextResponse.json({ error: scope.error }, { status: scope.status })
     }
@@ -70,7 +65,6 @@ export async function POST(_req: NextRequest) {
           select,
         })
 
-        // تحويل التواريخ لـ ISO string
         data[table] = records.map((r: any) => {
           const processed: any = {}
           for (const [key, value] of Object.entries(r)) {
