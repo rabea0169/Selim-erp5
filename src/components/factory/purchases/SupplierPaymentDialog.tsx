@@ -61,6 +61,8 @@ export function SupplierPaymentDialog({ open, onOpenChange, purchase }: Supplier
     }
     setSaving(true)
     try {
+      // POST /api/payments يحدّث paid في الفاتورة ويسجّل حركة الخزينة ذرّياً على الخادم —
+      // لا يجوز تحديث paid من العميل هنا وإلا يُحسب المبلغ مرتين (تناقض مع الخادم)
       await paymentRepository.create({
         type: 'supplier_payment',
         partyId: purchase.supplierId_ref || purchase.id,
@@ -72,9 +74,6 @@ export function SupplierPaymentDialog({ open, onOpenChange, purchase }: Supplier
         method,
         notes: notes || undefined,
       })
-      // تحديث المشتريات: زيادة المدفوع
-      const { purchaseRepository } = await import('@/lib/db')
-      await purchaseRepository.update(purchase.id, { paid: purchase.paid + amountNum } as any)
       dataChangeEmitter.notifyUpdate('purchases')
       dataChangeEmitter.notifyUpdate('payments')
       dataChangeEmitter.notifyUpdate('treasuryTransactions')

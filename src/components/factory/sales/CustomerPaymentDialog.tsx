@@ -62,6 +62,8 @@ export function CustomerPaymentDialog({ open, onOpenChange, sale }: CustomerPaym
     }
     setSaving(true)
     try {
+      // POST /api/payments يحدّث paid في الفاتورة ويسجّل حركة الخزينة ذرّياً على الخادم —
+      // لا يجوز تحديث paid من العميل هنا وإلا يُحسب المبلغ مرتين (تناقض مع الخادم)
       await paymentRepository.create({
         type: 'customer_payment',
         partyId: sale.customerId_ref || sale.id,
@@ -73,9 +75,6 @@ export function CustomerPaymentDialog({ open, onOpenChange, sale }: CustomerPaym
         method,
         notes: notes || undefined,
       })
-      // تحديث المبيعات: زيادة المدفوع
-      const { saleRepository } = await import('@/lib/db')
-      await saleRepository.update(sale.id, { paid: sale.paid + amountNum } as any)
       dataChangeEmitter.notifyUpdate('sales')
       dataChangeEmitter.notifyUpdate('payments')
       dataChangeEmitter.notifyUpdate('treasuryTransactions')
