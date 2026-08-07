@@ -13,12 +13,21 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { useToast } from '@/hooks/use-toast'
 import { formatCurrency } from '@/lib/format'
 import {
   productRepository,
+  warehouseRepository,
   dataChangeEmitter,
   type Product,
+  type Warehouse,
 } from '@/lib/db'
 
 interface ProductFormProps {
@@ -38,9 +47,20 @@ export function ProductForm({ open, onOpenChange, editProduct, onSaved }: Produc
   const [cost, setCost] = useState('')
   const [quantity, setQuantity] = useState('0')
   const [reorderLevel, setReorderLevel] = useState('')
+  const [warehouseId, setWarehouseId] = useState('')
   const [notes, setNotes] = useState('')
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([])
   const [saving, setSaving] = useState(false)
   const { toast } = useToast()
+
+  // تحميل المخازن عند فتح النموذج (لربط المنتج بمخزن المنتجات المنتهية)
+  useEffect(() => {
+    if (!open) return
+    warehouseRepository
+      .getAll()
+      .then(setWarehouses)
+      .catch(() => setWarehouses([]))
+  }, [open])
 
   // تحميل بيانات التعديل
   useEffect(() => {
@@ -55,6 +75,7 @@ export function ProductForm({ open, onOpenChange, editProduct, onSaved }: Produc
         setCost(String(editProduct.cost || ''))
         setQuantity(String(editProduct.quantity || 0))
         setReorderLevel(editProduct.reorderLevel ? String(editProduct.reorderLevel) : '')
+        setWarehouseId(editProduct.warehouseId || '')
         setNotes(editProduct.notes || '')
       } else {
         reset()
@@ -72,6 +93,7 @@ export function ProductForm({ open, onOpenChange, editProduct, onSaved }: Produc
     setCost('')
     setQuantity('0')
     setReorderLevel('')
+    setWarehouseId('')
     setNotes('')
   }
 
@@ -96,6 +118,7 @@ export function ProductForm({ open, onOpenChange, editProduct, onSaved }: Produc
         cost: Number(cost) || 0,
         quantity: Number(quantity) || 0,
         reorderLevel: reorderLevel ? Number(reorderLevel) : undefined,
+        warehouseId: warehouseId || undefined,
         notes: notes.trim() || undefined,
       }
       if (editProduct) {
@@ -166,6 +189,26 @@ export function ProductForm({ open, onOpenChange, editProduct, onSaved }: Produc
                 className="bg-slate-50"
               />
             </div>
+          </div>
+
+          <div>
+            <Label className="text-xs">المخزن</Label>
+            <Select
+              value={warehouseId || 'none'}
+              onValueChange={(v) => setWarehouseId(v === 'none' ? '' : v)}
+            >
+              <SelectTrigger className="bg-slate-50">
+                <SelectValue placeholder="بدون مخزن" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">بدون مخزن</SelectItem>
+                {warehouses.map((w) => (
+                  <SelectItem key={w.id} value={w.id}>
+                    {w.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div>

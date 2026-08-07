@@ -32,6 +32,7 @@ import {
 import { ProductCard } from './products/ProductCard'
 import { ProductForm } from './products/ProductForm'
 import { ProductDetail } from './products/ProductDetail'
+import { StockAdjustDialog } from './products/StockAdjustDialog'
 
 async function fetchProducts(search: string): Promise<Product[]> {
   return productRepository.search(search)
@@ -42,6 +43,7 @@ export function ProductsView() {
   const [open, setOpen] = useState(false)
   const [editProduct, setEditProduct] = useState<Product | null>(null)
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
+  const [adjustProduct, setAdjustProduct] = useState<Product | null>(null)
   const [categoryFilter, setCategoryFilter] = useState<string>('all')
   const [stockFilter, setStockFilter] = useState<string>('all')
   const { toast } = useToast()
@@ -294,6 +296,7 @@ export function ProductsView() {
               }}
               onDelete={() => handleDelete(p.id)}
               onView={() => setSelectedProduct(p)}
+              onAdjustStock={() => setAdjustProduct(p)}
             />
           ))}
         </div>
@@ -308,6 +311,15 @@ export function ProductsView() {
           setEditProduct(null)
           reload()
         }}
+      />
+
+      <StockAdjustDialog
+        product={adjustProduct}
+        open={adjustProduct !== null}
+        onOpenChange={(o) => {
+          if (!o) setAdjustProduct(null)
+        }}
+        onSaved={reload}
       />
 
       {selectedProduct && (

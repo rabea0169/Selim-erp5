@@ -7,6 +7,7 @@ import {
   AlertTriangle,
   TrendingUp,
   Eye,
+  PackagePlus,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -18,9 +19,10 @@ interface ProductCardProps {
   onEdit: () => void
   onDelete: () => void
   onView?: () => void
+  onAdjustStock?: () => void
 }
 
-export function ProductCard({ product: p, onEdit, onDelete, onView }: ProductCardProps) {
+export function ProductCard({ product: p, onEdit, onDelete, onView, onAdjustStock }: ProductCardProps) {
   const isLowStock = p.reorderLevel && p.quantity <= p.reorderLevel
   const profitRetail = p.retailPrice - p.cost
   const profitRetailPct = p.cost > 0 ? (profitRetail / p.cost) * 100 : 0
@@ -69,6 +71,20 @@ export function ProductCard({ product: p, onEdit, onDelete, onView }: ProductCar
               title="عرض التفاصيل"
             >
               <Eye className="w-3.5 h-3.5" />
+            </Button>
+          )}
+          {onAdjustStock && (
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7 text-slate-500 hover:text-emerald-600"
+              onClick={(e) => {
+                e.stopPropagation()
+                onAdjustStock()
+              }}
+              title="تعديل الرصيد"
+            >
+              <PackagePlus className="w-3.5 h-3.5" />
             </Button>
           )}
           <Button
