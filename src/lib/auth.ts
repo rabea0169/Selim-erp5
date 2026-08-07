@@ -19,16 +19,16 @@ function getTokenSecret(): string {
 }
 
 // إنشاء session token ببيانات المستخدم + توقيع HMAC
-function createSessionToken(userId: string, username: string, role: string = 'user'): string {
+function createSessionToken(userId: string, username: string, role: string = 'user', companyId?: string | null): string {
   const expires = Date.now() + SESSION_EXPIRY_DAYS * 24 * 60 * 60 * 1000
-  const payload = JSON.stringify({ userId, username, role, expires })
+  const payload = JSON.stringify({ userId, username, role, companyId: companyId ?? null, expires })
   const signature = crypto.createHmac('sha256', getTokenSecret()).update(payload).digest('hex')
   const tokenData = JSON.stringify({ payload, sig: signature })
   return Buffer.from(tokenData).toString('base64')
 }
 
 // التحقق من session token مع التحقق من التوقيع
-export function verifySessionToken(token: string | undefined): { userId: string; username: string; role: string } | null {
+export function verifySessionToken(token: string | undefined): { userId: string; username: string; role: string; companyId?: string | null } | null {
   if (!token) return null
   try {
     const tokenData = JSON.parse(Buffer.from(token, 'base64').toString())
@@ -37,7 +37,7 @@ export function verifySessionToken(token: string | undefined): { userId: string;
     if (sig !== expectedSig) return null
     const data = JSON.parse(payload)
     if (data.expires < Date.now()) return null
-    return { userId: data.userId, username: data.username, role: data.role || 'user' }
+    return { userId: data.userId, username: data.username, role: data.role || 'user', companyId: data.companyId ?? null }
   } catch {
     return null
   }
@@ -49,7 +49,7 @@ export async function getCurrentUser(): Promise<{
   username: string
   name: string
   role: string
-
+  companyId?: string | null
 } | null> {
   const cookieStore = await cookies()
   const token = cookieStore.get(SESSION_COOKIE)?.value
@@ -58,7 +58,7 @@ export async function getCurrentUser(): Promise<{
 
   const user = await db.user.findUnique({
     where: { id: session.userId },
-    select: { id: true, username: true, name: true, role: true },
+    select: { id: true, username: true, name: true, role: true, companyId: true },
   })
   return user
 }
@@ -84,7 +84,7 @@ export async function loginUser(username: string, password: string): Promise<{
     return { success: false, error: 'كلمة المرور غير صحيحة' }
   }
 
-  const token = createSessionToken(user.id, user.username, user.role)
+  const token = createSessionToken(user.id, user.username, user.role, user.companyId)
   const cookieStore = await cookies()
   cookieStore.set(SESSION_COOKIE, token, {
     httpOnly: true,
@@ -164,7 +164,7 @@ export async function registerUser(
   }
 
   // تسجيل الدخول تلقائياً بعد التسجيل
-  const token = createSessionToken(user.id, user.username, user.role)
+  const token = createSessionToken(user.id, user.username, user.role, user.companyId)
   const cookieStore = await cookies()
   cookieStore.set(SESSION_COOKIE, token, {
     httpOnly: true,
