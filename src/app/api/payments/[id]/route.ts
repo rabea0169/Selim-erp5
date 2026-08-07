@@ -3,6 +3,26 @@ import { db } from '@/lib/db-server'
 import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
 
+// GET /api/payments/[id] — جلب سجل سداد واحد (مقيد بالشركة)
+// يستخدمه paymentRepository.delete لمعرفة نوع السداد قبل الحذف وإرسال الأحداث الصحيحة
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    const companyId = user.companyId ?? null
+    const { id } = await params
+
+    const payment = await db.payment.findFirst({ where: { id, companyId } })
+    if (!payment) {
+      return NextResponse.json({ error: 'سجل السداد غير موجود' }, { status: 404 })
+    }
+    // الريبو العميل (BaseRepository.getById) يعيد الاستجابة كما هي
+    return NextResponse.json(payment)
+  } catch (e) {
+    const { error, status } = safeError(e); return NextResponse.json({ error }, { status })
+  }
+}
+
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await getCurrentUser()
