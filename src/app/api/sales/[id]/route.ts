@@ -43,6 +43,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     }
 
     const data: any = { updatedAt: new Date() }
+    let paidDelta = 0
 
     // تحديث المدفوع مع منع paid > total والقيم السالبة
     if (body.paid !== undefined) {
@@ -55,16 +56,40 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         return NextResponse.json({ error: paidError }, { status: 400 })
       }
       data.paid = paidAmount
+      paidDelta = paidAmount - existing.paid
     }
 
     if (body.notes !== undefined) {
       data.notes = body.notes?.trim?.() || null
     }
 
-    const sale = await db.sale.update({
-      where: { id },
-      data,
-      include: { items: true },
+    // تحديث الفاتورة + مزامنة الخزينة ذرّياً: أي زيادة في المدفوع = إيداع، وأي نقص = سحب
+    const sale = await db.$transaction(async (tx) => {
+      const updated = await tx.sale.update({
+        where: { id },
+        data,
+        include: { items: true },
+      })
+
+      if (paidDelta !== 0) {
+        await tx.treasuryTransaction.create({
+          data: {
+            companyId,
+            type: paidDelta > 0 ? 'deposit' : 'withdrawal',
+            amount: Math.abs(paidDelta),
+            date: new Date(),
+            description: paidDelta > 0
+              ? `تحصيل دفعة مبيعات - ${existing.customerName}`
+              : `تسوية (تخفيض) المدفوع على فاتورة مبيعات - ${existing.customerName}`,
+            category: 'مبيعات',
+            referenceType: 'sale',
+            referenceId: id,
+            notes: existing.invoiceNo ? `فاتورة رقم ${existing.invoiceNo}` : null,
+          },
+        })
+      }
+
+      return updated
     })
     return NextResponse.json({ sale })
   } catch (e) {
@@ -107,7 +132,16 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
         })
       }
 
-      // 3) حذف المدفوعات المرتبطة بالفاتورة
+      // 3) حذف المدفوعات المرتبطة بالفاتورة + حركات الخزينة الخاصة بها (referenceType: payment)
+      const salePayments = await tx.payment.findMany({
+        where: { invoiceId: id, companyId },
+        select: { id: true },
+      })
+      if (salePayments.length > 0) {
+        await tx.treasuryTransaction.deleteMany({
+          where: { referenceType: 'payment', referenceId: { in: salePayments.map((p) => p.id) }, companyId },
+        })
+      }
       await tx.payment.deleteMany({
         where: { invoiceId: id, companyId },
       })
