@@ -1,9 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
+
+// توليد رقم أمر تشغيل تسلسلي آمن: أكبر رقم موجود + 1 (لا ينكسر بعد الحذف)
+async function nextOrderNumber(): Promise<string> {
+  const last = await db.productionOrder.findFirst({
+    orderBy: { orderNumber: 'desc' },
+    select: { orderNumber: true },
+  })
+  const lastNum = last ? parseInt(last.orderNumber.replace(/\D/g, ''), 10) || 0 : 0
+  return `PO-${String(lastNum + 1).padStart(5, '0')}`
+}
 
 export async function GET(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    const companyId = user.companyId ?? null
+
     const { searchParams } = new URL(req.url)
     const status = searchParams.get('status')
     const q = searchParams.get('q') || ''
@@ -11,7 +26,7 @@ export async function GET(req: NextRequest) {
     const limit = Math.min(200, Math.max(1, Number(searchParams.get('limit')) || 50))
 
     const validStatuses = ['draft', 'in_progress', 'completed', 'cancelled']
-    const where: any = {}
+    const where: any = { companyId }
     if (status && validStatuses.includes(status)) where.status = status
     if (q) where.orderNumber = { contains: q }
 
@@ -37,6 +52,10 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    const companyId = user.companyId ?? null
+
     const body = await req.json()
     const { productId, productName, quantity, unit, materials, stages, date, expectedEndDate, notes } = body
 
@@ -63,17 +82,18 @@ export async function POST(req: NextRequest) {
     let attempts = 0
     let order: any
     while (attempts < 3) {
-      const count = await db.productionOrder.count()
-      orderNumber = `PO-${String(count + 1).padStart(5, '0')}`
+      // رقم تسلسلي من الأكبر الموجود — لا يتكرر بعد الحذف (إصلاح count+1)
+      orderNumber = await nextOrderNumber()
       try {
         order = await db.$transaction(async (tx) => {
-          const product = await tx.product.findUnique({ where: { id: productId } })
+          const product = await tx.product.findFirst({ where: { id: productId, companyId } })
           if (!product) {
             throw new Error('المنتج غير موجود')
           }
 
           const newOrder = await tx.productionOrder.create({
             data: {
+              companyId,
               orderNumber,
               productId,
               productName: productName.trim(),
@@ -92,7 +112,7 @@ export async function POST(req: NextRequest) {
             for (const mat of parsedMaterials) {
               if (!mat.materialId) continue
 
-              const material = await tx.material.findUnique({ where: { id: mat.materialId } })
+              const material = await tx.material.findFirst({ where: { id: mat.materialId, companyId } })
               if (!material) {
                 throw new Error(`المادة ${mat.materialName} غير موجودة`)
               }
@@ -107,6 +127,7 @@ export async function POST(req: NextRequest) {
 
               await tx.materialTransaction.create({
                 data: {
+                  companyId,
                   materialId: mat.materialId,
                   warehouseId: material.warehouseId,
                   type: 'out',

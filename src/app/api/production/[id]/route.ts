@@ -1,14 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    const companyId = user.companyId ?? null
     const { id } = await params
     let notFound = false
 
     await db.$transaction(async (tx) => {
-      const prod = await tx.production.findUnique({ where: { id }, include: { product: true } })
+      const prod = await tx.production.findFirst({ where: { id, companyId }, include: { product: true } })
       if (!prod) { notFound = true; return }
 
       // Revert inventory if it was added

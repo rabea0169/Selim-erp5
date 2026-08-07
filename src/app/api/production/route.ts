@@ -1,13 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
 
 export async function GET(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    const companyId = user.companyId ?? null
+
     const { searchParams } = new URL(req.url)
     const from = searchParams.get('from')
     const to = searchParams.get('to')
     const workerId = searchParams.get('workerId')
+    const page = Math.max(1, Number(searchParams.get('page')) || 1)
+    const limit = Math.min(200, Math.max(1, Number(searchParams.get('limit')) || 50))
 
     // Fix Q: Date validation
     const fromDate = from ? new Date(from) : undefined
@@ -15,7 +22,7 @@ export async function GET(req: NextRequest) {
     if (from && isNaN(fromDate!.getTime())) return NextResponse.json({ error: 'تاريخ غير صالح' }, { status: 400 })
     if (to && isNaN(toDate!.getTime())) return NextResponse.json({ error: 'تاريخ غير صالح' }, { status: 400 })
 
-    const where: any = {}
+    const where: any = { companyId }
     if (workerId) where.workerId = workerId
     if (from || to) {
       where.date = {}
@@ -26,13 +33,21 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const productions = await db.production.findMany({
-      where,
-      include: { worker: true },
-      orderBy: { date: 'desc' },
-    })
+    const [productions, total] = await Promise.all([
+      db.production.findMany({
+        where,
+        include: { worker: true },
+        orderBy: { date: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      db.production.count({ where }),
+    ])
 
-    return NextResponse.json({ productions })
+    return NextResponse.json({
+      productions,
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    })
   } catch (e) {
     const { error, status } = safeError(e); return NextResponse.json({ error }, { status })
   }
@@ -40,6 +55,10 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    const companyId = user.companyId ?? null
+
     const body = await req.json()
     const { workerId, date, modelName, quantity, unitPrice, productId, addToInventory, notes } = body
 
@@ -81,15 +100,15 @@ export async function POST(req: NextRequest) {
     let targetProductId = productId || null
 
     const production = await db.$transaction(async (tx) => {
-      // التحقق من وجود الموظف
-      const worker = await tx.worker.findUnique({ where: { id: workerId } })
+      // التحقق من وجود الموظف داخل نفس الشركة
+      const worker = await tx.worker.findFirst({ where: { id: workerId, companyId } })
       if (!worker) {
         throw new Error('الموظف غير موجود')
       }
 
-      // التحقق من وجود المنتج
+      // التحقق من وجود المنتج داخل نفس الشركة
       if (targetProductId) {
-        const product = await tx.product.findUnique({ where: { id: targetProductId } })
+        const product = await tx.product.findFirst({ where: { id: targetProductId, companyId } })
         if (!product) {
           throw new Error('المنتج المحدد غير موجود')
         }
@@ -97,6 +116,7 @@ export async function POST(req: NextRequest) {
 
       const newProduction = await tx.production.create({
         data: {
+          companyId,
           workerId,
           date: new Date(date),
           modelName: modelName.trim(),
