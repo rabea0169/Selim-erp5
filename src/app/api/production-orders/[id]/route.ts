@@ -39,6 +39,15 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: 'أمر التشغيل غير موجود' }, { status: 404 })
     }
 
+    // حماية دورة الحياة: منع تعديل/إكمال أمر ملغي (يسمح فقط بتعديل ملاحظات/تواريخ بدون تغيير الحالة)
+    if (existing.status === 'cancelled' && (action || (status && status !== 'cancelled'))) {
+      return NextResponse.json({ error: 'لا يمكن تعديل أو إكمال أمر ملغي' }, { status: 400 })
+    }
+    // منع إلغاء أمر مكتمل — كمية المنتج أُضيفت للمخزون بالفعل (الحذف يعكس الأثر بشكل صحيح)
+    if (existing.status === 'completed' && status === 'cancelled') {
+      return NextResponse.json({ error: 'لا يمكن إلغاء أمر مكتمل — يمكن حذفه لعكس أثره على المخزون' }, { status: 400 })
+    }
+
     if (productId && productId !== existing.productId) {
       const product = await db.product.findFirst({ where: { id: productId, companyId } })
       if (!product) {
@@ -95,8 +104,13 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     }
 
     const order = await db.$transaction(async (tx) => {
-      // 1) عند بدء أمر التشغيل (draft → in_progress): سحب المواد الخام من المخزن
-      if (newStatus === 'in_progress' && existing.status === 'draft') {
+      // 1) سحب المواد الخام من المخزن — مرة واحدة فقط في دورة الحياة:
+      //    عند بدء المسودة (draft → in_progress)، أو عند إكمال مسودة مباشرة دون بدء
+      //    (مسودة بمواد لم تُسحب — وإلا أُضيف المنتج للمخزون دون استهلاك المواد)
+      const shouldConsumeMaterials =
+        (newStatus === 'in_progress' && existing.status === 'draft') ||
+        (action === 'completeOrder' && existing.status === 'draft')
+      if (shouldConsumeMaterials) {
         const orderMaterials = (materials !== undefined ? materials : existing.materials) as Array<{ materialId: string; materialName: string; quantity: number; unit: string }> || []
         for (const mat of orderMaterials) {
           if (!mat.materialId) continue
@@ -135,6 +149,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       }
 
       // 2) عند إكمال أمر التشغيل: إضافة الكمية المنتهية لمنتج المخزن
+      //    idempotent: الشرط existing.status !== 'completed' يمنع الإضافة المزدوجة عند إعادة الضغط
       if (newStatus === 'completed' && existing.status !== 'completed') {
         // F3-03 fix: منع إكمال بكمية أكبر من المطلوب
         if (finalCompletedQuantity > existing.quantity) {
