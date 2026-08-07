@@ -158,7 +158,7 @@ export function AttendanceView({ onBack }: { onBack: () => void }) {
     const dateTimeISO = combineDateTime(date, time)
     const payload: Partial<WorkerAttendance> & { workerId: string; date: string } = {
       workerId,
-      date: combineDateTime(date, '00:00'),
+      date,
       notes: notes || undefined,
     }
     if (type === 'checkIn') {
@@ -188,7 +188,7 @@ export function AttendanceView({ onBack }: { onBack: () => void }) {
     try {
       await workerAttendanceRepository.upsert({
         workerId,
-        date: combineDateTime(date, '00:00'),
+        date,
         status,
         notes: notes || undefined,
       })
