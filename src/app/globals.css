@@ -39,7 +39,7 @@
   --color-card: var(--card);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
   --radius-xl: calc(var(--radius) + 4px);
 }
 
@@ -73,8 +73,8 @@
   --sidebar-foreground: #0f172a;
   --sidebar-primary: #10b981;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #f1f5f9;
-  --sidebar-accent-foreground: #1e293b;
+  --sidebar-accent-foreground: #334155;
+  --sidebar-accent: #f8fafc;
   --sidebar-border: #e2e8f0;
   --sidebar-ring: #10b981;
 }
@@ -106,10 +106,10 @@
   --chart-5: #f472b6;
   --sidebar: #1e293b;
   --sidebar-foreground: #f8fafc;
-  --sidebar-primary: #34d399;
+  --sidebar-primary: #10b981;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #334155;
-  --sidebar-accent-foreground: #f8fafc;
+  --sidebar-accent-foreground: #334155;
+  --sidebar-accent: #f8fafc;
   --sidebar-border: rgba(255, 255, 255, 0.1);
   --sidebar-ring: #34d399;
 }
@@ -180,10 +180,20 @@
   body {
     background: white !important;
   }
+  /* إخفاء عناصر الواجهة عند الطباعة: التنقل، الأزرار، النوافذ المنبثقة */
   .no-print,
   nav,
-  header {
+  header,
+  aside,
+  button,
+  [role="dialog"],
+  [data-radix-popper-content-wrapper] {
     display: none !important;
+  }
+  /* طباعة الألوان والخلفيات كما تظهر على الشاشة */
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 }
 
