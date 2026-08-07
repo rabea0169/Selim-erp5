@@ -4,8 +4,10 @@ import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
 
 // توليد رقم أمر تشغيل تسلسلي آمن: أكبر رقم موجود + 1 (لا ينكسر بعد الحذف)
-async function nextOrderNumber(): Promise<string> {
+// مقيّد بالشركة لعزل البيانات بين المستأجرين
+async function nextOrderNumber(companyId: string | null): Promise<string> {
   const last = await db.productionOrder.findFirst({
+    where: { companyId },
     orderBy: { orderNumber: 'desc' },
     select: { orderNumber: true },
   })
@@ -66,10 +68,8 @@ export async function POST(req: NextRequest) {
     if (!quantity || Number(quantity) <= 0) {
       return NextResponse.json({ error: 'الكمية مطلوبة' }, { status: 400 })
     }
-    if (!date) {
-      return NextResponse.json({ error: 'التاريخ مطلوب' }, { status: 400 })
-    }
-    const dateObj = new Date(date)
+    // التاريخ اختياري من الواجهة — الافتراضي تاريخ اليوم
+    const dateObj = date ? new Date(date) : new Date()
     if (isNaN(dateObj.getTime())) {
       return NextResponse.json({ error: 'التاريخ غير صالح' }, { status: 400 })
     }
@@ -78,13 +78,32 @@ export async function POST(req: NextRequest) {
     const hasMaterials = parsedMaterials.length > 0 && parsedMaterials.every((m) => m.materialId)
     const orderStatus = hasMaterials ? 'in_progress' : 'draft'
 
+    // تطبيع المواد: إضافة id لكل مادة (تستخدمه الواجهة كمفتاح عرض)
+    const normalizedMaterials = parsedMaterials.map((m, i) => ({
+      id: (m as any).id || `mat-${i + 1}`,
+      materialId: m.materialId,
+      materialName: m.materialName,
+      quantity: Number(m.quantity),
+      unit: m.unit,
+    }))
+
+    // تطبيع المراحل: إضافة id وحالة pending (بدونها لا تعمل أزرار بدء/إكمال المرحلة)
+    const parsedStages = (stages || []) as Array<{ name: string }>
+    const normalizedStages = parsedStages
+      .filter((s) => s?.name?.trim())
+      .map((s, i) => ({
+        id: `stage-${i + 1}`,
+        name: s.name.trim(),
+        status: 'pending' as const,
+      }))
+
     // Fix L: Retry loop for order number collision
     let orderNumber: string
     let attempts = 0
     let order: any
     while (attempts < 3) {
-      // رقم تسلسلي من الأكبر الموجود — لا يتكرر بعد الحذف (إصلاح count+1)
-      orderNumber = await nextOrderNumber()
+      // رقم تسلسلي من الأكبر الموجود داخل الشركة — لا يتكرر بعد الحذف (إصلاح count+1)
+      orderNumber = await nextOrderNumber(companyId)
       try {
         order = await db.$transaction(async (tx) => {
           const product = await tx.product.findFirst({ where: { id: productId, companyId } })
@@ -99,10 +118,11 @@ export async function POST(req: NextRequest) {
               productId,
               productName: productName.trim(),
               quantity: Number(quantity),
+              completedQuantity: 0,
               unit: unit || product.unit,
               status: orderStatus,
-              materials: materials || [],
-              stages: stages || [],
+              materials: normalizedMaterials,
+              stages: normalizedStages,
               date: dateObj,
               expectedEndDate: expectedEndDate ? new Date(expectedEndDate) : null,
               notes: notes?.trim() || null,
@@ -110,7 +130,7 @@ export async function POST(req: NextRequest) {
           })
 
           if (hasMaterials) {
-            for (const mat of parsedMaterials) {
+            for (const mat of normalizedMaterials) {
               if (!mat.materialId) continue
 
               const material = await tx.material.findFirst({ where: { id: mat.materialId, companyId } })

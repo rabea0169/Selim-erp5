@@ -23,6 +23,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 }
 
 // PUT /api/production-orders/:id
+// يدعم إجراءات الواجهة: action = startStage | completeStage | completeOrder
+// وكذلك التحديث المباشر للحقول (مثل إلغاء الأمر status=cancelled)
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await getCurrentUser()
@@ -30,7 +32,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const companyId = user.companyId ?? null
     const { id } = await params
     const body = await req.json()
-    const { orderNumber, productId, productName, quantity, completedQuantity, unit, status, materials, stages, date, expectedEndDate, completedDate, notes } = body
+    const { action, stageId, workerId, orderNumber, productId, productName, quantity, completedQuantity, unit, status, materials, stages, date, expectedEndDate, completedDate, notes } = body
 
     const existing = await db.productionOrder.findFirst({ where: { id, companyId } })
     if (!existing) {
@@ -45,9 +47,52 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     }
 
     // ===== ربط دورة الإنتاج بالمخزون =====
-    // عند تغيير الحالة نتعامل مع المخزون
-    const newStatus = status || existing.status
-    const finalCompletedQuantity = completedQuantity != null ? Number(completedQuantity) : existing.completedQuantity
+    let newStatus = status || existing.status
+    let finalCompletedQuantity = completedQuantity != null ? Number(completedQuantity) : existing.completedQuantity
+    let finalStages: any = stages !== undefined ? stages : existing.stages
+    let finalCompletedDate: Date | null | undefined =
+      completedDate !== undefined ? (completedDate ? new Date(completedDate) : null) : existing.completedDate
+
+    // ===== معالجة الإجراءات القادمة من الواجهة =====
+    if (action === 'startStage' || action === 'completeStage') {
+      const list = (existing.stages as Array<{ id?: string; name: string; status: string; startedAt?: string; completedAt?: string; workerId?: string }>) || []
+      const idx = list.findIndex((s, i) =>
+        (s.id && s.id === stageId) || (!s.id && String(i) === String(stageId))
+      )
+      if (idx === -1) {
+        return NextResponse.json({ error: 'المرحلة غير موجودة' }, { status: 404 })
+      }
+      const stage = list[idx]
+      if (action === 'startStage' && stage.status !== 'pending') {
+        return NextResponse.json({ error: 'لا يمكن بدء مرحلة ليست في الانتظار' }, { status: 400 })
+      }
+      if (action === 'completeStage' && stage.status !== 'in_progress') {
+        return NextResponse.json({ error: 'لا يمكن إكمال مرحلة لم تبدأ' }, { status: 400 })
+      }
+      const nowIso = new Date().toISOString()
+      finalStages = list.map((s, i) => {
+        const withId = s.id ? s : { ...s, id: `stage-${i + 1}` }
+        if (i !== idx) return withId
+        if (action === 'startStage') {
+          return { ...withId, status: 'in_progress', startedAt: nowIso, workerId: workerId || s.workerId }
+        }
+        return { ...withId, status: 'completed', completedAt: nowIso, workerId: workerId || s.workerId }
+      })
+      // بدء أول مرحلة في مسودة ينقل الأمر إلى قيد التنفيذ (مع سحب المواد إن وجدت)
+      if (action === 'startStage' && existing.status === 'draft') {
+        newStatus = 'in_progress'
+      }
+    } else if (action === 'completeOrder') {
+      const qty = Number(completedQuantity)
+      if (completedQuantity == null || isNaN(qty) || qty <= 0) {
+        return NextResponse.json({ error: 'الكمية المنتهية يجب أن تكون أكبر من صفر' }, { status: 400 })
+      }
+      newStatus = 'completed'
+      finalCompletedQuantity = qty
+      finalCompletedDate = new Date()
+    } else if (action) {
+      return NextResponse.json({ error: 'إجراء غير معروف' }, { status: 400 })
+    }
 
     const order = await db.$transaction(async (tx) => {
       // 1) عند بدء أمر التشغيل (draft → in_progress): سحب المواد الخام من المخزن
@@ -153,10 +198,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
           unit: unit?.trim() || existing.unit,
           status: newStatus,
           materials: materials !== undefined ? materials : existing.materials,
-          stages: stages !== undefined ? stages : existing.stages,
+          stages: finalStages,
           date: date ? new Date(date) : existing.date,
           expectedEndDate: expectedEndDate !== undefined ? (expectedEndDate ? new Date(expectedEndDate) : null) : existing.expectedEndDate,
-          completedDate: completedDate !== undefined ? (completedDate ? new Date(completedDate) : null) : existing.completedDate,
+          completedDate: finalCompletedDate,
           notes: notes !== undefined ? (notes?.trim() || null) : existing.notes,
         },
       })

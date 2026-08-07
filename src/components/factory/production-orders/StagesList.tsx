@@ -1,6 +1,5 @@
 'use client'
 
-import { useState } from 'react'
 import {
   Check,
   CheckCircle2,
@@ -50,6 +49,8 @@ export function StagesList({
       </p>
       <div className="space-y-2">
         {order.stages.map((s: ProductionOrderStage, idx: number) => {
+          // أوامر قديمة قد تخزّن المراحل بدون id — نستخدم الترتيب كبديل
+          const stageId = s.id || String(idx)
           const stageStyle =
             s.status === 'completed'
               ? {
@@ -73,7 +74,7 @@ export function StagesList({
                 }
           return (
             <div
-              key={s.id}
+              key={s.id || idx}
               className={`rounded-lg p-2 border ${stageStyle.bg} ${stageStyle.border}`}
             >
               <div className="flex items-center justify-between">
@@ -98,7 +99,7 @@ export function StagesList({
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => onStartStage(s.id)}
+                        onClick={() => onStartStage(stageId)}
                         className="h-7 text-[10px] font-medium border-blue-200 text-blue-700 hover:bg-blue-50"
                       >
                         <Play className="w-3 h-3 ml-1" />
@@ -109,7 +110,7 @@ export function StagesList({
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => onCompleteStage(s.id)}
+                        onClick={() => onCompleteStage(stageId)}
                         className="h-7 text-[10px] font-medium border-emerald-200 text-emerald-700 hover:bg-emerald-50"
                       >
                         <Check className="w-3 h-3 ml-1" />
