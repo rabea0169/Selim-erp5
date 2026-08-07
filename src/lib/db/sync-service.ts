@@ -318,10 +318,16 @@ class SyncService {
       if (count > 0 || localCount === 0) {
         if (res.data) {
           // importAll الآن يعمل merge (لا يمسح البيانات المحلية)
-          await reportRepository.importAll({ data: res.data })
+          const importResult = await reportRepository.importAll({ data: res.data })
           this._lastPullTime = Date.now()
+          // استخدم عدد السجلات المستوردة فعلاً بدلاً من عدد السجلات القادمة من السيرفر فقط
+          count = importResult?.counts?.totalImported ?? count
           // إشعار مجمّع
           this.notifyAllTypes()
+          // إعادة تحميل الصفحة بعد الاستيراد اليدوي لضمان قراءة الواجهة للسجلات الجديدة
+          if (typeof window !== 'undefined') {
+            setTimeout(() => window.location.reload(), 600)
+          }
         }
       } else {
         console.log('⏭️ Pull skipped: server empty, local data preserved')
