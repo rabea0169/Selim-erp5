@@ -1,16 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
 
 export async function GET(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    const companyId = user.companyId ?? null
+
     const { searchParams } = new URL(req.url)
     const from = searchParams.get('from')
     const to = searchParams.get('to')
     const workerId = searchParams.get('workerId')
     const date = searchParams.get('date')
 
-    const where: any = {}
+    const where: any = { companyId }
     if (workerId) where.workerId = workerId
 
     if (date) {
@@ -44,6 +49,10 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    const companyId = user.companyId ?? null
+
     const body = await req.json()
     const { workerId, date, checkIn, checkOut, status, notes } = body
 
@@ -74,16 +83,17 @@ export async function POST(req: NextRequest) {
 
     // Fix J: Wrap check+create in transaction to prevent race condition
     const result = await db.$transaction(async (tx) => {
-      // التحقق من وجود الموظف
-      const worker = await tx.worker.findUnique({ where: { id: workerId } })
+      // التحقق من وجود الموظف داخل نفس الشركة
+      const worker = await tx.worker.findFirst({ where: { id: workerId, companyId } })
       if (!worker) {
         throw new Error('الموظف غير موجود')
       }
 
-      // البحث عن سجل موجود لنفس الموظف في نفس اليوم
+      // البحث عن سجل موجود لنفس الموظف في نفس اليوم — داخل الشركة
       const existing = await tx.workerAttendance.findFirst({
         where: {
           workerId,
+          companyId,
           date: { gte: dayStart, lt: dayEnd },
         },
       })
@@ -106,6 +116,7 @@ export async function POST(req: NextRequest) {
       // إنشاء سجل جديد
       const record = await tx.workerAttendance.create({
         data: {
+          companyId,
           workerId,
           date: new Date(date),
           checkIn: checkIn ? new Date(checkIn) : null,

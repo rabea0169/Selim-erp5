@@ -1,16 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
 
 // GET /api/customer-report/[id]?from=&to=
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    const companyId = user.companyId ?? null
+
     const { id } = await params
     const { searchParams } = new URL(req.url)
     const from = searchParams.get('from')
     const to = searchParams.get('to')
 
-    const customer = await db.customer.findUnique({ where: { id } })
+    const customer = await db.customer.findFirst({ where: { id, companyId } })
     if (!customer) return NextResponse.json({ error: 'العميل غير موجود' }, { status: 404 })
 
     const dateRange: any = {}
@@ -20,20 +25,20 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       t.setHours(23, 59, 59, 999)
       dateRange.lte = t
     }
-    const filter = from || to ? { date: dateRange } : {}
+    const dateFilter = from || to ? { date: dateRange } : {}
 
     const [sales, returns, payments] = await Promise.all([
       db.sale.findMany({
-        where: { customerId_ref: id, ...filter },
+        where: { customerId_ref: id, companyId, ...dateFilter },
         include: { items: true },
         orderBy: { date: 'desc' },
       }),
       db.saleReturn.findMany({
-        where: { customerId_ref: id, ...filter },
+        where: { customerId_ref: id, companyId, ...dateFilter },
         orderBy: { date: 'desc' },
       }),
       db.payment.findMany({
-        where: { partyId: id, type: 'customer_payment', ...filter },
+        where: { partyId: id, type: 'customer_payment', companyId, ...dateFilter },
         orderBy: { date: 'desc' },
       }),
     ])
@@ -63,7 +68,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       payments,
     })
   } catch (e) {
-    const { error, status } = safeError(e)
-    return NextResponse.json({ error }, { status })
+    const { error, status } = safeError(e); return NextResponse.json({ error }, { status })
   }
 }
