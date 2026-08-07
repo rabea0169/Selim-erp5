@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import crypto from 'crypto'
 import { db } from '@/lib/db-server'
 import { safeError } from '@/lib/safe-error'
 
@@ -18,7 +19,11 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    if (resetKey !== expectedKey) {
+    // مقارنة آمنة ضد timing attacks
+    const provided = Buffer.from(String(resetKey ?? ''), 'utf8')
+    const expected = Buffer.from(expectedKey, 'utf8')
+    const keyValid = provided.length === expected.length && crypto.timingSafeEqual(provided, expected)
+    if (!keyValid) {
       return NextResponse.json(
         { error: 'مفتاح إعادة التعيين غير صحيح' },
         { status: 403 }

@@ -17,13 +17,16 @@ function createSessionToken(userId: string, username: string, role: string = 'us
 }
 
 // التحقق من session token مع التحقق من التوقيع
+// ملاحظة: مقارنة التوقيع تتم بـ timingSafeEqual لمنع timing attacks
 export function verifySessionToken(token: string | undefined): { userId: string; username: string; role: string; companyId?: string | null } | null {
   if (!token) return null
   try {
     const tokenData = JSON.parse(Buffer.from(token, 'base64').toString())
     const { payload, sig } = tokenData
     const expectedSig = crypto.createHmac('sha256', getTokenSecret()).update(payload).digest('hex')
-    if (sig !== expectedSig) return null
+    const sigBuf = Buffer.from(String(sig), 'utf8')
+    const expectedBuf = Buffer.from(expectedSig, 'utf8')
+    if (sigBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(sigBuf, expectedBuf)) return null
     const data = JSON.parse(payload)
     if (data.expires < Date.now()) return null
     return { userId: data.userId, username: data.username, role: data.role || 'user', companyId: data.companyId ?? null }
@@ -131,7 +134,7 @@ export async function registerUser(
       })
 
       const passwordHash = await bcrypt.hash(password, 12)
-      return tx.user.create({
+      const newUser = await tx.user.create({
         data: {
           username: username.trim(),
           passwordHash,
@@ -140,6 +143,14 @@ export async function registerUser(
           companyId: company.id,
         },
       })
+
+      // ربط الشركة بكود ثابت فريد مرتبط بالمستخدم (يتوافق مع company-scope.ts)
+      await tx.company.update({
+        where: { id: company.id },
+        data: { code: `user:${newUser.id}` },
+      })
+
+      return newUser
     })
   } catch (e: any) {
     if (e.message === 'اسم المستخدم موجود بالفعل' || e.code === 'P2002') {
