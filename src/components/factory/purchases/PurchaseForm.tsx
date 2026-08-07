@@ -263,7 +263,7 @@ export function PurchaseForm({ open, onOpenChange, onSaved, suppliers, editPurch
             </div>
             <div>
               <Label className="text-xs">المدفوع</Label>
-              <Input type="number" value={paid} onChange={(e) => setPaid(e.target.value)} placeholder="0" className="bg-slate-50" />
+              <Input type="number" value={paid} onChange={(e) => setPaid(e.target.value)} onFocus={(e) => e.target.select()} placeholder="0" className="bg-slate-50" />
             </div>
           </div>
           <div className="space-y-2">
@@ -336,28 +336,31 @@ export function PurchaseForm({ open, onOpenChange, onSaved, suppliers, editPurch
                     </div>
                   )}
 
-                  <div className="grid grid-cols-3 gap-1">
-                    <div>
+                  {/* صف الكمية/السعر/الإجمالي — فجوات أوسع وخلايا مرنة لمنع التداخل */}
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="min-w-0">
                       <Label className="text-[10px]">الكمية</Label>
                       <Input
                         type="number"
                         value={it.quantity}
                         onChange={(e) => updateItem(i, 'quantity', Number(e.target.value))}
-                        className="bg-white text-sm h-8"
+                        onFocus={(e) => e.target.select()}
+                        className="bg-white text-sm h-8 w-full min-w-0 px-2"
                       />
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <Label className="text-[10px]">سعر الوحدة</Label>
                       <Input
                         type="number"
                         value={it.unitPrice}
                         onChange={(e) => updateItem(i, 'unitPrice', Number(e.target.value))}
-                        className="bg-white text-sm h-8"
+                        onFocus={(e) => e.target.select()}
+                        className="bg-white text-sm h-8 w-full min-w-0 px-2"
                       />
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <Label className="text-[10px]">الإجمالي</Label>
-                      <div className="h-8 px-2 flex items-center bg-amber-50 rounded-md text-xs font-bold text-amber-700">
+                      <div className="h-8 px-2 flex items-center justify-center bg-amber-50 rounded-md text-xs font-bold text-amber-700 truncate">
                         {formatCurrency(it.total)}
                       </div>
                     </div>
