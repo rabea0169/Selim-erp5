@@ -13,5 +13,6 @@ cmds = ['npm install --legacy-peer-deps']
 [phases.build]
 cmds = ['npx prisma generate', 'npx next build', 'mkdir -p .next/standalone/.next', 'cp -r .next/static .next/standalone/.next/', 'cp -r public .next/standalone/']
 
+# يطبّق prisma migrate deploy إن وُجدت migrations، وإلا db push كحل مؤقت (للتطوير فقط)
 [start]
-cmd = 'HOSTNAME=0.0.0.0 PORT=8080 node .next/standalone/server.js'
+cmd = 'sh -c ''if ls ./prisma/migrations/*/migration.sql >/dev/null 2>&1; then npx prisma migrate deploy || true; else npx prisma db push || true; fi; HOSTNAME=0.0.0.0 PORT=8080 node .next/standalone/server.js'''
