@@ -2,6 +2,84 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
 import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
+import { assertValidPaid } from '@/lib/calc'
+
+// GET /api/purchases/[id] — جلب فاتورة شراء واحدة (معزولة بالشركة)
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    const companyId = user.companyId ?? null
+    const { id } = await params
+
+    const purchase = await db.purchase.findFirst({
+      where: { id, companyId },
+      include: { items: true },
+    })
+    if (!purchase) {
+      return NextResponse.json({ error: 'فاتورة الشراء غير موجودة' }, { status: 404 })
+    }
+    return NextResponse.json({ purchase })
+  } catch (e) {
+    const { error, status } = safeError(e, 500)
+    return NextResponse.json({ error }, { status })
+  }
+}
+
+// PUT /api/purchases/[id] — تحديث المدفوع (يُستخدم عند تسجيل دفعة للمورد)
+export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    const companyId = user.companyId ?? null
+    const { id } = await params
+    const body = await req.json()
+
+    // فحص وجود الفاتورة وتبعيتها للشركة (حماية IDOR)
+    const existing = await db.purchase.findFirst({
+      where: { id, companyId },
+    })
+    if (!existing) {
+      return NextResponse.json({ error: 'فاتورة الشراء غير موجودة' }, { status: 404 })
+    }
+
+    const data: any = {}
+
+    if (body.paid !== undefined) {
+      const newPaid = Number(body.paid)
+      if (isNaN(newPaid)) {
+        return NextResponse.json({ error: 'المبلغ المدفوع غير صالح' }, { status: 400 })
+      }
+      // منع paid > total و paid سالب
+      const paidError = assertValidPaid(newPaid, existing.total)
+      if (paidError) {
+        return NextResponse.json({ error: paidError }, { status: 400 })
+      }
+      data.paid = newPaid
+    }
+
+    if (body.notes !== undefined) {
+      data.notes = body.notes?.trim() || null
+    }
+    if (body.invoiceNo !== undefined) {
+      data.invoiceNo = body.invoiceNo?.trim() || null
+    }
+
+    if (Object.keys(data).length === 0) {
+      return NextResponse.json({ error: 'لا توجد حقول للتحديث' }, { status: 400 })
+    }
+
+    const purchase = await db.purchase.update({
+      where: { id: existing.id },
+      data,
+      include: { items: true },
+    })
+    return NextResponse.json({ purchase })
+  } catch (e) {
+    const { error, status } = safeError(e, 500)
+    return NextResponse.json({ error }, { status })
+  }
+}
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {

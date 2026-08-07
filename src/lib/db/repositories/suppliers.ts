@@ -14,12 +14,14 @@ class SupplierRepository extends BaseRepository<Supplier> {
   async getWithStats(supplierId: string): Promise<{ supplier: Supplier; totalPurchases: number; totalPaid: number; totalRemaining: number; purchasesCount: number; purchases: Purchase[] } | null> {
     try {
       const res = await apiGet<any>(`/api/supplier-report/${supplierId}`)
+      // العقد: GET /api/supplier-report/[id] → { supplier, range, summary, purchases, returns, payments }
+      const summary = res.summary || {}
       return {
         supplier: res.supplier,
-        totalPurchases: res.totalPurchases || 0,
-        totalPaid: res.totalPaid || 0,
-        totalRemaining: res.totalRemaining || 0,
-        purchasesCount: (res.purchases || []).length,
+        totalPurchases: summary.totalPurchases ?? res.totalPurchases ?? 0,
+        totalPaid: summary.totalPaid ?? res.totalPaid ?? 0,
+        totalRemaining: summary.totalRemaining ?? res.totalRemaining ?? 0,
+        purchasesCount: summary.purchasesCount ?? (res.purchases || []).length,
         purchases: res.purchases || [],
       }
     } catch { return null }
