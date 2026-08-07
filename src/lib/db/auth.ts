@@ -12,8 +12,14 @@ export interface SessionUser {
   role: string
 }
 
+type ServerCheckResult = {
+  user: SessionUser | null
+  serverReachable: boolean
+  rateLimited: boolean
+}
+
 // التحقق من السيرفر أولاً ثم IndexedDB
-async function checkServerUser(username: string, password: string): Promise<{ user: SessionUser | null; serverReachable: boolean }> {
+async function checkServerUser(username: string, password: string): Promise<ServerCheckResult> {
   try {
     const response = await fetch('/api/auth/login', {
       method: 'POST',
@@ -21,37 +27,35 @@ async function checkServerUser(username: string, password: string): Promise<{ us
       body: JSON.stringify({ username, password }),
     })
     if (!response.ok) {
+      // 429 = rate limit: السيرفر متاح ورفض مؤقتاً — لا نتحايل عليه بالدخول المحلي
+      if (response.status === 429) {
+        return { user: null, serverReachable: true, rateLimited: true }
+      }
       // Fix V: For non-auth errors (not 401/403), treat server as unreachable
       // to allow fallback to local auth instead of showing credential error
       if (response.status !== 401 && response.status !== 403) {
-        return { user: null, serverReachable: false }
+        return { user: null, serverReachable: false, rateLimited: false }
       }
-      return { user: null, serverReachable: true }
+      return { user: null, serverReachable: true, rateLimited: false }
     }
     const res = await response.json()
     // لو حصلنا على رد من السيرفر، يبقى السيرفر شغال
-    return { user: res.user || null, serverReachable: true }
+    return { user: res.user || null, serverReachable: true, rateLimited: false }
   } catch {
-    return { user: null, serverReachable: false } // لو السيرفر مش متاح
-  }
-}
-
-// التحقق من السيرفر لو فيه مستخدمين
-async function checkServerHasUsers(): Promise<boolean> {
-  try {
-    const response = await fetch('/api/auth/register')
-    if (!response.ok) return false
-    const res = await response.json()
-    return res.hasUsers === true
-  } catch {
-    return false
+    return { user: null, serverReachable: false, rateLimited: false } // لو السيرفر مش متاح
   }
 }
 
 export async function login(username: string, password: string): Promise<{ success: boolean; error?: string; user?: SessionUser }> {
   try {
     // 1. محاولة تسجيل الدخول من السيرفر أولاً
-    const { user: serverUser, serverReachable } = await checkServerUser(username, password)
+    const { user: serverUser, serverReachable, rateLimited } = await checkServerUser(username, password)
+
+    // السيرفر قيّد المحاولات — نحترم القيد ولا نتحايل عليه محلياً
+    if (rateLimited) {
+      return { success: false, error: 'محاولات كثيرة جداً. انتظر قليلاً ثم حاول مرة أخرى.' }
+    }
+
     if (serverUser) {
       localStorage.setItem(SESSION_KEY, JSON.stringify(serverUser))
       // مزامنة المستخدم محلياً لضمان العمل offline بعد ذلك
@@ -67,14 +71,15 @@ export async function login(username: string, password: string): Promise<{ succe
       return { success: true, user: serverUser }
     }
 
-    // 2. لو السيرفر رفض (بيانات خاطئة) أو مش متاح، نحاول محلياً
+    // 2. السيرفر متاح ورفض البيانات (401/403) — لا نسمح بدخول محلي يتناقض مع قرار السيرفر
+    if (serverReachable) {
+      return { success: false, error: 'اسم المستخدم أو كلمة المرور غير صحيحة' }
+    }
+
+    // 3. السيرفر غير متاح فقط — نحاول محلياً (وضع offline)
     try {
       const user = await userRepository.verifyPassword(username, password)
       if (!user) {
-        // لو السيرفر كان متاح ورفض، يبقى البيانات فعلاً غلط
-        if (serverReachable) {
-          return { success: false, error: 'اسم المستخدم أو كلمة المرور غير صحيحة' }
-        }
         // لو السيرفر مش متاح والمحلي فاضي، ممكن يكون حدث مسح للبيانات المحلية
         console.warn('[Auth] Both server and local login failed. Server was unreachable and local user not found.')
         return { success: false, error: 'لا يمكن تسجيل الدخول حالياً. تأكد من اتصالك بالإنترنت أو أنشئ حساباً جديداً.' }
@@ -95,9 +100,6 @@ export async function login(username: string, password: string): Promise<{ succe
       try {
         const user = await userRepository.verifyPassword(username, password)
         if (!user) {
-          if (serverReachable) {
-            return { success: false, error: 'اسم المستخدم أو كلمة المرور غير صحيحة' }
-          }
           return { success: false, error: 'لا يمكن تسجيل الدخول حالياً. تأكد من اتصالك بالإنترنت.' }
         }
         const sessionUser: SessionUser = {
