@@ -1,17 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
 
 export async function GET(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    const companyId = user.companyId ?? null
+
     const { searchParams } = new URL(req.url)
     const q = searchParams.get('q') || ''
-    const where: any = {}
+    const where: any = { companyId }
     if (q) {
-      where.OR = [
-        { name: { contains: q } },
-        { phone: { contains: q } },
-        { address: { contains: q } },
+      where.AND = [
+        { companyId },
+        {
+          OR: [
+            { name: { contains: q } },
+            { phone: { contains: q } },
+            { address: { contains: q } },
+          ],
+        },
       ]
     }
     const suppliers = await db.supplier.findMany({
@@ -48,6 +58,9 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+
     const body = await req.json()
     const { name, phone, address, notes } = body
 
@@ -60,6 +73,7 @@ export async function POST(req: NextRequest) {
 
     const supplier = await db.supplier.create({
       data: {
+        companyId: user.companyId ?? null,
         name: name.trim(),
         phone: phone?.trim() || null,
         address: address?.trim() || null,
