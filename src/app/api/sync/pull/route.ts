@@ -31,6 +31,34 @@ const EXPORT_SELECT: Record<string, any> = {
   auditLog: { id: true, companyId: true, userId: true, userName: true, action: true, entityType: true, entityId: true, description: true, metadata: true, timestamp: true },
 }
 
+// Prisma model name -> IndexedDB local table name
+const LOCAL_TABLE_NAME: Record<string, string> = {
+  factorySettings: 'factorySettings',
+  worker: 'workers',
+  workerAdvance: 'workerAdvances',
+  workerReceipt: 'workerReceipts',
+  workerAttendance: 'workerAttendance',
+  production: 'production',
+  customer: 'customers',
+  supplier: 'suppliers',
+  sale: 'sales',
+  saleItem: 'saleItems',
+  purchase: 'purchases',
+  purchaseItem: 'purchaseItems',
+  expenseCategory: 'expenseCategories',
+  expense: 'expenses',
+  treasuryTransaction: 'treasuryTransactions',
+  warehouse: 'warehouses',
+  material: 'materials',
+  materialTransaction: 'materialTransactions',
+  product: 'products',
+  productionOrder: 'productionOrders',
+  payment: 'payments',
+  saleReturn: 'saleReturns',
+  purchaseReturn: 'purchaseReturns',
+  auditLog: 'auditLogs',
+}
+
 const ORDER_BY: Record<string, any> = {
   factorySettings: { updatedAt: 'asc' as const },
   auditLog: { timestamp: 'asc' as const },
@@ -65,7 +93,8 @@ export async function POST(_req: NextRequest) {
           select,
         })
 
-        data[table] = records.map((r: any) => {
+        const localName = LOCAL_TABLE_NAME[table] || table
+        data[localName] = records.map((r: any) => {
           const processed: any = {}
           for (const [key, value] of Object.entries(r)) {
             if (value instanceof Date) {
@@ -78,7 +107,8 @@ export async function POST(_req: NextRequest) {
         })
       } catch (e: any) {
         console.error(`[Sync] Error pulling ${table}:`, e.message)
-        data[table] = []
+        const localName = LOCAL_TABLE_NAME[table] || table
+        data[localName] = []
       }
     }
 
