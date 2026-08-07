@@ -3,13 +3,14 @@ import { db } from '@/lib/db-server'
 import { requireAdmin } from '@/lib/admin-check'
 import { safeError } from '@/lib/safe-error'
 
-// GET /api/sync/status - حالة السيرفر
+// GET /api/sync/status - حالة السيرفر (عدّ السجلات داخل شركة المستخدم فقط)
 export async function GET() {
   try {
     const admin = await requireAdmin()
     if (!admin.ok) {
       return NextResponse.json({ error: admin.error }, { status: admin.status })
     }
+    const companyId = admin.companyId ?? null
 
     const counts: Record<string, number> = {}
     const tables = [
@@ -20,7 +21,7 @@ export async function GET() {
 
     for (const table of tables) {
       try {
-        counts[table] = await (db as any)[table].count()
+        counts[table] = await (db as any)[table].count({ where: { companyId } })
       } catch {
         counts[table] = 0
       }

@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
 
 export async function GET(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    const companyId = user.companyId ?? null
+
     const { searchParams } = new URL(req.url)
     const from = searchParams.get('from')
     const to = searchParams.get('to')
@@ -16,7 +21,7 @@ export async function GET(req: NextRequest) {
     if (from && isNaN(fromDate!.getTime())) return NextResponse.json({ error: 'تاريخ غير صالح' }, { status: 400 })
     if (to && isNaN(toDate!.getTime())) return NextResponse.json({ error: 'تاريخ غير صالح' }, { status: 400 })
 
-    const where: any = {}
+    const where: any = { companyId }
     if (from || to) {
       where.date = {}
       if (from) where.date.gte = fromDate
@@ -42,6 +47,10 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    const companyId = user.companyId ?? null
+
     const body = await req.json()
     const { categoryId, amount, date, description, notes } = body
 
@@ -68,14 +77,15 @@ export async function POST(req: NextRequest) {
 
     // Fix C: Wrap in transaction with treasury withdrawal
     const expense = await db.$transaction(async (tx) => {
-      // التحقق من وجود الفئة
-      const cat = await tx.expenseCategory.findUnique({ where: { id: categoryId } })
+      // التحقق من وجود الفئة داخل نفس الشركة
+      const cat = await tx.expenseCategory.findFirst({ where: { id: categoryId, companyId } })
       if (!cat) {
         throw new Error('فئة المصروف غير موجودة')
       }
 
       const newExpense = await tx.expense.create({
         data: {
+          companyId,
           categoryId,
           categoryName: cat.name,
           amount: amt,
@@ -88,6 +98,7 @@ export async function POST(req: NextRequest) {
       // Create corresponding treasury withdrawal
       await tx.treasuryTransaction.create({
         data: {
+          companyId,
           type: 'withdrawal',
           amount: amt,
           description: `مصروف: ${description || cat.name}`,

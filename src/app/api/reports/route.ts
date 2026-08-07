@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
 
 // GET /api/reports?from=&to=
 // uses Prisma aggregation to avoid loading all records into memory (PERF fix)
 export async function GET(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    const companyId = user.companyId ?? null
+
     const { searchParams } = new URL(req.url)
     const from = searchParams.get('from')
     const to = searchParams.get('to')
@@ -23,7 +28,9 @@ export async function GET(req: NextRequest) {
       dateRange.lte = toDate
     }
 
-    const dateFilter = from || to ? { date: dateRange } : {}
+    // عزل الشركات: كل التجميعات مقيدة بشركة المستخدم
+    const dateFilter: any = { companyId }
+    if (from || to) dateFilter.date = dateRange
 
     // Sales aggregation (PERF fix: aggregate instead of loading all)
     const salesAgg = await db.sale.aggregate({
@@ -108,22 +115,18 @@ export async function GET(req: NextRequest) {
       expensesByCategory[e.categoryName || 'غير مصنف'] = e._sum.amount || 0
     }
 
-    // Top selling items (using groupBy on saleItem with sale date filter)
-    const saleIds = await db.sale.findMany({
-      where: dateFilter,
-      select: { id: true },
-    })
-    const saleIdSet = saleIds.map(s => s.id)
+    // Top selling items — groupBy على SaleItem مع فلتر عبر علاقة الفاتورة
+    // (بدون تحميل كل الـ IDs في الذاكرة — إصلاح مشكلة حد الـ parameters عند كبر البيانات)
+    const saleItemFilter: any = { sale: { companyId } }
+    if (from || to) saleItemFilter.sale.date = dateRange
 
-    const topItemsRaw = saleIdSet.length > 0
-      ? await db.saleItem.groupBy({
-          by: ['itemName'],
-          where: { saleId: { in: saleIdSet } },
-          _sum: { quantity: true, total: true },
-          orderBy: { _sum: { total: 'desc' } },
-          take: 10,
-        })
-      : []
+    const topItemsRaw = await db.saleItem.groupBy({
+      by: ['itemName'],
+      where: saleItemFilter,
+      _sum: { quantity: true, total: true },
+      orderBy: { _sum: { total: 'desc' } },
+      take: 10,
+    })
     const topItems = topItemsRaw.map(r => ({
       name: r.itemName,
       qty: r._sum.quantity || 0,

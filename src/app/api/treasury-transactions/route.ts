@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { getCurrentUser } from '@/lib/auth'
+import { validateData, treasuryTransactionSchema } from '@/lib/validations'
 import { safeError } from '@/lib/safe-error'
 
 export async function GET(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    const companyId = user.companyId ?? null
+
     const { searchParams } = new URL(req.url)
     const type = searchParams.get('type')
     const from = searchParams.get('from')
@@ -18,7 +24,7 @@ export async function GET(req: NextRequest) {
     if (from && isNaN(fromDate!.getTime())) return NextResponse.json({ error: 'تاريخ غير صالح' }, { status: 400 })
     if (to && isNaN(toDate!.getTime())) return NextResponse.json({ error: 'تاريخ غير صالح' }, { status: 400 })
 
-    const where: any = {}
+    const where: any = { companyId }
     if (type) where.type = type
     if (category) where.category = category
     if (from || to) {
@@ -30,7 +36,7 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const [transactions, total, summaryResult] = await Promise.all([
+    const [transactions, total, deposits, withdrawals] = await Promise.all([
       db.treasuryTransaction.findMany({
         where,
         orderBy: { date: 'desc' },
@@ -39,21 +45,14 @@ export async function GET(req: NextRequest) {
       }),
       db.treasuryTransaction.count({ where }),
       db.treasuryTransaction.aggregate({
-        where,
-        _sum: {
-          amount: true,
-        },
+        where: { ...where, type: 'deposit' },
+        _sum: { amount: true },
+      }),
+      db.treasuryTransaction.aggregate({
+        where: { ...where, type: 'withdrawal' },
+        _sum: { amount: true },
       }),
     ])
-
-    const deposits = await db.treasuryTransaction.aggregate({
-      where: { ...where, type: 'deposit' },
-      _sum: { amount: true },
-    })
-    const withdrawals = await db.treasuryTransaction.aggregate({
-      where: { ...where, type: 'withdrawal' },
-      _sum: { amount: true },
-    })
 
     const totalDeposits = deposits._sum.amount || 0
     const totalWithdrawals = withdrawals._sum.amount || 0
@@ -80,39 +79,23 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json()
-    const { type, amount, date, description, category, notes } = body
+    const user = await getCurrentUser()
+    if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
 
-    if (!type || !['deposit', 'withdrawal'].includes(type)) {
-      return NextResponse.json(
-        { error: 'النوع يجب أن يكون إيداع أو سحب' },
-        { status: 400 }
-      )
+    const body = await req.json()
+
+    // Zod validation
+    const validation = validateData(treasuryTransactionSchema, body)
+    if (!validation.success) {
+      return NextResponse.json({ error: validation.errors[0] }, { status: 400 })
     }
-    const amt = Number(amount)
-    if (isNaN(amt) || amt <= 0) {
-      return NextResponse.json(
-        { error: 'المبلغ يجب أن يكون رقماً موجباً' },
-        { status: 400 }
-      )
-    }
-    if (!date) {
-      return NextResponse.json(
-        { error: 'التاريخ مطلوب' },
-        { status: 400 }
-      )
-    }
-    if (!description?.trim()) {
-      return NextResponse.json(
-        { error: 'الوصف مطلوب' },
-        { status: 400 }
-      )
-    }
+    const { type, amount, date, description, category, notes } = validation.data
 
     const transaction = await db.treasuryTransaction.create({
       data: {
+        companyId: user.companyId ?? null,
         type,
-        amount: amt,
+        amount,
         date: new Date(date),
         description: description.trim(),
         category: category?.trim() || null,
