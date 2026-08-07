@@ -35,7 +35,8 @@ export async function GET(req: NextRequest) {
       orderBy: { date: 'desc' },
     })
 
-    return NextResponse.json({ advances })
+    // المفتاح workerAdvances كما يتوقع العميل (contract fix)
+    return NextResponse.json({ workerAdvances: advances })
   } catch (e) {
     const { error, status } = safeError(e)
     return NextResponse.json({ error }, { status })
@@ -111,7 +112,8 @@ export async function POST(req: NextRequest) {
 
       return adv
     })
-    return NextResponse.json({ advance })
+    // المفتاح workerAdvance كما يتوقع العميل (contract fix)
+    return NextResponse.json({ workerAdvance: advance })
   } catch (e) {
     const { error, status } = safeError(e)
     return NextResponse.json({ error }, { status })

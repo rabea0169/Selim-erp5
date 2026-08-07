@@ -40,8 +40,9 @@ export async function GET(req: NextRequest) {
       db.productionOrder.count({ where }),
     ])
 
+    // المفتاح productionOrders كما يتوقع العميل (contract fix)
     return NextResponse.json({
-      orders,
+      productionOrders: orders,
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     })
   } catch (e) {
@@ -152,7 +153,8 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({ order })
+    // المفتاح productionOrder كما يتوقع العميل (contract fix)
+    return NextResponse.json({ productionOrder: order })
   } catch (e) {
     if (e instanceof Error && (e.message.includes('غير موجود') || e.message.includes('أقل من المطلوب'))) {
       return NextResponse.json({ error: e.message }, { status: 400 })
