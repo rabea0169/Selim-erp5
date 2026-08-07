@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
-import { requireAdmin } from '@/lib/admin-check'
+import { requireCompanyAdmin } from '@/lib/company-scope'
 import { safeError } from '@/lib/safe-error'
 
 // حقول محظورة من التزامن (لا يسمح للعميل بتعديلها)
@@ -36,13 +36,37 @@ const ALLOWED_FIELDS: Record<string, string[]> = {
   auditLog: ['id', 'action', 'entityType', 'entityId', 'description', 'userId', 'userName', 'metadata', 'timestamp'],
 }
 
-// POST /api/sync/push - رفع بيانات من IndexedDB للسيرفر (admin فقط)
+const MODELS_WITH_COMPANY = new Set([
+  'factorySettings',
+  'worker',
+  'workerAdvance',
+  'workerReceipt',
+  'workerAttendance',
+  'production',
+  'customer',
+  'supplier',
+  'sale',
+  'purchase',
+  'expenseCategory',
+  'expense',
+  'treasuryTransaction',
+  'warehouse',
+  'material',
+  'materialTransaction',
+  'product',
+  'productionOrder',
+  'payment',
+  'saleReturn',
+  'purchaseReturn',
+  'auditLog',
+])
+
+// POST /api/sync/push - رفع بيانات من IndexedDB للسيرفر (admin داخل نفس الشركة فقط)
 export async function POST(req: NextRequest) {
   try {
-    // تحقق admin
-    const admin = await requireAdmin()
-    if (!admin.ok) {
-      return NextResponse.json({ error: admin.error }, { status: admin.status })
+    const scope = await requireCompanyAdmin()
+    if (!scope.ok) {
+      return NextResponse.json({ error: scope.error }, { status: scope.status })
     }
 
     const body = await req.json()
@@ -56,8 +80,6 @@ export async function POST(req: NextRequest) {
 
     const tableMap: Record<string, any> = {
       // ⚠️ users و auditLogs مستثنيان من المزامنة لحماية الصلاحيات وسجل التدقيق
-      // users: 'user',          // GAP-01 fix: لا يسمح بمزامنة بيانات المستخدمين (يمنع تصعيد الصلاحيات)
-      // auditLogs: 'auditLog',  // GAP-01 fix: لا يسمح بمزامنة سجل التدقيق
       factorySettings: 'factorySettings',
       workers: 'worker',
       workerAdvances: 'workerAdvance',
@@ -102,29 +124,90 @@ export async function POST(req: NextRequest) {
           // فلترة الحقول المسموحة فقط
           const processed: any = {}
           for (const [key, value] of Object.entries(record)) {
-            // تجاهل الحقول المحظورة
             if (forbidden.includes(key)) continue
 
-            // تحويل التواريخ
             if (typeof value === 'string' && (key.includes('date') || key.includes('At') || key === 'checkIn' || key === 'checkOut')) {
               const d = new Date(value)
               if (!isNaN(d.getTime())) {
                 processed[key] = d
               }
             } else if (value !== undefined && value !== null) {
-              // لو في قائمة المسموحات نستخدمها، وإلا نسقط الحقل
               if (!allowed || allowed.includes(key)) {
                 processed[key] = value
               }
             }
           }
 
-          processed.updatedAt = new Date()
+          if (allowed?.includes('updatedAt')) {
+            processed.updatedAt = new Date()
+          }
+
+          const { id: _ignoredId, ...updateData } = processed
+          const createData = { ...updateData, id: record.id }
+
+          if (modelName === 'factorySettings') {
+            delete updateData.id
+            delete createData.id
+            await db.factorySettings.upsert({
+              where: { companyId: scope.companyId },
+              update: updateData,
+              create: { ...createData, companyId: scope.companyId },
+            })
+            successCount++
+            continue
+          }
+
+          if (modelName === 'saleItem') {
+            const parent = await db.sale.findFirst({
+              where: { id: record.saleId, companyId: scope.companyId },
+              select: { id: true },
+            })
+            if (!parent) { failedCount++; continue }
+
+            await db.saleItem.upsert({
+              where: { id: record.id },
+              create: createData,
+              update: updateData,
+            })
+            successCount++
+            continue
+          }
+
+          if (modelName === 'purchaseItem') {
+            const parent = await db.purchase.findFirst({
+              where: { id: record.purchaseId, companyId: scope.companyId },
+              select: { id: true },
+            })
+            if (!parent) { failedCount++; continue }
+
+            await db.purchaseItem.upsert({
+              where: { id: record.id },
+              create: createData,
+              update: updateData,
+            })
+            successCount++
+            continue
+          }
+
+          if (MODELS_WITH_COMPANY.has(modelName)) {
+            updateData.companyId = scope.companyId
+            createData.companyId = scope.companyId
+
+            const existing = await (db as any)[modelName].findUnique({
+              where: { id: record.id },
+              select: { companyId: true },
+            })
+
+            if (existing && existing.companyId !== scope.companyId) {
+              failedCount++
+              continue
+            }
+          }
 
           await (db as any)[modelName].upsert({
             where: { id: record.id },
-            create: processed,
-            update: processed,
+            create: createData,
+            update: updateData,
           })
           successCount++
         } catch (e: any) {
