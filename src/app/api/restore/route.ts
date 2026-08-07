@@ -3,6 +3,57 @@ import { db } from '@/lib/db-server'
 import { requireAdmin } from '@/lib/admin-check'
 import { safeError } from '@/lib/safe-error'
 
+// أحدث إصدار مدعوم من بنية ملف النسخة
+const SUPPORTED_BACKUP_VERSION = 4
+
+// مفاتيح الكيانات المتوقعة في ملف النسخة (يجب أن تكون قوائم إن وُجدت)
+const COLLECTION_KEYS = [
+  'workers',
+  'workerAdvances',
+  'workerReceipts',
+  'workerAttendance',
+  'production',
+  'customers',
+  'suppliers',
+  'sales',
+  'saleItems',
+  'purchases',
+  'purchaseItems',
+  'expenseCategories',
+  'expenses',
+  'products',
+  'warehouses',
+  'materials',
+  'materialTransactions',
+  'treasuryTransactions',
+  'productionOrders',
+  'payments',
+  'saleReturns',
+  'purchaseReturns',
+  'factorySettings',
+] as const
+
+function idSet(arr?: any[]): Set<string> {
+  return new Set((arr || []).map((x) => x?.id).filter(Boolean))
+}
+
+/**
+ * يتحقق أن كل مراجع (foreign keys) داخل الملف تشير إلى آباء موجودين في الملف نفسه.
+ * هذا يمنع ربط بيانات الشركة بسجلات شركة أخرى موجودة في قاعدة البيانات
+ * (بعد المسح، أي مرجع صالح يجب أن يكون من النسخة ذاتها).
+ */
+function findInvalidRef(
+  items: any[] | undefined,
+  getRef: (x: any) => string | null | undefined,
+  validIds: Set<string>,
+): boolean {
+  if (!items) return false
+  return items.some((x) => {
+    const ref = getRef(x)
+    return !!ref && !validIds.has(ref)
+  })
+}
+
 // POST /api/restore - استرجاع بيانات الشركة الحالية فقط من ملف JSON (admin فقط)
 export async function POST(req: NextRequest) {
   try {
@@ -13,21 +64,96 @@ export async function POST(req: NextRequest) {
     const companyId = admin.companyId ?? null
 
     const body = await req.json()
-    const { data, confirm } = body
+    const { data, confirm, version } = body
 
     // GAP-02 fix: يتطلب تأكيد صريح لمنع المسح العرضي
     if (confirm !== 'WIPE_AND_RESTORE') {
       return NextResponse.json({ error: 'يجب تمرير confirm: "WIPE_AND_RESTORE" للتأكيد' }, { status: 400 })
     }
 
-    if (!data) {
-      return NextResponse.json({ error: 'بيانات النسخة الاحتياطية غير صحيحة' }, { status: 400 })
+    // ====== التحقق من بنية ملف النسخة قبل لمس قاعدة البيانات ======
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      return NextResponse.json(
+        { error: 'ملف النسخة الاحتياطية غير صالح — بنية البيانات غير صحيحة' },
+        { status: 400 },
+      )
     }
+
+    // رفض ملفات أحدث من الإصدار المدعوم
+    if (typeof version === 'number' && version > SUPPORTED_BACKUP_VERSION) {
+      return NextResponse.json(
+        { error: `إصدار النسخة (${version}) أحدث من المدعوم في التطبيق (${SUPPORTED_BACKUP_VERSION}) — حدّث التطبيق أولاً` },
+        { status: 400 },
+      )
+    }
+
+    // كل مفتاح موجود يجب أن يكون قائمة
+    for (const key of COLLECTION_KEYS) {
+      if (data[key] !== undefined && !Array.isArray(data[key])) {
+        return NextResponse.json(
+          { error: `ملف النسخة الاحتياطية تالف — الحقل "${key}" يجب أن يكون قائمة` },
+          { status: 400 },
+        )
+      }
+    }
+
+    // يجب أن يحتوي الملف على كيان واحد على الأقل
+    const totalRecords = COLLECTION_KEYS.reduce(
+      (sum, key) => sum + (Array.isArray(data[key]) ? data[key].length : 0),
+      0,
+    )
+    if (totalRecords === 0) {
+      return NextResponse.json(
+        { error: 'ملف النسخة الاحتياطية فارغ — لا توجد بيانات للاسترجاع' },
+        { status: 400 },
+      )
+    }
+
+    // ====== التحقق من تكامل المراجع داخل الملف (منع الربط ببيانات شركة أخرى) ======
+    const salesIds = idSet(data.sales)
+    const purchaseIds = idSet(data.purchases)
+    const workerIds = idSet(data.workers)
+    const productIds = idSet(data.products)
+    const warehouseIds = idSet(data.warehouses)
+    const materialIds = idSet(data.materials)
+    const categoryIds = idSet(data.expenseCategories)
+    const customerIds = idSet(data.customers)
+    const supplierIds = idSet(data.suppliers)
+
+    const refChecks: Array<{ invalid: boolean; label: string }> = [
+      { invalid: findInvalidRef(data.saleItems, (x) => x.saleId, salesIds), label: 'عناصر مبيعات لا تتبع فواتير موجودة في النسخة' },
+      { invalid: findInvalidRef(data.purchaseItems, (x) => x.purchaseId, purchaseIds), label: 'عناصر مشتريات لا تتبع فواتير موجودة في النسخة' },
+      { invalid: findInvalidRef(data.workerAdvances, (x) => x.workerId, workerIds), label: 'سلف عمال لا تتبع عمالاً موجودين في النسخة' },
+      { invalid: findInvalidRef(data.workerReceipts, (x) => x.workerId, workerIds), label: 'قبضيات عمال لا تتبع عمالاً موجودين في النسخة' },
+      { invalid: findInvalidRef(data.workerAttendance, (x) => x.workerId, workerIds), label: 'سجلات حضور لا تتبع عمالاً موجودين في النسخة' },
+      { invalid: findInvalidRef(data.production, (x) => x.workerId, workerIds), label: 'سجلات إنتاج لا تتبع عمالاً موجودين في النسخة' },
+      { invalid: findInvalidRef(data.production, (x) => x.productId, productIds), label: 'سجلات إنتاج مرتبطة بمنتجات غير موجودة في النسخة' },
+      { invalid: findInvalidRef(data.expenses, (x) => x.categoryId, categoryIds), label: 'مصاريف لا تتبع فئات موجودة في النسخة' },
+      { invalid: findInvalidRef(data.materials, (x) => x.warehouseId, warehouseIds), label: 'مواد خام لا تتبع مخازن موجودة في النسخة' },
+      { invalid: findInvalidRef(data.products, (x) => x.warehouseId, warehouseIds), label: 'منتجات لا تتبع مخازن موجودة في النسخة' },
+      { invalid: findInvalidRef(data.materialTransactions, (x) => x.materialId, materialIds), label: 'حركات مواد لا تتبع مواد موجودة في النسخة' },
+      { invalid: findInvalidRef(data.productionOrders, (x) => x.productId, productIds), label: 'أوامر تشغيل لا تتبع منتجات موجودة في النسخة' },
+      { invalid: findInvalidRef(data.payments, (x) => x.customerId, customerIds), label: 'سدادات مرتبطة بعملاء غير موجودين في النسخة' },
+      { invalid: findInvalidRef(data.payments, (x) => x.supplierId, supplierIds), label: 'سدادات مرتبطة بموردين غير موجودين في النسخة' },
+      { invalid: findInvalidRef(data.saleReturns, (x) => x.saleId, salesIds), label: 'مرتجعات مبيعات لا تتبع فواتير موجودة في النسخة' },
+      { invalid: findInvalidRef(data.purchaseReturns, (x) => x.purchaseId, purchaseIds), label: 'مرتجعات مشتريات لا تتبع فواتير موجودة في النسخة' },
+    ]
+    const refError = refChecks.find((c) => c.invalid)
+    if (refError) {
+      return NextResponse.json(
+        { error: `ملف النسخة الاحتياطية غير متوافق — ${refError.label}` },
+        { status: 400 },
+      )
+    }
+
+    // تنبيه غير مانع إذا كانت النسخة منشأة لشركة أخرى (سيتم فرض companyId الحالي عليها)
+    const sourceMismatch = typeof body.companyId === 'string' && companyId && body.companyId !== companyId
 
     // استخدام transaction لضمان إتمام العملية بالكامل أو فشلها بالكامل
     // ⚠️ ملاحظة: جدول users و auditLogs لا يتم مسحهما أو استرجاعهما (حماية الصلاحيات وسجل التدقيق)
     // Fix: كل عمليات الحذف والإنشاء مقيدة بالشركة الحالية فقط
-    await db.$transaction(async (tx) => {
+    await db.$transaction(
+      async (tx) => {
       // معرفات فواتير الشركة لحذف الجداول الفرعية (لا تحتوي companyId)
       const companySales = await tx.sale.findMany({ where: { companyId }, select: { id: true } })
       const companyPurchases = await tx.purchase.findMany({ where: { companyId }, select: { id: true } })
@@ -561,26 +687,44 @@ export async function POST(req: NextRequest) {
           })
         }
       }
-    })
+      },
+      {
+        // النسخ الكبيرة تحتاج وقتاً أطول من الافتراضي (5 ثوانٍ)
+        maxWait: 15000,
+        timeout: 300000,
+      },
+    )
 
     return NextResponse.json({
       success: true,
-      message: 'تم استرجاع بيانات شركتك بنجاح',
+      message: sourceMismatch
+        ? 'تم استرجاع البيانات بنجاح — ملاحظة: النسخة أنشئت لشركة أخرى وتم ربطها بشركتك الحالية'
+        : 'تم استرجاع بيانات شركتك بنجاح',
+      sourceMismatch,
       counts: {
         workers: data.workers?.length || 0,
+        workerAdvances: data.workerAdvances?.length || 0,
+        workerReceipts: data.workerReceipts?.length || 0,
+        workerAttendance: data.workerAttendance?.length || 0,
+        production: data.production?.length || 0,
         customers: data.customers?.length || 0,
         suppliers: data.suppliers?.length || 0,
         sales: data.sales?.length || 0,
+        saleItems: data.saleItems?.length || 0,
         purchases: data.purchases?.length || 0,
+        purchaseItems: data.purchaseItems?.length || 0,
         expenses: data.expenses?.length || 0,
+        expenseCategories: data.expenseCategories?.length || 0,
         products: data.products?.length || 0,
         materials: data.materials?.length || 0,
         warehouses: data.warehouses?.length || 0,
+        materialTransactions: data.materialTransactions?.length || 0,
         productionOrders: data.productionOrders?.length || 0,
         payments: data.payments?.length || 0,
         saleReturns: data.saleReturns?.length || 0,
         purchaseReturns: data.purchaseReturns?.length || 0,
         treasuryTransactions: data.treasuryTransactions?.length || 0,
+        factorySettings: data.factorySettings?.length ? 1 : 0,
       },
     })
   } catch (e) {
