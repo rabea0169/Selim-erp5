@@ -58,3 +58,8 @@ server.log
 /skills/.env
 db/*.db
 db/*.db-journal
+
+# local/runtime artifacts that must not be committed
+upload/
+tool-results/
+download/*.json

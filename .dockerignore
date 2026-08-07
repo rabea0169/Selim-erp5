@@ -1,5 +1,13 @@
 node_modules
 .next
+.git
 dev.log
 server.log
-.git
+upload
+tool-results
+download
+skills
+mini-services
+tests
+.env*
+!.env.example
