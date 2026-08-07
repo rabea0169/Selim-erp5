@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Printer, Settings2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -12,7 +12,12 @@ import {
 } from '@/components/ui/dialog'
 import { useToast } from '@/hooks/use-toast'
 import { PrintSettingsDialog } from './PrintSettingsDialog'
-import { printDocument, getSavedPrintSettings, type PrintSettings } from '@/lib/printer'
+import {
+  printDocument,
+  getSavedPrintSettings,
+  getDefaultPrintSettings,
+  type PrintSettings,
+} from '@/lib/printer'
 
 function sanitizeHtml(html: string): string {
   // Allow only safe formatting tags and attributes
@@ -62,10 +67,24 @@ export function PrintButton({
   const [settings, setSettings] = useState<PrintSettings>(getSavedPrintSettings())
   const { toast } = useToast()
 
+  // حجم الورق الافتراضي يُؤخذ من إعدادات المصنع (defaultPaperSize)
+  // ما لم يكن المستخدم حفظ إعدادات يدوية على الجهاز
+  useEffect(() => {
+    let cancelled = false
+    getDefaultPrintSettings()
+      .then((s) => {
+        if (!cancelled) setSettings(s)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   const handlePrint = async () => {
     setPrinting(true)
     try {
-      const currentSettings = getSavedPrintSettings()
+      const currentSettings = await getDefaultPrintSettings()
       setSettings(currentSettings)
       const result = await printDocument(contentHtml, currentSettings, title, plainText)
       if (result.success) {

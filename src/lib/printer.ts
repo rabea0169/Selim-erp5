@@ -255,7 +255,7 @@ export async function printViaBrowser(
         width: ${pageWidth - 4}mm;
         margin: 0;
         padding: 0;
-        font-family: 'Tahoma', 'Arial', sans-serif;
+        font-family: 'Cairo', 'Tahoma', 'Arial', sans-serif;
         direction: rtl;
       }
       .print-content {
@@ -273,7 +273,7 @@ export async function printViaBrowser(
       body {
         margin: 0;
         padding: 0;
-        font-family: 'Tahoma', 'Arial', sans-serif;
+        font-family: 'Cairo', 'Tahoma', 'Arial', sans-serif;
         direction: rtl;
       }
       .print-content {
@@ -290,6 +290,10 @@ export async function printViaBrowser(
       <title>${escapeHtml(title)}</title>
       <style>
         ${pageCss}
+        * {
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
+        }
         body {
           color: #000;
           font-size: 12px;
@@ -301,6 +305,9 @@ export async function printViaBrowser(
           border-collapse: collapse;
           margin: 8px 0;
         }
+        /* تكرار رأس الجدول في كل صفحة ومنع انقسام الصفوف بين الصفحات */
+        thead { display: table-header-group; }
+        tr { page-break-inside: avoid; }
         th, td {
           border: 1px solid #000;
           padding: 4px 6px;
@@ -400,6 +407,18 @@ function stripHtml(html: string): string {
 
 const SETTINGS_KEY = 'factory_print_settings'
 
+/**
+ * تحويل قيمة حجم الورق (من إعدادات المصنع أو التخزين المحلي)
+ * لمفتاح PaperSize معروف — تقبل 'A4'/'a4'/'80mm'/'58'... إلخ
+ */
+export function normalizePaperSize(value?: string | null): PaperSize {
+  const v = (value || '').toString().trim().toUpperCase()
+  if (v === 'A4' || v === 'A5' || v === 'A6') return v
+  if (v === 'THERMAL_80' || v === '80' || v === '80MM') return 'THERMAL_80'
+  if (v === 'THERMAL_58' || v === '58' || v === '58MM') return 'THERMAL_58'
+  return 'A4'
+}
+
 export function getSavedPrintSettings(): PrintSettings {
   if (typeof window === 'undefined') {
     return { paperSize: 'A4', method: 'browser', copies: 1 }
@@ -407,7 +426,8 @@ export function getSavedPrintSettings(): PrintSettings {
   try {
     const saved = localStorage.getItem(SETTINGS_KEY)
     if (saved) {
-      return JSON.parse(saved)
+      const parsed = JSON.parse(saved)
+      return { ...parsed, paperSize: normalizePaperSize(parsed.paperSize) }
     }
   } catch (e) {
     console.error('Failed to load print settings:', e)
@@ -418,4 +438,36 @@ export function getSavedPrintSettings(): PrintSettings {
 export function savePrintSettings(settings: PrintSettings) {
   if (typeof window === 'undefined') return
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings))
+}
+
+/**
+ * الإعدادات الافتراضية للطباعة:
+ * 1) الإعدادات المحفوظة محلياً (اختارها المستخدم يدوياً) لها الأولوية
+ * 2) وإلا defaultPaperSize من إعدادات المصنع (factorySettings)
+ * 3) وإلا A4 عبر المتصفح
+ */
+export async function getDefaultPrintSettings(): Promise<PrintSettings> {
+  if (typeof window !== 'undefined') {
+    try {
+      const saved = localStorage.getItem(SETTINGS_KEY)
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        return { ...parsed, paperSize: normalizePaperSize(parsed.paperSize) }
+      }
+    } catch (e) {
+      console.error('Failed to load print settings:', e)
+    }
+  }
+  try {
+    const { getFactorySettings } = await import('@/lib/factory-header')
+    const fs = await getFactorySettings()
+    return {
+      paperSize: normalizePaperSize(fs?.defaultPaperSize),
+      method: 'browser',
+      copies: 1,
+    }
+  } catch (e) {
+    console.error('Failed to load factory print defaults:', e)
+  }
+  return { paperSize: 'A4', method: 'browser', copies: 1 }
 }
