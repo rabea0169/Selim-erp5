@@ -1,3 +1,8 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { db } from '@/lib/db-server'
+import { requireCompanyAdmin } from '@/lib/company-scope'
+import { safeError } from '@/lib/safe-error'
+
 // حقول محظورة من التزامن (لا يسمح للعميل بتعديلها)
 // ملاحظة أمنية: companyId لا يُقبل أبداً من جسم الطلب — يُفرض دائماً من جلسة المستخدم
 const FORBIDDEN_FIELDS: Record<string, string[]> = {

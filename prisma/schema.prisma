@@ -93,7 +93,8 @@ model User {
   username     String   @unique
   passwordHash String
   name         String
-  role         UserRole @default(admin)
+  // أمان: الدور الافتراضي user وليس admin — الترقية لـ admin تتم صراحة فقط
+  role         UserRole @default(user)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -632,7 +633,7 @@ model PurchaseReturn {
   notes          String?
   createdAt      DateTime @default(now())
 
-  company  Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
   purchase Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
 
   @@index([companyId, date]) // composite: تقارير مرتجعات المشتريات
