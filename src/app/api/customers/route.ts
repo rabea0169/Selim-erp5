@@ -1,21 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
-import { getCurrentUser } from '@/lib/auth'
+import { requireCompanyScope } from '@/lib/company-scope'
 import { safeError } from '@/lib/safe-error'
 import { customerSchema } from '@/lib/validations'
 
 export async function GET(req: NextRequest) {
   try {
-    const user = await getCurrentUser()
+    const scope = await requireCompanyScope()
+    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
     const { searchParams } = new URL(req.url)
     const q = searchParams.get('q') || ''
 
     const where: any = {}
-    if (user?.companyId) where.companyId = user.companyId
+    where.companyId = scope.companyId
 
     if (q) {
       where.AND = [
-        user?.companyId ? { companyId: user.companyId } : {},
+        { companyId: scope.companyId },
         {
           OR: [
             { name: { contains: q } },
@@ -60,7 +61,8 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const user = await getCurrentUser()
+    const scope = await requireCompanyScope()
+    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
     const body = await req.json()
 
     // التحقق من البيانات باستخدام Zod
@@ -81,7 +83,7 @@ export async function POST(req: NextRequest) {
 
     const customer = await db.customer.create({
       data: {
-        companyId: user?.companyId || null,
+        companyId: scope.companyId || null,
         name: name.trim(),
         phone: phone?.trim() || null,
         address: address?.trim() || null,

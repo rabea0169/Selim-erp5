@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireCompanyScope } from '@/lib/company-scope'
 import { db } from '@/lib/db-server'
-import { getCurrentUser } from '@/lib/auth'
+
 import { safeError } from '@/lib/safe-error'
 
 export async function GET(req: NextRequest) {
   try {
-    const user = await getCurrentUser()
+    const scope = await requireCompanyScope()
+    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
     const { searchParams } = new URL(req.url)
     const status = searchParams.get('status')
     const q = searchParams.get('q') || ''
@@ -13,7 +15,7 @@ export async function GET(req: NextRequest) {
     const limit = Math.min(200, Math.max(1, Number(searchParams.get('limit')) || 50))
 
     const validStatuses = ['draft', 'in_progress', 'completed', 'cancelled']
-    const where: any = user?.companyId ? { companyId: user.companyId } : {}
+    const where: any = scope.companyId ? { companyId: scope.companyId } : {}
     if (status && validStatuses.includes(status)) where.status = status
     if (q) where.orderNumber = { contains: q }
 
@@ -39,7 +41,8 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const user = await getCurrentUser()
+    const scope = await requireCompanyScope()
+    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
     const body = await req.json()
     const { productId, productName, quantity, unit, materials, stages, date, expectedEndDate, notes } = body
 
@@ -66,13 +69,13 @@ export async function POST(req: NextRequest) {
     let order: any
     while (attempts < 3) {
       const count = await db.productionOrder.count({
-        where: user?.companyId ? { companyId: user.companyId } : {},
+        where: scope.companyId ? { companyId: scope.companyId } : {},
       })
       orderNumber = `PO-${String(count + 1).padStart(5, '0')}`
       try {
         order = await db.$transaction(async (tx) => {
           const product = await tx.product.findFirst({
-            where: { id: productId, ...(user?.companyId ? { companyId: user.companyId } : {}) },
+            where: { id: productId, ...(scope.companyId ? { companyId: scope.companyId } : {}) },
           })
           if (!product) {
             throw new Error('المنتج غير موجود')
@@ -80,7 +83,7 @@ export async function POST(req: NextRequest) {
 
           const newOrder = await tx.productionOrder.create({
             data: {
-              companyId: user?.companyId || null,
+              companyId: scope.companyId || null,
               orderNumber,
               productId,
               productName: productName.trim(),
@@ -100,7 +103,7 @@ export async function POST(req: NextRequest) {
               if (!mat.materialId) continue
 
               const material = await tx.material.findFirst({
-                where: { id: mat.materialId, ...(user?.companyId ? { companyId: user.companyId } : {}) },
+                where: { id: mat.materialId, ...(scope.companyId ? { companyId: scope.companyId } : {}) },
               })
               if (!material) {
                 throw new Error(`المادة ${mat.materialName} غير موجودة`)
@@ -116,7 +119,7 @@ export async function POST(req: NextRequest) {
 
               await tx.materialTransaction.create({
                 data: {
-                  companyId: user?.companyId || null,
+                  companyId: scope.companyId || null,
                   materialId: mat.materialId,
                   warehouseId: material.warehouseId,
                   type: 'out',

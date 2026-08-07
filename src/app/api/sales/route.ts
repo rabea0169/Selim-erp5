@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
 import { safeError } from '@/lib/safe-error'
+import { requireCompanyScope } from '@/lib/company-scope'
 
 // GET /api/sales?from=&to=&q=&page=1&limit=50
 export async function GET(req: NextRequest) {
   try {
+    const scope = await requireCompanyScope()
+    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
+
     const { searchParams } = new URL(req.url)
     const from = searchParams.get('from')
     const to = searchParams.get('to')
@@ -12,7 +16,7 @@ export async function GET(req: NextRequest) {
     const page = Math.max(1, Number(searchParams.get('page')) || 1)
     const limit = Math.min(200, Math.max(1, Number(searchParams.get('limit')) || 50))
 
-    const where: any = {}
+    const where: any = { companyId: scope.companyId }
     if (from || to) {
       where.date = {}
       if (from) {
@@ -59,6 +63,9 @@ export async function GET(req: NextRequest) {
 // POST /api/sales
 export async function POST(req: NextRequest) {
   try {
+    const scope = await requireCompanyScope()
+    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
+
     const body = await req.json()
     const {
       customerName,
@@ -170,13 +177,25 @@ export async function POST(req: NextRequest) {
         include: { items: true },
       })
 
-      // خصم الكميات من مخزون المنتجات
+      // خصم الكميات من مخزون المنتجات مع التحقق من عدم السلبية
       for (const it of validItems) {
         if (it.productId) {
-          await tx.product.update({
+          const product = await tx.product.findUnique({
             where: { id: it.productId },
-            data: { quantity: { decrement: Number(it.quantity) }, updatedAt: new Date() },
+            select: { id: true, name: true, quantity: true },
           })
+          if (product) {
+            const qty = Number(it.quantity)
+            if (product.quantity < qty) {
+              throw new Error(
+                `الكمية المتاحة من "${product.name}" (${product.quantity}) أقل من المطلوبة (${qty})`
+              )
+            }
+            await tx.product.update({
+              where: { id: it.productId },
+              data: { quantity: { decrement: qty }, updatedAt: new Date() },
+            })
+          }
         }
       }
 

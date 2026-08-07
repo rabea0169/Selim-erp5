@@ -1,16 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireCompanyScope } from '@/lib/company-scope'
 import { db } from '@/lib/db-server'
-import { getCurrentUser } from '@/lib/auth'
+
 import { safeError } from '@/lib/safe-error'
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const user = await getCurrentUser()
+    const scope = await requireCompanyScope()
+    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
     const { id } = await params
 
     // جلب الفاتورة والتحقق من تبعيتها لشركة المستخدم للحماية من ثغرات IDOR
     const sale = await db.sale.findFirst({
-      where: { id, ...(user?.companyId ? { companyId: user.companyId } : {}) },
+      where: { id, ...(scope.companyId ? { companyId: scope.companyId } : {}) },
       include: { items: true },
     })
     if (!sale) {

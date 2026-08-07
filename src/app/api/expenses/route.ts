@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireCompanyScope } from '@/lib/company-scope'
 import { db } from '@/lib/db-server'
-import { getCurrentUser } from '@/lib/auth'
+
 import { safeError } from '@/lib/safe-error'
 import { expenseSchema } from '@/lib/validations'
 
 export async function GET(req: NextRequest) {
   try {
-    const user = await getCurrentUser()
+    const scope = await requireCompanyScope()
+    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
     const { searchParams } = new URL(req.url)
     const from = searchParams.get('from')
     const to = searchParams.get('to')
@@ -18,7 +20,7 @@ export async function GET(req: NextRequest) {
     if (from && isNaN(fromDate!.getTime())) return NextResponse.json({ error: 'تاريخ غير صالح' }, { status: 400 })
     if (to && isNaN(toDate!.getTime())) return NextResponse.json({ error: 'تاريخ غير صالح' }, { status: 400 })
 
-    const where: any = user?.companyId ? { companyId: user.companyId } : {}
+    const where: any = scope.companyId ? { companyId: scope.companyId } : {}
     if (from || to) {
       where.date = {}
       if (from) where.date.gte = fromDate
@@ -45,7 +47,8 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const user = await getCurrentUser()
+    const scope = await requireCompanyScope()
+    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
     const body = await req.json()
 
     // التحقق من البيانات باستخدام Zod
@@ -70,7 +73,7 @@ export async function POST(req: NextRequest) {
 
     const expense = await db.$transaction(async (tx) => {
       const cat = await tx.expenseCategory.findFirst({
-        where: { id: categoryId, ...(user?.companyId ? { companyId: user.companyId } : {}) },
+        where: { id: categoryId, ...(scope.companyId ? { companyId: scope.companyId } : {}) },
       })
       if (!cat) {
         throw new Error('فئة المصروف غير موجودة')
@@ -78,7 +81,7 @@ export async function POST(req: NextRequest) {
 
       const exp = await tx.expense.create({
         data: {
-          companyId: user?.companyId || null,
+          companyId: scope.companyId || null,
           categoryId,
           categoryName: cat.name,
           amount: amt,
@@ -90,7 +93,7 @@ export async function POST(req: NextRequest) {
 
       await tx.treasuryTransaction.create({
         data: {
-          companyId: user?.companyId || null,
+          companyId: scope.companyId || null,
           type: 'withdrawal',
           amount: amt,
           date: new Date(date),

@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireCompanyScope } from '@/lib/company-scope'
 import { db } from '@/lib/db-server'
-import { getCurrentUser } from '@/lib/auth'
+
 import { safeError } from '@/lib/safe-error'
 
 // GET /api/payments?type=customer_payment&partyId=xxx&from=&to=&page=1&limit=50
 export async function GET(req: NextRequest) {
   try {
-    const user = await getCurrentUser()
+    const scope = await requireCompanyScope()
+    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
     const { searchParams } = new URL(req.url)
     const type = searchParams.get('type')
     const partyId = searchParams.get('partyId')
@@ -16,7 +18,7 @@ export async function GET(req: NextRequest) {
     const limit = Math.max(1, Math.min(200, Number(searchParams.get('limit')) || 50))
     const skip = (page - 1) * limit
 
-    const where: any = user?.companyId ? { companyId: user.companyId } : {}
+    const where: any = scope.companyId ? { companyId: scope.companyId } : {}
     if (type) {
       where.type = type
     }
@@ -61,7 +63,8 @@ export async function GET(req: NextRequest) {
 // POST /api/payments
 export async function POST(req: NextRequest) {
   try {
-    const user = await getCurrentUser()
+    const scope = await requireCompanyScope()
+    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
     const body = await req.json()
     const {
       type,
@@ -95,6 +98,10 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    // تحديد customerId أو supplierId بناءً على نوع الدفعة
+    const customerId = type === 'customer_payment' ? partyId.trim() : null
+    const supplierId = type === 'supplier_payment' ? partyId.trim() : null
+
     if (!date) {
       return NextResponse.json(
         { error: 'التاريخ مطلوب' },
@@ -117,7 +124,7 @@ export async function POST(req: NextRequest) {
       if (invoiceId?.trim()) {
         if (type === 'customer_payment') {
           sale = await tx.sale.findFirst({
-            where: { id: invoiceId.trim(), ...(user?.companyId ? { companyId: user.companyId } : {}) },
+            where: { id: invoiceId.trim(), ...(scope.companyId ? { companyId: scope.companyId } : {}) },
           })
           if (!sale) {
             throw new Error('فاتورة البيع المحددة غير موجودة')
@@ -128,7 +135,7 @@ export async function POST(req: NextRequest) {
           }
         } else {
           purchase = await tx.purchase.findFirst({
-            where: { id: invoiceId.trim(), ...(user?.companyId ? { companyId: user.companyId } : {}) },
+            where: { id: invoiceId.trim(), ...(scope.companyId ? { companyId: scope.companyId } : {}) },
           })
           if (!purchase) {
             throw new Error('فاتورة الشراء المحددة غير موجودة')
@@ -142,10 +149,12 @@ export async function POST(req: NextRequest) {
 
       const newPayment = await tx.payment.create({
         data: {
-          companyId: user?.companyId || null,
+          companyId: scope.companyId || null,
           type,
           partyId: partyId.trim(),
           partyName: partyName.trim(),
+          customerId,
+          supplierId,
           invoiceId: invoiceId?.trim() || null,
           invoiceNo: invoiceNo?.trim() || null,
           amount: amountNumber,
@@ -164,7 +173,7 @@ export async function POST(req: NextRequest) {
         }
         await tx.treasuryTransaction.create({
           data: {
-            companyId: user?.companyId || null,
+            companyId: scope.companyId || null,
             type: 'deposit',
             amount: amountNumber,
             date: new Date(date),
@@ -186,7 +195,7 @@ export async function POST(req: NextRequest) {
         }
         await tx.treasuryTransaction.create({
           data: {
-            companyId: user?.companyId || null,
+            companyId: scope.companyId || null,
             type: 'withdrawal',
             amount: amountNumber,
             date: new Date(date),

@@ -125,8 +125,7 @@ model AuditLog {
 
 // ====== إعدادات المصنع ======
 model FactorySettings {
-  id                 String   @id @default("singleton")
-  companyId          String?  @unique
+  companyId          String   @id
   factoryName        String
   factoryNameEn      String?
   slogan             String?
@@ -144,9 +143,7 @@ model FactorySettings {
   taxRate            Float?   @default(0)
   updatedAt          DateTime @updatedAt
 
-  company Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
-
-  @@index([companyId])
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 }
 
 // ====== الموظفون ======
@@ -566,26 +563,30 @@ model ProductionOrder {
 
 // ====== السدادات ======
 model Payment {
-  id        String      @id @default(cuid())
-  companyId String?
-  type      PaymentType
-  partyId   String
-  partyName String
-  invoiceId String?
-  invoiceNo String?
-  amount    Float
-  date      DateTime
-  method    String?
-  notes     String?
-  createdAt DateTime    @default(now())
+  id          String      @id @default(cuid())
+  companyId   String?
+  type        PaymentType
+  partyId     String
+  partyName   String
+  customerId  String?
+  supplierId  String?
+  invoiceId   String?
+  invoiceNo   String?
+  amount      Float
+  date        DateTime
+  method      String?
+  notes       String?
+  createdAt   DateTime    @default(now())
 
   company  Company?  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  customer Customer? @relation("PaymentCustomer", fields: [partyId], references: [id], onDelete: SetNull, map: "payment_customer_fk")
-  supplier Supplier? @relation("PaymentSupplier", fields: [partyId], references: [id], onDelete: SetNull, map: "payment_supplier_fk")
+  customer Customer? @relation("PaymentCustomer", fields: [customerId], references: [id], onDelete: SetNull)
+  supplier Supplier? @relation("PaymentSupplier", fields: [supplierId], references: [id], onDelete: SetNull)
 
   @@index([companyId])
   @@index([date])
   @@index([partyId])
+  @@index([customerId])
+  @@index([supplierId])
   @@index([type])
 }
 

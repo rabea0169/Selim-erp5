@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireCompanyScope } from '@/lib/company-scope'
 import { db } from '@/lib/db-server'
-import { getCurrentUser } from '@/lib/auth'
+
 import { safeError } from '@/lib/safe-error'
 
 // GET /api/warehouses
 export async function GET() {
   try {
-    const user = await getCurrentUser()
+    const scope = await requireCompanyScope()
+    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
     const warehouses = await db.warehouse.findMany({
-      where: user?.companyId ? { companyId: user.companyId } : {},
+      where: scope.companyId ? { companyId: scope.companyId } : {},
       include: { _count: { select: { materials: true, products: true } } },
       orderBy: { name: 'asc' },
     })
@@ -22,7 +24,8 @@ export async function GET() {
 // POST /api/warehouses
 export async function POST(req: NextRequest) {
   try {
-    const user = await getCurrentUser()
+    const scope = await requireCompanyScope()
+    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
     const body = await req.json()
     const { name, type, location, notes } = body
 
@@ -40,7 +43,7 @@ export async function POST(req: NextRequest) {
 
     const warehouse = await db.warehouse.create({
       data: {
-        companyId: user?.companyId || null,
+        companyId: scope.companyId || null,
         name: name.trim(),
         type: type.trim(),
         location: location?.trim() || null,

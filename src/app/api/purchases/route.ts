@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireCompanyScope } from '@/lib/company-scope'
 import { db } from '@/lib/db-server'
 import { safeError } from '@/lib/safe-error'
 
 // GET /api/purchases?from=&to=&q=&page=1&limit=50
 export async function GET(req: NextRequest) {
   try {
+    const scope = await requireCompanyScope()
+    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
+
     const { searchParams } = new URL(req.url)
     const from = searchParams.get('from')
     const to = searchParams.get('to')
@@ -12,7 +16,7 @@ export async function GET(req: NextRequest) {
     const page = Math.max(1, Number(searchParams.get('page')) || 1)
     const limit = Math.min(200, Math.max(1, Number(searchParams.get('limit')) || 50))
 
-    const where: any = {}
+    const where: any = { companyId: scope.companyId }
     if (from || to) {
       where.date = {}
       if (from) {
@@ -58,6 +62,9 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const scope = await requireCompanyScope()
+    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
+
     const body = await req.json()
     const {
       supplierName,

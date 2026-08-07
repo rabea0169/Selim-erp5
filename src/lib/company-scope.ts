@@ -146,3 +146,11 @@ export async function requireCompanyAdmin(): Promise<CompanyScopeResult> {
 
   return scope
 }
+
+/**
+ * Helper: يُرجع NextResponse خطأ من CompanyScopeResult
+ */
+export function scopeError(scope: CompanyScopeResult & { ok: false }) {
+  const { NextResponse } = require('next/server')
+  return NextResponse.json({ error: scope.error }, { status: scope.status })
+}

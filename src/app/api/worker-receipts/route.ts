@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireCompanyScope } from '@/lib/company-scope'
 import { db } from '@/lib/db-server'
 import { safeError } from '@/lib/safe-error'
-import { getCurrentUser } from '@/lib/auth'
+
 
 export async function GET(req: NextRequest) {
   try {

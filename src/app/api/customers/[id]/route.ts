@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireCompanyScope } from '@/lib/company-scope'
 import { db } from '@/lib/db-server'
-import { getCurrentUser } from '@/lib/auth'
+
 import { safeError } from '@/lib/safe-error'
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const user = await getCurrentUser()
+    const scope = await requireCompanyScope()
+    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
     const { id } = await params
     const body = await req.json()
     const { name, phone, address, notes } = body
@@ -19,7 +21,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
     // التحقق من وجود العميل ومدى تبعيته للشركة للحماية من ثغرة IDOR
     const existing = await db.customer.findFirst({
-      where: { id, ...(user?.companyId ? { companyId: user.companyId } : {}) },
+      where: { id, ...(scope.companyId ? { companyId: scope.companyId } : {}) },
     })
     if (!existing) {
       return NextResponse.json(
@@ -45,11 +47,12 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const user = await getCurrentUser()
+    const scope = await requireCompanyScope()
+    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
     const { id } = await params
 
     const existing = await db.customer.findFirst({
-      where: { id, ...(user?.companyId ? { companyId: user.companyId } : {}) },
+      where: { id, ...(scope.companyId ? { companyId: scope.companyId } : {}) },
     })
     if (!existing) {
       return NextResponse.json({ error: 'العميل غير موجود' }, { status: 404 })
