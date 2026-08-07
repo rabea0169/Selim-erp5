@@ -93,11 +93,11 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void })
             <button
               type="button"
               onClick={() => setMode('login')}
-              className={`py-2.5 rounded-lg text-sm font-bold transition-all ${
+              className={
                 mode === 'login'
-                  ? 'bg-white text-emerald-600 shadow-sm'
-                  : 'text-slate-500'
-              }`
+                  ? 'py-2.5 rounded-lg text-sm font-bold transition-all bg-white text-emerald-600 shadow-sm'
+                  : 'py-2.5 rounded-lg text-sm font-bold transition-all text-slate-500'
+              }
             >
               تسجيل الدخول
             </button>
@@ -110,11 +110,13 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: () => void })
                 }
                 setMode('register')
               }}
-              className={`py-2.5 rounded-lg text-sm font-bold transition-all ${
+              className={
                 mode === 'register'
-                  ? 'bg-white text-emerald-600 shadow-sm'
-                  : hasUsers ? 'text-slate-300 cursor-not-allowed' : 'text-slate-500'
-              }`
+                  ? 'py-2.5 rounded-lg text-sm font-bold transition-all bg-white text-emerald-600 shadow-sm'
+                  : hasUsers
+                  ? 'py-2.5 rounded-lg text-sm font-bold transition-all text-slate-300 cursor-not-allowed'
+                  : 'py-2.5 rounded-lg text-sm font-bold transition-all text-slate-500'
+              }
             >
               {hasUsers ? 'حساب جديد 🔒' : 'حساب جديد'}
             </button>
