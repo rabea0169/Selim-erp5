@@ -12,6 +12,25 @@ class SyncService {
   private intervalId: ReturnType<typeof setInterval> | null = null
   private onlineHandler: (() => void) | null = null
   private pendingChanges: Set<string> = new Set()
+  private _lastPullTime = 0
+  private _isSyncing = false
+
+  // قائمة بأنواع البيانات لإعلامها
+  private static ALL_TYPES = [
+    'sales', 'purchases', 'workers', 'workerAdvances', 'workerReceipts',
+    'workerAttendance', 'production', 'customers', 'suppliers', 'expenses',
+    'expenseCategories', 'factorySettings', 'treasuryTransactions',
+    'warehouses', 'materials', 'materialTransactions', 'products',
+    'productionOrders', 'payments', 'saleReturns', 'purchaseReturns',
+  ] as const
+
+  // إشعار مجمّع — يخلي React يعمل render مرة واحدة بدل 21 مرة
+  private notifyAllTypes() {
+    // تجميع كل الإشعارات في إطار واحد
+    requestAnimationFrame(() => {
+      SyncService.ALL_TYPES.forEach((t) => dataChangeEmitter.notifyUpdate(t))
+    })
+  }
 
   // المزامنة مُفعّلة افتراضياً لضمان عملها على كل الأجهزة
   isEnabled(): boolean {
@@ -30,10 +49,7 @@ class SyncService {
     if (!this.isEnabled()) return
     if (this.intervalId) return // Already running
 
-    // مزامنة فورية عند التفعيل
-    setTimeout(() => { this.sync() }, 3000)
-
-    // مزامنة كل 2 دقيقة
+    // مزامنة كل 2 دقيقة (بدون مزامنة فورية — initialPull يعملها أول)
     this.intervalId = setInterval(() => { this.sync() }, 2 * 60 * 1000)
 
     // مزامنة عند العودة online
@@ -79,16 +95,9 @@ class SyncService {
       if (serverCount > 0) {
         // دمج بيانات السيرفر مع البيانات المحلية
         await reportRepository.importAll({ data: res.data })
-        // إبلاغ كل المكونات بالتحديث
-        const { dataChangeEmitter } = await import('./live-data')
-        const allTypes = [
-          'sales', 'purchases', 'workers', 'workerAdvances', 'workerReceipts',
-          'workerAttendance', 'production', 'customers', 'suppliers', 'expenses',
-          'expenseCategories', 'factorySettings', 'treasuryTransactions',
-          'warehouses', 'materials', 'materialTransactions', 'products',
-          'productionOrders', 'payments', 'saleReturns', 'purchaseReturns',
-        ]
-        allTypes.forEach((t) => dataChangeEmitter.notifyUpdate(t as any))
+        this._lastPullTime = Date.now()
+        // إشعار مجمّع — مرة واحدة فقط
+        this.notifyAllTypes()
         console.log(`✅ Initial pull: ${serverCount} records from server (local had ${localCount})`)
       }
 
@@ -134,7 +143,12 @@ class SyncService {
     if (!navigator.onLine) {
       return { success: false, error: 'غير متصل بالإنترنت' }
     }
+    // منع تشغيل مزامنة بالتوازي
+    if (this._isSyncing) return { success: false, error: 'sync in progress' }
+    // تخطي السحب لو عملنا سحب منذ أقل من 90 ثانية
+    const skipPull = (Date.now() - this._lastPullTime) < 90_000
 
+    this._isSyncing = true
     try {
       // 1. Push - رفع البيانات المحلية للسيرفر
       const localData = await reportRepository.exportAll()
@@ -184,22 +198,16 @@ class SyncService {
           }
 
           if (pulled > 0 || localCount === 0) {
-            // importAll الآن يعمل merge (لا يمسح البيانات المحلية)
-            await reportRepository.importAll({ data: pullRes.data })
-            console.log('✅ Sync pull complete:', { pulled })
-
-            // Fix P: Notify UI of data changes after pull
-            const allTypes = [
-              'sales', 'purchases', 'workers', 'workerAdvances', 'workerReceipts',
-              'workerAttendance', 'production', 'customers', 'suppliers', 'expenses',
-              'expenseCategories', 'factorySettings', 'treasuryTransactions',
-              'warehouses', 'materials', 'materialTransactions', 'products',
-              'productionOrders', 'payments', 'saleReturns', 'purchaseReturns',
-            ]
-            allTypes.forEach((t) => dataChangeEmitter.notifyUpdate(t as any))
-          } else {
-            console.log('⏭️ Sync pull skipped: server has no data, preserving local data')
-          }
+            if (!skipPull) {
+              // importAll الآن يعمل merge (لا يمسح البيانات المحلية)
+              await reportRepository.importAll({ data: pullRes.data })
+              this._lastPullTime = Date.now()
+              console.log('✅ Sync pull complete:', { pulled })
+              // إشعار مجمّع
+              this.notifyAllTypes()
+            } else {
+              console.log('⏭️ Sync pull skipped: initialPull was recent')
+            }
 
           localStorage.setItem(SYNC_STATUS_KEY, String(Date.now()))
           this.pendingChanges.clear()
@@ -215,6 +223,8 @@ class SyncService {
     } catch (e: any) {
       console.error('Sync error:', e)
       return { success: false, error: e.message }
+    } finally {
+      this._isSyncing = false
     }
   }
 
@@ -286,15 +296,9 @@ class SyncService {
         if (res.data) {
           // importAll الآن يعمل merge (لا يمسح البيانات المحلية)
           await reportRepository.importAll({ data: res.data })
-          // Fix X: Removed 'reports' from allTypes - it's a virtual entity not stored in DB
-          const allTypes = [
-            'sales', 'purchases', 'workers', 'workerAdvances', 'workerReceipts',
-            'workerAttendance', 'production', 'customers', 'suppliers', 'expenses',
-            'expenseCategories', 'factorySettings', 'treasuryTransactions',
-            'warehouses', 'materials', 'materialTransactions', 'products',
-            'productionOrders', 'payments', 'saleReturns', 'purchaseReturns',
-          ]
-          allTypes.forEach((t) => dataChangeEmitter.notifyUpdate(t as any))
+          this._lastPullTime = Date.now()
+          // إشعار مجمّع
+          this.notifyAllTypes()
         }
       } else {
         console.log('⏭️ Pull skipped: server empty, local data preserved')

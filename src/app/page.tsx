@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { Dashboard } from '@/components/factory/Dashboard'
 import { SalesView } from '@/components/factory/SalesView'
 import { PurchasesView } from '@/components/factory/PurchasesView'
@@ -31,77 +31,95 @@ export default function Home() {
   const [factoryOpen, setFactoryOpen] = useState(false)
   const [user, setUser] = useState<SessionUser | null>(null)
   const [authChecked, setAuthChecked] = useState(false)
-  const [reloadKey, setReloadKey] = useState(0)
   const [factorySettings, setFactorySettings] = useState<FactorySettings | null>(null)
+  const initializedRef = useRef<string | null>(null)
+
+  const handleAuthenticated = useCallback(() => {
+    initializedRef.current = null
+    setUser(getCurrentUser())
+    setAuthChecked(true)
+  }, [])
 
   // التحقق من تسجيل الدخول + تحميل بيانات المصنع
   useEffect(() => {
+    const currentUser = getCurrentUser()
+    setUser(currentUser)
+    setAuthChecked(true)
+
+    if (!currentUser) return
+    // منع تشغيل التهيئة أكثر من مرة لنفس المستخدم
+    if (initializedRef.current === currentUser.id) return
+    initializedRef.current = currentUser.id
+
+    let cancelled = false
+
     Promise.resolve().then(async () => {
-      const currentUser = getCurrentUser()
-      setUser(currentUser)
-      setAuthChecked(true)
-      if (currentUser) {
-        try {
-          // فحص سلامة البيانات + استرجاع تلقائي لو فقدت
-          const integrity = await checkDataIntegrity()
-          if (integrity.lost) {
-            console.error(`[App] DATA LOSS DETECTED! had ${integrity.lastKnownCount}, now ${integrity.currentCount} — attempting auto-restore from cache`)
-            try {
-              const { autoBackupService } = await import('@/lib/db/auto-backup')
-              const cachedBackup = await autoBackupService.getLastCacheBackup()
-              if (cachedBackup?.data) {
-                const { reportRepository } = await import('@/lib/db/repositories')
-                await reportRepository.importAll(cachedBackup)
-                console.log('[App] ✅ Auto-restore from cache backup successful!')
-                // reload stats after restore
-                const restoredStats = await getDBStats()
-                const restoredCount = Object.values(restoredStats).reduce((a: number, b: number) => a + Math.max(0, b), 0)
-                console.log(`[App] After restore: ${restoredCount} records`)
-              } else {
-                console.warn('[App] No cache backup available for restore')
-              }
-            } catch (restoreErr) {
-              console.error('[App] Auto-restore failed:', restoreErr)
+      try {
+        // فحص سلامة البيانات + استرجاع تلقائي لو فقدت
+        const integrity = await checkDataIntegrity()
+        if (integrity.lost && !cancelled) {
+          console.error(`[App] DATA LOSS DETECTED! had ${integrity.lastKnownCount}, now ${integrity.currentCount} — attempting auto-restore from cache`)
+          try {
+            const { autoBackupService: abs } = await import('@/lib/db/auto-backup')
+            const cachedBackup = await abs.getLastCacheBackup()
+            if (cachedBackup?.data) {
+              const { reportRepository: rr } = await import('@/lib/db/repositories')
+              await rr.importAll(cachedBackup)
+              console.log('[App] ✅ Auto-restore from cache backup successful!')
+              const restoredStats = await getDBStats()
+              const restoredCount = Object.values(restoredStats).reduce((a: number, b: number) => a + Math.max(0, b), 0)
+              console.log(`[App] After restore: ${restoredCount} records`)
             }
+          } catch (restoreErr) {
+            console.error('[App] Auto-restore failed:', restoreErr)
           }
+        }
 
-          const stats = await getDBStats()
-          const totalRecords = Object.values(stats).reduce((a: number, b: number) => a + Math.max(0, b), 0)
-          console.log(`[App] DB stats on login: ${totalRecords} total records`, stats)
+        const stats = await getDBStats()
+        const totalRecords = Object.values(stats).reduce((a: number, b: number) => a + Math.max(0, b), 0)
+        console.log(`[App] DB stats on login: ${totalRecords} total records`, stats)
 
-          const settings = await factorySettingsRepository.get()
-          setFactorySettings(settings)
-          autoBackupService.start()
-          // تفعيل المزامنة التلقائية دائماً (مُفعّلة افتراضياً)
-          syncService.start()
-          // سحب تلقائي للبيانات من السيرفر عند تسجيل الدخول
+        const settings = await factorySettingsRepository.get()
+        if (!cancelled) setFactorySettings(settings)
+        autoBackupService.start()
+
+        // سحب البيانات من السيرفر عند تسجيل الدخول (مرة واحدة فقط)
+        if (!cancelled) {
           syncService.initialPull().then((result) => {
             if (result.success && result.count && result.count > 0) {
               console.log(`[App] ✅ Pulled ${result.count} records from server on login`)
-              // إعادة تحميل الإحصائيات بعد السحب
-              setReloadKey((k) => k + 1)
             }
           }).catch(() => {})
-          warehouseRepository.seedDefaults().catch(() => {})
-          expenseCategoryRepository.seedDefaults().catch(() => {})
-          auditLogRepository.log({
-            userId: currentUser.id,
-            userName: currentUser.name,
-            action: 'login',
-            entityType: 'auth',
-            description: `تسجيل دخول: ${currentUser.username}`,
-          })
-        } catch (e) {
-          console.error('[App] Initialization error (non-fatal):', e)
         }
+
+        // بدء المزامنة التلقائية بعد السحب الأولي
+        if (!cancelled) {
+          // تأخير قصير لضمان أن initialPull اشتغل أول
+          setTimeout(() => {
+            if (!cancelled) syncService.start()
+          }, 5000)
+        }
+
+        warehouseRepository.seedDefaults().catch(() => {})
+        expenseCategoryRepository.seedDefaults().catch(() => {})
+        auditLogRepository.log({
+          userId: currentUser.id,
+          userName: currentUser.name,
+          action: 'login',
+          entityType: 'auth',
+          description: `تسجيل دخول: ${currentUser.username}`,
+        })
+      } catch (e) {
+        console.error('[App] Initialization error (non-fatal):', e)
       }
     })
 
     return () => {
+      cancelled = true
       autoBackupService.stop()
       syncService.stop()
     }
-  }, [reloadKey])
+  }, [])
 
   const handleLogout = async () => {
     // TODO: Replace confirm() with a custom confirmation dialog component
@@ -120,7 +138,7 @@ export default function Home() {
   }
 
   if (!user) {
-    return <AuthScreen onAuthenticated={() => setReloadKey((k) => k + 1)} />
+    return <AuthScreen onAuthenticated={handleAuthenticated} />
   }
 
   return (
