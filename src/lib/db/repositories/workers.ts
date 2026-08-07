@@ -14,11 +14,13 @@ class WorkerRepository extends BaseRepository<Worker> {
   async getWithStats(workerId: string): Promise<{ worker: Worker; totalAdvances: number; totalReceipts: number; balance: number; advances: WorkerAdvance[]; receipts: WorkerReceipt[] } | null> {
     try {
       const res = await apiGet<any>(`/api/worker-report/${workerId}`)
+      // السيرفر يعيد الإجماليات داخل summary — مع fallback للمفاتيح القديمة
+      const summary = res.summary || {}
       return {
         worker: res.worker,
-        totalAdvances: res.totalAdvances || 0,
-        totalReceipts: res.totalReceipts || 0,
-        balance: res.balance || 0,
+        totalAdvances: summary.totalAdvances ?? res.totalAdvances ?? 0,
+        totalReceipts: summary.totalReceipts ?? res.totalReceipts ?? 0,
+        balance: summary.balance ?? res.balance ?? 0,
         advances: res.advances || [],
         receipts: res.receipts || [],
       }

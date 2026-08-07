@@ -3,6 +3,13 @@ import { db } from '@/lib/db-server'
 import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
 
+// تحويل رقم اختياري: قيمة فارغة/غير صالحة → null
+function optNum(v: any): number | null {
+  if (v === undefined || v === null || v === '') return null
+  const n = Number(v)
+  return isNaN(n) ? null : n
+}
+
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await getCurrentUser()
@@ -12,7 +19,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const companyId = user.companyId ?? null
     const { id } = await params
     const body = await req.json()
-    const { name, phone, job, type, notes, dailyWage, monthlySalary } = body
+    const { name, phone, job, type, notes, hourlyRate, overtimeRate, workStartTime, workHoursPerDay, monthlySalary } = body
 
     if (!name?.trim()) {
       return NextResponse.json({ error: 'اسم الموظف مطلوب' }, { status: 400 })
@@ -39,6 +46,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         phone: phone?.trim() || null,
         job: job?.trim() || null,
         type: validType,
+        hourlyRate: optNum(hourlyRate),
+        overtimeRate: optNum(overtimeRate),
+        workStartTime: workStartTime?.trim() || null,
+        workHoursPerDay: optNum(workHoursPerDay),
+        monthlySalary: optNum(monthlySalary),
         notes: notes?.trim() || null,
       },
     })

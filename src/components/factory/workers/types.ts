@@ -9,6 +9,11 @@ export interface WorkerWithStats {
   job: string | null
   type: string
   notes: string | null
+  hourlyRate?: number | null
+  overtimeRate?: number | null
+  workStartTime?: string | null
+  workHoursPerDay?: number | null
+  monthlySalary?: number | null
   advances: WorkerAdvance[]
   receipts: WorkerReceipt[]
   totalAdvances: number

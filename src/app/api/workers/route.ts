@@ -53,13 +53,20 @@ export async function GET(req: NextRequest) {
   }
 }
 
+// تحويل رقم اختياري: قيمة فارغة/غير صالحة → null
+function optNum(v: any): number | null {
+  if (v === undefined || v === null || v === '') return null
+  const n = Number(v)
+  return isNaN(n) ? null : n
+}
+
 export async function POST(req: NextRequest) {
   try {
     const user = await getCurrentUser()
     if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
 
     const body = await req.json()
-    const { name, phone, job, type, notes } = body
+    const { name, phone, job, type, notes, hourlyRate, overtimeRate, workStartTime, workHoursPerDay, monthlySalary } = body
 
     // التحقق من البيانات
     if (!name?.trim()) {
@@ -83,6 +90,11 @@ export async function POST(req: NextRequest) {
         phone: phone?.trim() || null,
         job: job?.trim() || null,
         type: validType,
+        hourlyRate: optNum(hourlyRate),
+        overtimeRate: optNum(overtimeRate),
+        workStartTime: workStartTime?.trim() || null,
+        workHoursPerDay: optNum(workHoursPerDay),
+        monthlySalary: optNum(monthlySalary),
         notes: notes?.trim() || null,
       },
     })
