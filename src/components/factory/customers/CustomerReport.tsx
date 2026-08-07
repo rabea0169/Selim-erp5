@@ -53,113 +53,132 @@ export function CustomerReport({ customer, onClose }: CustomerReportProps) {
   const { toast } = useToast()
 
   const { data, loading, reload } = useLiveData<any>(async () => {
-    const [stats, payments, allReturns] = await Promise.all([
-      customerRepository.getWithStats(customer.id),
-      paymentRepository.getByParty(customer.id),
-      saleReturnRepository.getByDateRange(),
-    ])
+    let stats: Awaited<ReturnType<typeof customerRepository.getWithStats>> = null
+    let loadError: any = null
+    try {
+      const [statsRes, payments, allReturns] = await Promise.all([
+        customerRepository.getWithStats(customer.id),
+        paymentRepository.getByParty(customer.id),
+        saleReturnRepository.getByDateRange(),
+      ])
+      stats = statsRes
 
-    if (!stats) return null
-
-    const customerPayments = payments
-      .filter((p) => p.type === 'customer_payment')
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-
-    const customerReturns = allReturns
-      .filter((r) => r.customerId_ref === customer.id)
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-
-    const fromTime = from ? new Date(from).getTime() : 0
-    const toTime = to ? new Date(to).getTime() + 24 * 60 * 60 * 1000 - 1 : Date.now()
-
-    const filteredSales = stats.sales.filter((s) => {
-      const t = new Date(s.date).getTime()
-      return t >= fromTime && t <= toTime
-    })
-    const filteredPayments = customerPayments.filter((p) => {
-      const t = new Date(p.date).getTime()
-      return t >= fromTime && t <= toTime
-    })
-    const filteredReturns = customerReturns.filter((r) => {
-      const t = new Date(r.date).getTime()
-      return t >= fromTime && t <= toTime
-    })
-
-    const totalSales = filteredSales.reduce((sum, s) => sum + s.total, 0)
-    const totalPaid = filteredPayments.reduce((sum, p) => sum + p.amount, 0)
-    const totalReturns = filteredReturns.reduce((sum, r) => sum + r.total, 0)
-    const totalRemaining = totalSales - totalPaid - totalReturns
-
-    // بناء كشف الحساب
-    const statementEntries: StatementEntry[] = []
-    let runningBalance = 0
-
-    type AnyEntry =
-      | { kind: 'sale'; date: string; id: string; total: number; invoiceNo?: string }
-      | { kind: 'payment'; date: string; id: string; amount: number; method?: string }
-      | { kind: 'return'; date: string; id: string; total: number; returnNumber: string }
-
-    const allEntries: AnyEntry[] = [
-      ...filteredSales.map((s) => ({ kind: 'sale' as const, date: s.date, id: s.id, total: s.total, invoiceNo: s.invoiceNo })),
-      ...filteredPayments.map((p) => ({ kind: 'payment' as const, date: p.date, id: p.id, amount: p.amount, method: p.method })),
-      ...filteredReturns.map((r) => ({ kind: 'return' as const, date: r.date, id: r.id, total: r.total, returnNumber: r.returnNumber })),
-    ].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-
-    for (const entry of allEntries) {
-      let debit = 0
-      let credit = 0
-      let description = ''
-      let type: StatementEntry['type'] = 'sale'
-
-      if (entry.kind === 'sale') {
-        debit = entry.total
-        description = `فاتورة مبيعات ${entry.invoiceNo ? `(${entry.invoiceNo})` : ''}`
-        type = 'sale'
-      } else if (entry.kind === 'payment') {
-        credit = entry.amount
-        const methodLabel = entry.method === 'transfer' ? ' - تحويل' : entry.method === 'card' ? ' - بطاقة' : ''
-        description = `سداد${methodLabel}`
-        type = 'payment'
-      } else {
-        credit = entry.total
-        description = `مرتجع (${entry.returnNumber})`
-        type = 'return'
+      if (!stats) {
+        // fix(reports): كان الفشل يُبتلع بصمت (getWithStats يعيد null) فلا يظهر أي شيء للمستخدم
+        throw new Error('تعذر جلب بيانات التقرير من السيرفر')
       }
 
-      runningBalance += debit - credit
-      statementEntries.push({
-        id: entry.id,
-        date: entry.date,
-        description,
-        type,
-        debit,
-        credit,
-        balance: runningBalance,
-      })
-    }
+      const customerPayments = payments
+        .filter((p) => p.type === 'customer_payment')
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
 
-    return {
-      ...stats,
-      sales: filteredSales,
-      payments: filteredPayments,
-      returns: filteredReturns,
-      statement: statementEntries,
-      totalSales,
-      totalPaid,
-      totalReturns,
-      totalRemaining,
-      salesCount: filteredSales.length,
-      paymentsCount: filteredPayments.length,
-      returnsCount: filteredReturns.length,
-      summary: {
-        salesCount: filteredSales.length,
-        paymentsCount: filteredPayments.length,
-        returnsCount: filteredReturns.length,
+      const customerReturns = allReturns
+        .filter((r) => r.customerId_ref === customer.id)
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+
+      const fromTime = from ? new Date(from).getTime() : 0
+      const toTime = to ? new Date(to).getTime() + 24 * 60 * 60 * 1000 - 1 : Date.now()
+
+      const filteredSales = stats.sales.filter((s) => {
+        const t = new Date(s.date).getTime()
+        return t >= fromTime && t <= toTime
+      })
+      const filteredPayments = customerPayments.filter((p) => {
+        const t = new Date(p.date).getTime()
+        return t >= fromTime && t <= toTime
+      })
+      const filteredReturns = customerReturns.filter((r) => {
+        const t = new Date(r.date).getTime()
+        return t >= fromTime && t <= toTime
+      })
+
+      const totalSales = filteredSales.reduce((sum, s) => sum + s.total, 0)
+      const totalPaid = filteredPayments.reduce((sum, p) => sum + p.amount, 0)
+      const totalReturns = filteredReturns.reduce((sum, r) => sum + r.total, 0)
+      const totalRemaining = totalSales - totalPaid - totalReturns
+
+      // بناء كشف الحساب
+      const statementEntries: StatementEntry[] = []
+      let runningBalance = 0
+
+      type AnyEntry =
+        | { kind: 'sale'; date: string; id: string; total: number; invoiceNo?: string }
+        | { kind: 'payment'; date: string; id: string; amount: number; method?: string }
+        | { kind: 'return'; date: string; id: string; total: number; returnNumber: string }
+
+      const allEntries: AnyEntry[] = [
+        ...filteredSales.map((s) => ({ kind: 'sale' as const, date: s.date, id: s.id, total: s.total, invoiceNo: s.invoiceNo })),
+        ...filteredPayments.map((p) => ({ kind: 'payment' as const, date: p.date, id: p.id, amount: p.amount, method: p.method })),
+        ...filteredReturns.map((r) => ({ kind: 'return' as const, date: r.date, id: r.id, total: r.total, returnNumber: r.returnNumber })),
+      ].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+
+      for (const entry of allEntries) {
+        let debit = 0
+        let credit = 0
+        let description = ''
+        let type: StatementEntry['type'] = 'sale'
+
+        if (entry.kind === 'sale') {
+          debit = entry.total
+          description = `فاتورة مبيعات ${entry.invoiceNo ? `(${entry.invoiceNo})` : ''}`
+          type = 'sale'
+        } else if (entry.kind === 'payment') {
+          credit = entry.amount
+          const methodLabel = entry.method === 'transfer' ? ' - تحويل' : entry.method === 'card' ? ' - بطاقة' : ''
+          description = `سداد${methodLabel}`
+          type = 'payment'
+        } else {
+          credit = entry.total
+          description = `مرتجع (${entry.returnNumber})`
+          type = 'return'
+        }
+
+        runningBalance += debit - credit
+        statementEntries.push({
+          id: entry.id,
+          date: entry.date,
+          description,
+          type,
+          debit,
+          credit,
+          balance: runningBalance,
+        })
+      }
+
+      return {
+        ...stats,
+        sales: filteredSales,
+        payments: filteredPayments,
+        returns: filteredReturns,
+        statement: statementEntries,
         totalSales,
         totalPaid,
         totalReturns,
         totalRemaining,
-      },
+        salesCount: filteredSales.length,
+        paymentsCount: filteredPayments.length,
+        returnsCount: filteredReturns.length,
+        summary: {
+          salesCount: filteredSales.length,
+          paymentsCount: filteredPayments.length,
+          returnsCount: filteredReturns.length,
+          totalSales,
+          totalPaid,
+          totalReturns,
+          totalRemaining,
+        },
+      }
+    } catch (e: any) {
+      loadError = e
+      return null
+    } finally {
+      if (loadError || !stats) {
+        toast({
+          title: 'خطأ في تحميل التقرير',
+          description: loadError?.message || 'تعذر تحميل بيانات العميل — تحقق من الاتصال ثم أعد المحاولة',
+          variant: 'destructive',
+        })
+      }
     }
   }, ['sales', 'payments', 'saleReturns'])
 
