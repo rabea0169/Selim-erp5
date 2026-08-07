@@ -6,6 +6,26 @@ import { safeError } from '@/lib/safe-error'
 
 // Fix: المفتاح الأساسي لـ FactorySettings هو companyId وليس id
 // كل شركة لها إعداداتها الخاصة (Multi-Tenancy)
+// Fix: العقد مع العميل (factorySettingsRepository) يتوقع كائن الإعدادات مباشرة
+// وليس مغلفاً بـ { settings } — بدون هذا الإصلاح تظهر صفحة الإعدادات فارغة دائماً
+
+const DEFAULT_SETTINGS = {
+  factoryName: 'Selim ERP',
+  factoryNameEn: '',
+  slogan: '',
+  phone: '',
+  whatsapp: '',
+  email: '',
+  address: '',
+  taxNumber: '',
+  commercialRegister: '',
+  logo: '',
+  currency: 'ج.م',
+  invoicePrefix: 'INV-',
+  invoiceFooter: '',
+  defaultPaperSize: 'A4',
+  taxRate: 0,
+}
 
 export async function GET() {
   try {
@@ -16,13 +36,21 @@ export async function GET() {
 
     const companyId = user.companyId ?? null
     if (!companyId) {
-      return NextResponse.json({ settings: null })
+      // لا توجد شركة — نعيد الإعدادات الافتراضية حتى لا تتعطل الواجهة
+      return NextResponse.json({ id: null, ...DEFAULT_SETTINGS, updatedAt: new Date().toISOString() })
     }
 
     const settings = await db.factorySettings.findUnique({
       where: { companyId },
     })
-    return NextResponse.json({ settings })
+
+    if (!settings) {
+      // أول مرة — نعيد الافتراضيات (لا ننشئ سجلاً حتى يحفظ الأدمن)
+      return NextResponse.json({ id: companyId, ...DEFAULT_SETTINGS, updatedAt: new Date().toISOString() })
+    }
+
+    // العميل يتوقع id — نمرره من companyId (المفتاح الأساسي)
+    return NextResponse.json({ ...settings, id: settings.companyId })
   } catch (e) {
     const { error, status } = safeError(e)
     return NextResponse.json({ error }, { status })
@@ -77,7 +105,8 @@ export async function PUT(req: NextRequest) {
       create: { companyId, ...data },
     })
 
-    return NextResponse.json({ settings })
+    // نعيد كائن الإعدادات مباشرة كما يتوقع العميل
+    return NextResponse.json({ ...settings, id: settings.companyId })
   } catch (e) {
     const { error, status } = safeError(e)
     return NextResponse.json({ error }, { status })
