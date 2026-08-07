@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Plus, Trash2, Package, Percent, Tag, Coins } from 'lucide-react'
+import { Plus, Trash2, Package, Percent, Tag, Coins, Wallet } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -306,15 +306,9 @@ export function SaleForm({ open, onOpenChange, onSaved, customers, sale }: SaleF
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <Label className="text-xs">التاريخ</Label>
-              <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="bg-slate-50" />
-            </div>
-            <div>
-              <Label className="text-xs">المدفوع</Label>
-              <Input type="number" value={paid} onChange={(e) => setPaid(e.target.value)} placeholder="0" className="bg-slate-50" />
-            </div>
+          <div>
+            <Label className="text-xs">التاريخ</Label>
+            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="bg-slate-50" />
           </div>
 
           {/* الأصناف */}
@@ -396,11 +390,11 @@ export function SaleForm({ open, onOpenChange, onSaved, customers, sale }: SaleF
                   </div>
                   <div>
                     <Label className="text-[10px]">الكمية</Label>
-                    <Input type="number" value={it.quantity} onChange={(e) => updateItem(i, 'quantity', Number(e.target.value))} className="bg-white text-sm h-8" min="1" />
+                    <Input type="number" value={it.quantity} onChange={(e) => updateItem(i, 'quantity', Number(e.target.value))} onFocus={(e) => e.target.select()} className="bg-white text-sm h-8" min="1" />
                   </div>
                   <div>
                     <Label className="text-[10px]">سعر الوحدة</Label>
-                    <Input type="number" value={it.unitPrice} onChange={(e) => updateItem(i, 'unitPrice', Number(e.target.value))} className="bg-white text-sm h-8" min="0" />
+                    <Input type="number" value={it.unitPrice} onChange={(e) => updateItem(i, 'unitPrice', Number(e.target.value))} onFocus={(e) => e.target.select()} className="bg-white text-sm h-8" min="0" />
                   </div>
                   <div>
                     <Label className="text-[10px]">الإجمالي</Label>
@@ -455,6 +449,7 @@ export function SaleForm({ open, onOpenChange, onSaved, customers, sale }: SaleF
                   type="number"
                   value={discountValue}
                   onChange={(e) => setDiscountValue(e.target.value)}
+                  onFocus={(e) => e.target.select()}
                   placeholder="0"
                   disabled={discountType === 'none'}
                   className="bg-white text-sm h-8"
@@ -482,6 +477,7 @@ export function SaleForm({ open, onOpenChange, onSaved, customers, sale }: SaleF
                   type="number"
                   value={taxRate}
                   onChange={(e) => setTaxRate(e.target.value)}
+                  onFocus={(e) => e.target.select()}
                   placeholder="مثال: 14"
                   className="bg-white text-sm h-8"
                   min="0"
@@ -507,6 +503,27 @@ export function SaleForm({ open, onOpenChange, onSaved, customers, sale }: SaleF
                 type="number"
                 value={extraFees}
                 onChange={(e) => setExtraFees(e.target.value)}
+                onFocus={(e) => e.target.select()}
+                placeholder="0"
+                className="bg-white text-sm h-8"
+                min="0"
+              />
+            </div>
+          </div>
+
+          {/* ===== المدفوع (بعد معرفة الإجمالي النهائي) ===== */}
+          <div className="bg-emerald-50/60 border border-emerald-200 rounded-lg p-3 space-y-2">
+            <div className="flex items-center gap-1.5">
+              <Wallet className="w-3.5 h-3.5 text-emerald-700" />
+              <Label className="text-xs font-bold text-emerald-800">المدفوع</Label>
+            </div>
+            <div>
+              <Label className="text-[10px]">المبلغ المدفوع الآن (يُترك فارغاً للبيع الآجل)</Label>
+              <Input
+                type="number"
+                value={paid}
+                onChange={(e) => setPaid(e.target.value)}
+                onFocus={(e) => e.target.select()}
                 placeholder="0"
                 className="bg-white text-sm h-8"
                 min="0"
