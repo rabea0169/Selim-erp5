@@ -5,6 +5,7 @@ import {
   PackageOpen,
   Boxes,
   ChevronLeft,
+  Trash2,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { formatCurrency } from '@/lib/format'
@@ -15,17 +16,21 @@ interface WarehouseCardProps {
   warehouse: Warehouse
   materials: Material[]
   onClick: () => void
+  onDelete?: (id: string) => void
 }
 
-export function WarehouseCard({ warehouse, materials, onClick }: WarehouseCardProps) {
+export function WarehouseCard({ warehouse, materials, onClick, onDelete }: WarehouseCardProps) {
   const wMaterials = materials.filter((m) => m.warehouseId === warehouse.id)
   const wValue = wMaterials.reduce((s, m) => s + m.quantity * m.unitCost, 0)
   const style = WAREHOUSE_TYPE_STYLES[warehouse.type]
 
   return (
-    <button
+    <div
       onClick={onClick}
-      className="w-full bg-white rounded-2xl shadow-sm border border-slate-100 p-4 hover:shadow-md transition-all text-right"
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => e.key === 'Enter' && onClick()}
+      className="w-full bg-white rounded-2xl shadow-sm border border-slate-100 p-4 hover:shadow-md transition-all text-right cursor-pointer"
     >
       <div className="flex items-start justify-between">
         <div className="flex-1">
@@ -68,8 +73,22 @@ export function WarehouseCard({ warehouse, materials, onClick }: WarehouseCardPr
             </div>
           </div>
         </div>
-        <ChevronLeft className="w-4 h-4 text-slate-400" />
+        <div className="flex items-center gap-1">
+          {onDelete && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                onDelete(warehouse.id)
+              }}
+              className="p-1.5 text-slate-400 hover:text-rose-500 transition-colors"
+              aria-label="حذف المخزن"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
+          <ChevronLeft className="w-4 h-4 text-slate-400" />
+        </div>
       </div>
-    </button>
+    </div>
   )
 }

@@ -85,10 +85,21 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   try {
     const user = await getCurrentUser()
     if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    const companyId = user.companyId ?? null
     const { id } = await params
-    const existing = await db.material.findFirst({ where: { id, companyId: user.companyId ?? null } })
+    const existing = await db.material.findFirst({ where: { id, companyId } })
     if (!existing) {
       return NextResponse.json({ error: 'الخامة غير موجودة' }, { status: 404 })
+    }
+    // منع حذف مادة لها حركات مخزن مسجلة (حفاظاً على سجل الحركات)
+    const transactionsCount = await db.materialTransaction.count({
+      where: { materialId: id, companyId },
+    })
+    if (transactionsCount > 0) {
+      return NextResponse.json(
+        { error: `لا يمكن حذف مادة لها حركات مخزن مسجلة (${transactionsCount} حركة)` },
+        { status: 400 }
+      )
     }
     await db.material.delete({ where: { id } })
     return NextResponse.json({ success: true })
