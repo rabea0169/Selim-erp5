@@ -35,8 +35,6 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         phone: phone?.trim() || null,
         job: job?.trim() || null,
         type: validType,
-        dailyWage: dailyWage != null ? Number(dailyWage) : undefined,
-        monthlySalary: monthlySalary != null ? Number(monthlySalary) : undefined,
         notes: notes?.trim() || null,
       },
     })

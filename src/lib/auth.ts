@@ -2,21 +2,10 @@ import bcrypt from 'bcryptjs'
 import crypto from 'crypto'
 import { cookies } from 'next/headers'
 import { db } from '@/lib/db-server'
+import { getTokenSecret } from './auth-secret'
 
 const SESSION_COOKIE = 'factory_session'
 const SESSION_EXPIRY_DAYS = 30
-// Lazy resolution: defer TOKEN_SECRET check to runtime (not module-evaluation / build time)
-function getTokenSecret(): string {
-  const secret = process.env.TOKEN_SECRET
-  if (!secret) {
-    if (process.env.NODE_ENV === 'production') {
-      throw new Error('TOKEN_SECRET environment variable is required in production')
-    }
-    console.warn('[Auth] ⚠️ TOKEN_SECRET not set — using dev-only fallback. NEVER use this in production!')
-    return 'dev-only-fallback-never-use-in-prod'
-  }
-  return secret
-}
 
 // إنشاء session token ببيانات المستخدم + توقيع HMAC
 function createSessionToken(userId: string, username: string, role: string = 'user', companyId?: string | null): string {

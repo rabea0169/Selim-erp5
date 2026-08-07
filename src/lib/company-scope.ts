@@ -115,7 +115,7 @@ export async function requireCompanyScope(): Promise<CompanyScopeResult> {
   }
 
   try {
-    const companyId = await ensureUserCompany(user)
+    const companyId = await ensureUserCompany({ ...user, companyId: user.companyId ?? null })
 
     return {
       ok: true,

@@ -1,6 +1,6 @@
 'use client'
 import { BaseRepository } from './base'
-import { apiPost, apiDelete } from '../../api-client'
+import { apiGet, apiPost, apiDelete } from '../../api-client'
 import { dataChangeEmitter } from '../live-data'
 import type { Purchase } from '../types'
 

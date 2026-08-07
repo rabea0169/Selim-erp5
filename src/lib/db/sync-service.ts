@@ -288,6 +288,8 @@ class SyncService {
         }
       } // end shouldPush
 
+      let pulledCount = 0
+
       // 2. Pull - تحميل البيانات من السيرفر
       // دائماً نسحب حتى لو لم نرفع (للحصول على بيانات من أجهزة أخرى)
       try {
@@ -300,9 +302,8 @@ class SyncService {
         const pullRes = await pullResponse.json()
 
         if (pullRes.success && pullRes.data) {
-          let pulled = 0
           for (const records of Object.values(pullRes.data || {})) {
-            pulled += (records as any[]).length
+            pulledCount += (records as any[]).length
           }
 
           // حماية: لا تسحب بيانات فاضية إذا عندك بيانات محلية
@@ -311,13 +312,13 @@ class SyncService {
             localCount += (records as any[]).length
           }
 
-          if (pulled > 0 || localCount === 0) {
+          if (pulledCount > 0 || localCount === 0) {
             if (!skipPull) {
               // تحويل أسماء الجداول من أسماء Prisma (مفرد) لأسماء IndexedDB (جمع)
               const convertedData = this.convertServerToLocalKeys(pullRes.data)
               await reportRepository.importAll({ data: convertedData })
               this._lastPullTime = Date.now()
-              console.log('✅ Sync pull complete:', { pulled })
+              console.log('✅ Sync pull complete:', { pulled: pulledCount })
               // إشعار مجمّع
               this.notifyAllTypes()
             } else {
@@ -328,8 +329,8 @@ class SyncService {
 
         localStorage.setItem(SYNC_STATUS_KEY, String(Date.now()))
         this.pendingChanges.clear()
-        console.log('✅ Sync complete:', { pushed, pulled })
-        return { success: true, pushed, pulled: pulled || 0 }
+        console.log('✅ Sync complete:', { pushed, pulled: pulledCount })
+        return { success: true, pushed, pulled: pulledCount }
       } catch (pullErr: any) {
         console.warn('Sync pull failed (local data preserved):', pullErr.message)
       }

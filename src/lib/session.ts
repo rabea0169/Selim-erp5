@@ -1,5 +1,6 @@
+import { getTokenSecret } from './auth-secret'
+
 const SESSION_COOKIE = 'factory_session'
-const TOKEN_SECRET = process.env.TOKEN_SECRET || 'dev-only-fallback-never-use-in-prod'
 
 async function hmacSha256(message: string, secret: string): Promise<string> {
   const enc = new TextEncoder()
@@ -22,25 +23,27 @@ export async function createSessionToken(
   role: string = 'user',
   companyId?: string
 ): Promise<string> {
+  const secret = getTokenSecret()
   const expires = Date.now() + 30 * 24 * 60 * 60 * 1000
-  const payload = JSON.stringify({ userId, username, role, companyId, expires })
-  const signature = await hmacSha256(payload, TOKEN_SECRET)
+  const payload = JSON.stringify({ userId, username, role, companyId: companyId ?? null, expires })
+  const signature = await hmacSha256(payload, secret)
   const tokenData = JSON.stringify({ payload, sig: signature })
   return Buffer.from(tokenData).toString('base64')
 }
 
 export async function verifySessionToken(
   token: string | undefined
-): Promise<{ userId: string; username: string; role: string; companyId?: string } | null> {
+): Promise<{ userId: string; username: string; role: string; companyId?: string | null } | null> {
   if (!token) return null
   try {
+    const secret = getTokenSecret()
     const tokenData = JSON.parse(Buffer.from(token, 'base64').toString())
     const { payload, sig } = tokenData
-    const expectedSig = await hmacSha256(payload, TOKEN_SECRET)
+    const expectedSig = await hmacSha256(payload, secret)
     if (sig !== expectedSig) return null
     const data = JSON.parse(payload)
     if (data.expires < Date.now()) return null
-    return { userId: data.userId, username: data.username, role: data.role || 'user', companyId: data.companyId }
+    return { userId: data.userId, username: data.username, role: data.role || 'user', companyId: data.companyId ?? null }
   } catch {
     return null
   }
