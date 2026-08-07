@@ -156,13 +156,25 @@ export function WarehousesView() {
   // لو في عرض تفاصيل مخزن
   if (selectedWarehouse) {
     return (
-      <MaterialList
-        warehouse={selectedWarehouse}
-        materials={selectedMaterials}
-        onBack={() => setSelectedWarehouseId(null)}
-        onAddMaterial={() => setOpenMaterial(true)}
-        onDeleteMaterial={handleDeleteMaterial}
-      />
+      <>
+        <MaterialList
+          warehouse={selectedWarehouse}
+          materials={selectedMaterials}
+          onBack={() => setSelectedWarehouseId(null)}
+          onAddMaterial={() => setOpenMaterial(true)}
+          onDeleteMaterial={handleDeleteMaterial}
+        />
+        <MaterialForm
+          open={openMaterial}
+          onOpenChange={setOpenMaterial}
+          warehouseId={selectedWarehouseId}
+          warehouses={warehouses}
+          onSaved={() => {
+            setOpenMaterial(false)
+            reload()
+          }}
+        />
+      </>
     )
   }
 
@@ -247,6 +259,7 @@ export function WarehousesView() {
               warehouse={w}
               materials={allMaterials}
               onClick={() => setSelectedWarehouseId(w.id)}
+              onDelete={handleDeleteWarehouse}
             />
           ))}
         </div>
