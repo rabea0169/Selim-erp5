@@ -519,11 +519,12 @@ export function SaleForm({ open, onOpenChange, onSaved, customers }: SaleFormPro
           </div>
         </div>
 
+        {/* الأزرار: الإجراء الأساسي (حفظ) أولاً، ثم الإلغاء في النهاية */}
         <DialogFooter className="gap-2">
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>إلغاء</Button>
           <Button onClick={save} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">
             {saving ? 'جارٍ الحفظ...' : 'حفظ الفاتورة'}
           </Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>إلغاء</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
