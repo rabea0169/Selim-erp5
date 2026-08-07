@@ -13,6 +13,31 @@ export type CompanyScopeResult =
   | { ok: true; companyId: string; user: CompanyScopedUser }
   | { ok: false; error: string; status: number }
 
+const TENANT_MODELS = [
+  'factorySettings',
+  'worker',
+  'workerAdvance',
+  'workerReceipt',
+  'workerAttendance',
+  'production',
+  'customer',
+  'supplier',
+  'sale',
+  'purchase',
+  'expenseCategory',
+  'expense',
+  'treasuryTransaction',
+  'warehouse',
+  'material',
+  'materialTransaction',
+  'product',
+  'productionOrder',
+  'payment',
+  'saleReturn',
+  'purchaseReturn',
+  'auditLog',
+] as const
+
 async function ensureUserCompany(user: {
   id: string
   companyId: string | null
@@ -20,17 +45,60 @@ async function ensureUserCompany(user: {
   name: string
   role: string
 }): Promise<string> {
-  if (user.companyId) return user.companyId
+  const desiredCode = `user:${user.id}`
+  const desiredName = `شركة ${user.name || user.username}`
 
-  // إصلاح تلقائي للحسابات القديمة التي أُنشئت قبل تعدد الشركات
-  const company = await db.company.create({
-    data: { name: `شركة ${user.name || user.username}` },
-  })
+  let company = await db.company.findUnique({ where: { code: desiredCode } })
 
-  await db.user.update({
-    where: { id: user.id },
-    data: { companyId: company.id },
-  })
+  if (!company && user.companyId) {
+    // حوّل الشركة الحالية إلى الشركة الثابتة للمستخدم لو لم تكن هناك شركة ثابتة أخرى
+    company = await db.company.update({
+      where: { id: user.companyId },
+      data: { code: desiredCode, name: desiredName },
+    }).catch(() => null)
+  }
+
+  if (!company) {
+    company = await db.company.create({
+      data: { name: desiredName, code: desiredCode },
+    })
+  }
+
+  // لو المستخدم كان مرتبطاً بشركة أخرى مكررة، انقل بياناته إلى الشركة الثابتة ثم اربطه بها
+  if (user.companyId && user.companyId !== company.id) {
+    const oldCompanyId = user.companyId
+    const otherUsers = await db.user.count({
+      where: { companyId: oldCompanyId, NOT: { id: user.id } },
+    })
+
+    // لا ننقل شركة مشتركة مع مستخدمين آخرين
+    if (otherUsers === 0) {
+      const moves = TENANT_MODELS.map((model) =>
+        (db as any)[model].updateMany({
+          where: { companyId: oldCompanyId },
+          data: { companyId: company.id },
+        })
+      )
+
+      await db.$transaction([
+        ...moves,
+        db.user.update({
+          where: { id: user.id },
+          data: { companyId: company.id },
+        }),
+      ])
+    } else {
+      await db.user.update({
+        where: { id: user.id },
+        data: { companyId: company.id },
+      })
+    }
+  } else if (!user.companyId) {
+    await db.user.update({
+      where: { id: user.id },
+      data: { companyId: company.id },
+    })
+  }
 
   return company.id
 }
