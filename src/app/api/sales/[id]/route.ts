@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
 import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
-import { assertValidPaid } from '@/lib/calc'
+import { computeInvoiceTotals, assertValidPaid } from '@/lib/calc'
 
 // GET /api/sales/[id] — جلب فاتورة بيع واحدة (معزولة بالشركة)
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -27,7 +27,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   }
 }
 
-// PUT /api/sales/[id] — تحديث المدفوع على الفاتورة (استلام دفعة)
+// PUT /api/sales/[id]
+// وضعان:
+//  1) تعديل كامل للفاتورة (عند إرسال items): العميل/رقم الفاتورة/التاريخ/الملاحظات/المدفوع/الأصناف/الخصم/الضريبة/المصاريف
+//     مع عكس مخزون الأصناف القديمة وخصم مخزون الجديدة وإعادة حساب الإجماليات في السيرفر — كل ذلك ذرّياً.
+//  2) تحديث المدفوع/الملاحظات فقط (استلام دفعة) — السلوك السابق كما هو.
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await getCurrentUser()
@@ -35,6 +39,188 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const companyId = user.companyId ?? null
     const { id } = await params
     const body = await req.json()
+
+    // ===== الوضع 1: تعديل كامل للفاتورة (items موجودة) =====
+    if (Array.isArray(body.items)) {
+      const {
+        customerName,
+        customerId_ref,
+        invoiceNo,
+        date,
+        items,
+        paid,
+        notes,
+        discountType,
+        discountValue,
+        taxRate,
+        extraFees,
+      } = body
+
+      if (!customerName?.trim()) {
+        return NextResponse.json({ error: 'اسم العميل مطلوب' }, { status: 400 })
+      }
+      if (!date) {
+        return NextResponse.json({ error: 'التاريخ مطلوب' }, { status: 400 })
+      }
+      const dateObj = new Date(date)
+      if (isNaN(dateObj.getTime())) {
+        return NextResponse.json({ error: 'التاريخ غير صالح' }, { status: 400 })
+      }
+      if (items.length === 0) {
+        return NextResponse.json({ error: 'يجب إضافة صنف واحداً على الأقل' }, { status: 400 })
+      }
+
+      const validItems = items.filter(
+        (it: any) => it.itemName?.trim() && Number(it.quantity) > 0 && Number(it.unitPrice) >= 0
+      )
+      if (validItems.length === 0) {
+        return NextResponse.json({ error: 'أضف صنفاً صحيحاً واحداً على الأقل' }, { status: 400 })
+      }
+
+      // منع القيم السالبة للخصم/الضريبة/المصاريف (نفس تحققات POST)
+      if (Number(discountValue) < 0 || Number(taxRate) < 0 || Number(extraFees) < 0) {
+        return NextResponse.json({ error: 'قيم الخصم والضريبة والمصاريف لا يمكن أن تكون سالبة' }, { status: 400 })
+      }
+
+      // إعادة حساب الإجماليات في السيرفر (لا يثق بحسابات العميل)
+      const totals = computeInvoiceTotals({ items: validItems, discountType, discountValue, taxRate, extraFees })
+      const { subtotal, discountAmount, taxAmount, total } = totals
+      const discType = totals.discountType
+      const discValue = totals.discountValue
+      const tRate = totals.taxRate
+      const fees = totals.extraFees
+      const paidAmount = Number(paid) || 0
+
+      if (discountAmount > subtotal) {
+        return NextResponse.json({ error: 'مبلغ الخصم لا يمكن أن يتجاوز الإجمالي الفرعي' }, { status: 400 })
+      }
+      if (discType === 'percentage' && discValue > 100) {
+        return NextResponse.json({ error: 'نسبة الخصم لا يمكن أن تتجاوز 100%' }, { status: 400 })
+      }
+      const paidError = assertValidPaid(paidAmount, total)
+      if (paidError) {
+        return NextResponse.json({ error: paidError }, { status: 400 })
+      }
+
+      const sale = await db.$transaction(async (tx) => {
+        // 1) جلب الفاتورة الحالية بعناصرها — داخل الشركة فقط (حماية IDOR)
+        const existing = await tx.sale.findFirst({
+          where: { id, companyId },
+          include: { items: true },
+        })
+        if (!existing) {
+          throw new Error('__NOT_FOUND__')
+        }
+
+        // 2) عكس مخزون الأصناف القديمة: إرجاع الكميات للمنتجات ذرّياً
+        for (const item of existing.items) {
+          if (item.productId) {
+            await tx.product.update({
+              where: { id: item.productId },
+              data: { quantity: { increment: item.quantity }, updatedAt: new Date() },
+            })
+          }
+        }
+
+        // 3) فحص مخزون الأصناف الجديدة بعد العكس (نفس نمط POST)
+        for (const it of validItems) {
+          if (it.productId) {
+            const product = await tx.product.findFirst({
+              where: { id: it.productId, companyId },
+            })
+            if (!product) {
+              throw new Error(`المنتج "${it.itemName}" غير موجود في قاعدة البيانات`)
+            }
+            if (product.quantity < Number(it.quantity)) {
+              throw new Error(`الكمية المتاحة من ${product.name} (${product.quantity}) أقل من المطلوب (${it.quantity})`)
+            }
+          }
+        }
+
+        // التحقق من العميل — مع عزل الشركة
+        if (customerId_ref) {
+          const customer = await tx.customer.findFirst({
+            where: { id: customerId_ref, companyId },
+          })
+          if (!customer) {
+            throw new Error('العميل المحدد غير موجود')
+          }
+        }
+
+        // حذف العناصر القديمة ثم تحديث الفاتورة وإنشاء العناصر الجديدة
+        await tx.saleItem.deleteMany({ where: { saleId: id } })
+
+        const updated = await tx.sale.update({
+          where: { id },
+          data: {
+            customerName: customerName.trim(),
+            customerId_ref: customerId_ref || null,
+            invoiceNo: invoiceNo?.trim() || null,
+            date: dateObj,
+            subtotal,
+            discountType: discType,
+            discountValue: discValue,
+            discountAmount,
+            taxRate: tRate,
+            taxAmount,
+            extraFees: fees,
+            total,
+            paid: paidAmount,
+            notes: notes?.trim() || null,
+            updatedAt: new Date(),
+            items: {
+              create: validItems.map((it: any) => ({
+                itemName: it.itemName.trim(),
+                productId: it.productId || null,
+                priceType: it.priceType || null,
+                quantity: Number(it.quantity),
+                unitPrice: Number(it.unitPrice),
+                total: Number(it.quantity) * Number(it.unitPrice),
+              })),
+            },
+          },
+          include: { items: true },
+        })
+
+        // خصم مخزون الأصناف الجديدة
+        for (const it of validItems) {
+          if (it.productId) {
+            await tx.product.update({
+              where: { id: it.productId },
+              data: { quantity: { decrement: Number(it.quantity) }, updatedAt: new Date() },
+            })
+          }
+        }
+
+        // 5) مزامنة الخزينة بفرق المدفوع (المنطق الحديث محفوظ)
+        const paidDelta = paidAmount - existing.paid
+        if (paidDelta !== 0) {
+          await tx.treasuryTransaction.create({
+            data: {
+              companyId,
+              type: paidDelta > 0 ? 'deposit' : 'withdrawal',
+              amount: Math.abs(paidDelta),
+              date: new Date(),
+              description: paidDelta > 0
+                ? `تحصيل دفعة مبيعات - ${existing.customerName}`
+                : `تسوية (تخفيض) المدفوع على فاتورة مبيعات - ${existing.customerName}`,
+              category: 'مبيعات',
+              referenceType: 'sale',
+              referenceId: id,
+              notes: (invoiceNo?.trim() || existing.invoiceNo)
+                ? `فاتورة رقم ${invoiceNo?.trim() || existing.invoiceNo}`
+                : null,
+            },
+          })
+        }
+
+        return updated
+      })
+
+      return NextResponse.json({ sale })
+    }
+
+    // ===== الوضع 2: تحديث المدفوع/الملاحظات فقط (السلوك السابق) =====
 
     // التحقق من وجود الفاتورة داخل نفس الشركة (حماية IDOR)
     const existing = await db.sale.findFirst({ where: { id, companyId } })
@@ -93,6 +279,14 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     })
     return NextResponse.json({ sale })
   } catch (e) {
+    if (e instanceof Error) {
+      if (e.message === '__NOT_FOUND__') {
+        return NextResponse.json({ error: 'الفاتورة غير موجودة' }, { status: 404 })
+      }
+      if (e.message.includes('المنتج') || e.message.includes('الكمية') || e.message.includes('العميل')) {
+        return NextResponse.json({ error: e.message }, { status: 400 })
+      }
+    }
     const { error, status } = safeError(e, 500)
     return NextResponse.json({ error }, { status })
   }

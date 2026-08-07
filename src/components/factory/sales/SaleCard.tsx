@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Trash2, Calendar, HandCoins } from 'lucide-react'
+import { Trash2, Calendar, HandCoins, Pencil } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { formatCurrency, formatDate } from '@/lib/format'
@@ -14,9 +14,10 @@ interface SaleCardProps {
   sale: Sale
   onDelete: (id: string) => void
   onPay?: (sale: Sale) => void
+  onEdit?: (sale: Sale) => void
 }
 
-export function SaleCard({ sale, onDelete, onPay }: SaleCardProps) {
+export function SaleCard({ sale, onDelete, onPay, onEdit }: SaleCardProps) {
   const [expanded, setExpanded] = useState(false)
   const [printHtml, setPrintHtml] = useState('')
   const [paymentOpen, setPaymentOpen] = useState(false)
@@ -103,6 +104,19 @@ export function SaleCard({ sale, onDelete, onPay }: SaleCardProps) {
             >
               <HandCoins className="w-4 h-4 ml-1" />
               استلام دفعة ({formatCurrency(remaining)})
+            </Button>
+          )}
+
+          {/* زر تعديل الفاتورة */}
+          {onEdit && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onEdit(sale)}
+              className="w-full border-blue-300 text-blue-700 hover:bg-blue-50"
+            >
+              <Pencil className="w-3.5 h-3.5 ml-1" />
+              تعديل الفاتورة
             </Button>
           )}
 
