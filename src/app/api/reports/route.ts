@@ -16,17 +16,31 @@ export async function GET(req: NextRequest) {
     const to = searchParams.get('to')
 
     // Fix Q: Date validation
-    const fromDate = from ? new Date(from) : undefined
-    const toDate = to ? new Date(to) : undefined
+    // إصلاح المناطق الزمنية: التواريخ تُخزَّن كـ new Date('YYYY-MM-DD') = منتصف الليل UTC،
+    // لذلك تُفلتر بنوافذ UTC صريحة بدلاً من setHours (التي تعتمد على منطقة السيرفر الزمنية)
+    const parseBoundary = (value: string, endOfDay: boolean): Date => {
+      const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(value.trim())
+      if (m) {
+        const y = Number(m[1])
+        const mo = Number(m[2]) - 1
+        const d = Number(m[3])
+        return endOfDay
+          ? new Date(Date.UTC(y, mo, d, 23, 59, 59, 999))
+          : new Date(Date.UTC(y, mo, d, 0, 0, 0, 0))
+      }
+      const dt = new Date(value)
+      if (endOfDay && !isNaN(dt.getTime())) dt.setUTCHours(23, 59, 59, 999)
+      return dt
+    }
+
+    const fromDate = from ? parseBoundary(from, false) : undefined
+    const toDate = to ? parseBoundary(to, true) : undefined
     if (from && isNaN(fromDate!.getTime())) return NextResponse.json({ error: 'تاريخ غير صالح' }, { status: 400 })
     if (to && isNaN(toDate!.getTime())) return NextResponse.json({ error: 'تاريخ غير صالح' }, { status: 400 })
 
     const dateRange: any = {}
     if (from) dateRange.gte = fromDate
-    if (to) {
-      toDate!.setHours(23, 59, 59, 999)
-      dateRange.lte = toDate
-    }
+    if (to) dateRange.lte = toDate
 
     // عزل الشركات: كل التجميعات مقيدة بشركة المستخدم
     const dateFilter: any = { companyId }
