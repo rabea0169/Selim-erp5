@@ -92,6 +92,15 @@ export const factorySettingsSchema = z.object({
   defaultPaperSize: z.string().optional().nullable(),
 })
 
+export const treasuryTransactionSchema = z.object({
+  type: z.enum(['deposit', 'withdrawal']),
+  amount: z.coerce.number().positive('المبلغ يجب أن يكون موجباً'),
+  date: z.string().min(1, 'التاريخ مطلوب'),
+  description: z.string().min(1, 'الوصف مطلوب'),
+  category: z.string().optional().nullable(),
+  notes: z.string().optional().nullable(),
+})
+
 // دالة مساعدة للتحقق من البيانات
 export function validateData<T>(
   schema: z.ZodSchema<T>,

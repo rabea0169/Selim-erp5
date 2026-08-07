@@ -1,12 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { getCurrentUser } from '@/lib/auth'
 import { requireAdmin } from '@/lib/admin-check'
 import { safeError } from '@/lib/safe-error'
 
+// Fix: المفتاح الأساسي لـ FactorySettings هو companyId وليس id
+// كل شركة لها إعداداتها الخاصة (Multi-Tenancy)
+
 export async function GET() {
   try {
+    const user = await getCurrentUser()
+    if (!user) {
+      return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    }
+
+    const companyId = user.companyId ?? null
+    if (!companyId) {
+      return NextResponse.json({ settings: null })
+    }
+
     const settings = await db.factorySettings.findUnique({
-      where: { id: 'singleton' },
+      where: { companyId },
     })
     return NextResponse.json({ settings })
   } catch (e) {
@@ -22,6 +36,14 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: admin.error }, { status: admin.status })
     }
 
+    const companyId = admin.companyId ?? null
+    if (!companyId) {
+      return NextResponse.json(
+        { error: 'لا توجد شركة مرتبطة بهذا المستخدم' },
+        { status: 400 }
+      )
+    }
+
     const body = await req.json()
 
     if (!body.factoryName?.trim()) {
@@ -31,43 +53,28 @@ export async function PUT(req: NextRequest) {
       )
     }
 
+    const data = {
+      factoryName: body.factoryName.trim(),
+      factoryNameEn: body.factoryNameEn?.trim() || null,
+      slogan: body.slogan?.trim() || null,
+      phone: body.phone?.trim() || null,
+      whatsapp: body.whatsapp?.trim() || null,
+      email: body.email?.trim() || null,
+      address: body.address?.trim() || null,
+      taxNumber: body.taxNumber?.trim() || null,
+      commercialRegister: body.commercialRegister?.trim() || null,
+      logo: body.logo || null,
+      currency: body.currency?.trim() || 'ج.م',
+      invoicePrefix: body.invoicePrefix?.trim() || 'INV-',
+      invoiceFooter: body.invoiceFooter?.trim() || null,
+      defaultPaperSize: body.defaultPaperSize?.trim() || 'A4',
+      taxRate: body.taxRate != null ? Number(body.taxRate) : 0,
+    }
+
     const settings = await db.factorySettings.upsert({
-      where: { id: 'singleton' },
-      update: {
-        factoryName: body.factoryName.trim(),
-        factoryNameEn: body.factoryNameEn?.trim() || null,
-        slogan: body.slogan?.trim() || null,
-        phone: body.phone?.trim() || null,
-        whatsapp: body.whatsapp?.trim() || null,
-        email: body.email?.trim() || null,
-        address: body.address?.trim() || null,
-        taxNumber: body.taxNumber?.trim() || null,
-        commercialRegister: body.commercialRegister?.trim() || null,
-        logo: body.logo || null,
-        currency: body.currency?.trim() || 'ج.م',
-        invoicePrefix: body.invoicePrefix?.trim() || 'INV-',
-        invoiceFooter: body.invoiceFooter?.trim() || null,
-        defaultPaperSize: body.defaultPaperSize?.trim() || 'A4',
-        taxRate: body.taxRate != null ? Number(body.taxRate) : 0,
-      },
-      create: {
-        id: 'singleton',
-        factoryName: body.factoryName.trim(),
-        factoryNameEn: body.factoryNameEn?.trim() || null,
-        slogan: body.slogan?.trim() || null,
-        phone: body.phone?.trim() || null,
-        whatsapp: body.whatsapp?.trim() || null,
-        email: body.email?.trim() || null,
-        address: body.address?.trim() || null,
-        taxNumber: body.taxNumber?.trim() || null,
-        commercialRegister: body.commercialRegister?.trim() || null,
-        logo: body.logo || null,
-        currency: body.currency?.trim() || 'ج.م',
-        invoicePrefix: body.invoicePrefix?.trim() || 'INV-',
-        invoiceFooter: body.invoiceFooter?.trim() || null,
-        defaultPaperSize: body.defaultPaperSize?.trim() || 'A4',
-        taxRate: body.taxRate != null ? Number(body.taxRate) : 0,
-      },
+      where: { companyId },
+      update: data,
+      create: { companyId, ...data },
     })
 
     return NextResponse.json({ settings })
