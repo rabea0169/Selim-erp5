@@ -6,7 +6,6 @@ import { rateLimit, getClientIP } from '@/lib/rate-limit'
 const PUBLIC_ROUTES = [
   '/api/auth/login',
   '/api/auth/register',
-  '/api/auth/forgot-password',
   '/api/auth/me',
   '/api/auth/reset-registration',
 ]
@@ -43,7 +42,7 @@ export async function middleware(req: NextRequest) {
     )
   }
 
-  // توصية 5: حماية العمليات الحساسة (admin/owner فقط)
+  // توصية 5: حماية العمليات الحساسة (admin فقط — الدور الوحيد المتاح في UserRole enum)
   // backup, restore, sync, delete عمليات لا يمكن الوصول إليها إلا للمدير
   const sensitiveOps = [
     '/api/restore',
@@ -54,7 +53,7 @@ export async function middleware(req: NextRequest) {
   ]
   // All sync/backup operations require admin for any HTTP method
   if (sensitiveOps.some(p => pathname.startsWith(p))) {
-    if (session.role !== 'admin' && session.role !== 'owner') {
+    if (session.role !== 'admin') {
       return NextResponse.json(
         { error: 'غير مصرح — يتطلب صلاحيات مدير' },
         { status: 403 }

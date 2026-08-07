@@ -1,18 +1,8 @@
 // Edge Runtime-compatible session verification using Web Crypto API
 // This file is used by middleware (Edge Runtime) where Node.js 'crypto' is not available
+// NOTE: يستخدم نفس getTokenSecret الموحّد لضمان تطابق التوقيع مع src/lib/auth.ts
 
-const SESSION_EXPIRY_DAYS = 30
-
-function getTokenSecret(): string {
-  const secret = process.env.TOKEN_SECRET
-  if (!secret) {
-    if (process.env.NODE_ENV === 'production') {
-      throw new Error('TOKEN_SECRET environment variable is required in production')
-    }
-    return 'dev-only-fallback-never-use-in-prod'
-  }
-  return secret
-}
+import { getTokenSecret } from './auth-secret'
 
 async function hmacSHA256(key: string, message: string): Promise<string> {
   const encoder = new TextEncoder()
@@ -35,7 +25,7 @@ async function hmacSHA256(key: string, message: string): Promise<string> {
 
 export async function verifySessionToken(
   token: string | undefined
-): Promise<{ userId: string; username: string; role: string } | null> {
+): Promise<{ userId: string; username: string; role: string; companyId?: string | null } | null> {
   if (!token) return null
   try {
     const tokenData = JSON.parse(atob(token))
@@ -44,7 +34,12 @@ export async function verifySessionToken(
     if (sig !== expectedSig) return null
     const data = JSON.parse(payload)
     if (data.expires < Date.now()) return null
-    return { userId: data.userId, username: data.username, role: data.role || 'user' }
+    return {
+      userId: data.userId,
+      username: data.username,
+      role: data.role || 'user',
+      companyId: data.companyId ?? null,
+    }
   } catch {
     return null
   }
