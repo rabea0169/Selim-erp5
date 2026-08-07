@@ -78,26 +78,26 @@ export async function POST(req: NextRequest) {
 
     const results: Record<string, { success: number; failed: number }> = {}
 
+    // الترتيب هنا مهم: الآباء قبل الأبناء حتى لا تفشل المفاتيح الأجنبية
     const tableMap: Record<string, any> = {
-      // ⚠️ users و auditLogs مستثنيان من المزامنة لحماية الصلاحيات وسجل التدقيق
       factorySettings: 'factorySettings',
+      warehouses: 'warehouse',
       workers: 'worker',
+      customers: 'customer',
+      suppliers: 'supplier',
+      expenseCategories: 'expenseCategory',
+      products: 'product',
+      materials: 'material',
       workerAdvances: 'workerAdvance',
       workerReceipts: 'workerReceipt',
       workerAttendance: 'workerAttendance',
-      products: 'product',
       production: 'production',
-      customers: 'customer',
-      suppliers: 'supplier',
       sales: 'sale',
       saleItems: 'saleItem',
       purchases: 'purchase',
       purchaseItems: 'purchaseItem',
-      expenseCategories: 'expenseCategory',
       expenses: 'expense',
       treasuryTransactions: 'treasuryTransaction',
-      warehouses: 'warehouse',
-      materials: 'material',
       materialTransactions: 'materialTransaction',
       productionOrders: 'productionOrder',
       payments: 'payment',
@@ -216,6 +216,24 @@ export async function POST(req: NextRequest) {
         }
       }
       results[localTable] = { success: successCount, failed: failedCount }
+    }
+
+    let totalSuccess = 0
+    let totalFailed = 0
+    const failedTables: string[] = []
+    for (const [table, result] of Object.entries(results)) {
+      totalSuccess += result.success
+      totalFailed += result.failed
+      if (result.failed > 0) failedTables.push(`${table}:${result.failed}`)
+    }
+
+    if (totalFailed > 0) {
+      return NextResponse.json({
+        success: false,
+        error: `فشل رفع ${totalFailed} سجل (${failedTables.join(', ')})`,
+        results,
+        syncedAt: new Date().toISOString(),
+      })
     }
 
     return NextResponse.json({
