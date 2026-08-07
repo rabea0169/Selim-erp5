@@ -42,14 +42,23 @@ export async function POST(req: NextRequest) {
     const companyId = user.companyId ?? null
 
     const body = await req.json()
-    const { saleId, date, total, reason, notes, items, returnNumber, customerName } = body
+    const { saleId, date, reason, notes, items, returnNumber, customerName, restockItems } = body
 
-    if (!saleId || !date || !total) {
+    if (!saleId || !date) {
       return NextResponse.json({ error: 'بيانات المرتجع غير مكتملة' }, { status: 400 })
+    }
+
+    const itemsArr = Array.isArray(items) ? items : []
+    // حساب الإجمالي من الأصناف إذا لم يُرسل total (العميل يرسل الأصناف فقط)
+    const computedTotal = itemsArr.reduce((s, it) => s + (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0), 0)
+    const total = body.total !== undefined && body.total !== null ? Number(body.total) : computedTotal
+    if (!Number.isFinite(total) || total <= 0) {
+      return NextResponse.json({ error: 'إجمالي المرتجع يجب أن يكون أكبر من صفر' }, { status: 400 })
     }
 
     // إنشاء رقم المرتجع
     const retNum = returnNumber || `RET-${Date.now()}`
+    const shouldRestock = restockItems !== false
 
     const ret = await db.$transaction(async (tx) => {
       // Fix IDOR: البحث عن الفاتورة مقيد بالشركة
@@ -58,8 +67,8 @@ export async function POST(req: NextRequest) {
 
       // Validate return total does not exceed what was paid or the invoice total
       const maxReturnable = Math.min(sale.total, sale.paid)
-      if (Number(total) > maxReturnable) {
-        throw new Error(`مبلغ المرتجع (${Number(total)}) يتجاوز الحد المسموح (${maxReturnable})`)
+      if (total > maxReturnable) {
+        throw new Error(`مبلغ المرتجع (${total}) يتجاوز الحد المسموح (${maxReturnable})`)
       }
 
       const cName = customerName || sale.customerName || ''
@@ -73,16 +82,17 @@ export async function POST(req: NextRequest) {
           customerName: cName,
           customerId_ref: sale.customerId_ref,
           date: new Date(date),
-          total: Number(total),
-          items: Array.isArray(items) ? items : [],
+          total,
+          items: itemsArr,
           reason: reason?.trim() || null,
           notes: notes?.trim() || null,
+          restockItems: shouldRestock,
         },
       })
 
-      if (Array.isArray(items)) {
-        for (const item of items) {
-          if (item.productId && item.quantity > 0) {
+      if (shouldRestock) {
+        for (const item of itemsArr) {
+          if (item.productId && Number(item.quantity) > 0) {
             // Atomic increment — مقيد بالشركة
             const updated = await tx.product.updateMany({
               where: { id: item.productId, companyId },
@@ -96,7 +106,7 @@ export async function POST(req: NextRequest) {
       await tx.treasuryTransaction.create({
         data: {
           companyId,
-          type: 'withdrawal', amount: Number(total), date: new Date(date),
+          type: 'withdrawal', amount: total, date: new Date(date),
           description: `مرتجع مبيعات - ${sale.customerName}`,
           category: 'مرتجعات', referenceType: 'sale_return', referenceId: saleReturn.id,
         },
@@ -110,6 +120,9 @@ export async function POST(req: NextRequest) {
   } catch (e) {
     if (e instanceof Error && e.message.includes('غير موجود')) {
       return NextResponse.json({ error: e.message }, { status: 404 })
+    }
+    if (e instanceof Error && e.message.includes('يتجاوز الحد المسموح')) {
+      return NextResponse.json({ error: e.message }, { status: 400 })
     }
     const { error, status } = safeError(e); return NextResponse.json({ error }, { status })
   }

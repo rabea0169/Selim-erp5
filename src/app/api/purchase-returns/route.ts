@@ -43,11 +43,21 @@ export async function POST(req: NextRequest) {
     const companyId = user.companyId ?? null
 
     const body = await req.json()
-    const { purchaseId, invoiceNo, supplierName, supplierId_ref, date, total, reason, restockItems, items, notes } = body
+    const { purchaseId, invoiceNo, supplierName, supplierId_ref, date, reason, restockItems, items, notes } = body
 
-    if (!purchaseId || !supplierName || !date) {
+    if (!purchaseId || !date) {
       return NextResponse.json({ error: 'بيانات مطلوبة ناقصة' }, { status: 400 })
     }
+
+    const itemsArr = Array.isArray(items) ? items : []
+    // حساب الإجمالي من الأصناف إذا لم يُرسل total (العميل يرسل الأصناف فقط)
+    const computedTotal = itemsArr.reduce((s, it) => s + (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0), 0)
+    const total = body.total !== undefined && body.total !== null ? Number(body.total) : computedTotal
+    if (!Number.isFinite(total) || total < 0) {
+      return NextResponse.json({ error: 'إجمالي المرتجع غير صالح' }, { status: 400 })
+    }
+
+    const shouldRestock = restockItems !== false
 
     const purchaseReturn = await db.$transaction(async (tx) => {
       // Fix IDOR: البحث عن فاتورة الشراء مقيد بالشركة
@@ -55,30 +65,36 @@ export async function POST(req: NextRequest) {
       if (!purchase) throw new Error('فاتورة الشراء غير موجودة')
 
       // Validate return total does not exceed purchase total
-      if (Number(total) > purchase.total) {
-        throw new Error(`مبلغ المرتجع (${Number(total)}) يتجاوز إجمالي فاتورة الشراء (${purchase.total})`)
+      if (total > purchase.total) {
+        throw new Error(`مبلغ المرتجع (${total}) يتجاوز إجمالي فاتورة الشراء (${purchase.total})`)
       }
+
+      // اشتقاق بيانات المورد من الفاتورة (العميل لا يرسلها)
+      const sName = supplierName?.trim() || purchase.supplierName
+      const invNo = invoiceNo?.trim() || purchase.invoiceNo
+      const sRef = supplierId_ref || purchase.supplierId_ref
 
       const ret = await tx.purchaseReturn.create({
         data: {
           companyId,
           returnNumber: `PR-${Date.now()}`,
           purchaseId,
-          invoiceNo: invoiceNo?.trim() || null,
-          supplierName: supplierName.trim(),
-          supplierId_ref: supplierId_ref || null,
+          invoiceNo: invNo || null,
+          supplierName: sName,
+          supplierId_ref: sRef || null,
           date: new Date(date),
-          total: Number(total) || 0,
+          total,
           reason: reason?.trim() || null,
-          items: items || [],
+          items: itemsArr,
           notes: notes?.trim() || null,
+          restockItems: shouldRestock,
         },
       })
 
-      if (restockItems !== false && Array.isArray(items)) {
+      if (shouldRestock && itemsArr.length > 0) {
         // Validate material quantities won't go negative before decrementing — مقيد بالشركة
-        for (const it of items) {
-          if (it.materialId && it.quantity > 0) {
+        for (const it of itemsArr) {
+          if (it.materialId && Number(it.quantity) > 0) {
             const mat = await tx.material.findFirst({ where: { id: it.materialId, companyId } })
             if (!mat) throw new Error(`المادة غير موجودة: ${it.materialId}`)
             if (mat.quantity < Number(it.quantity)) {
@@ -86,8 +102,8 @@ export async function POST(req: NextRequest) {
             }
           }
         }
-        for (const it of items) {
-          if (it.materialId && it.quantity > 0) {
+        for (const it of itemsArr) {
+          if (it.materialId && Number(it.quantity) > 0) {
             // Atomic decrement — مقيد بالشركة
             await tx.material.updateMany({
               where: { id: it.materialId, companyId },
@@ -104,11 +120,11 @@ export async function POST(req: NextRequest) {
             type: 'deposit',
             amount: ret.total,
             date: new Date(date),
-            description: `مرتجع مشتريات - ${supplierName}`,
+            description: `مرتجع مشتريات - ${sName}`,
             category: 'مرتجعات مشتريات',
             referenceType: 'purchase_return',
             referenceId: ret.id,
-            notes: invoiceNo ? `فاتورة رقم ${invoiceNo}` : null,
+            notes: invNo ? `فاتورة رقم ${invNo}` : null,
           },
         })
       }
@@ -121,6 +137,9 @@ export async function POST(req: NextRequest) {
   } catch (e) {
     if (e instanceof Error && e.message.includes('غير موجود')) {
       return NextResponse.json({ error: e.message }, { status: 404 })
+    }
+    if (e instanceof Error && (e.message.includes('يتجاوز') || e.message.includes('تتجاوز'))) {
+      return NextResponse.json({ error: e.message }, { status: 400 })
     }
     const { error, status } = safeError(e); return NextResponse.json({ error }, { status })
   }
