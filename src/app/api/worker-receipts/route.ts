@@ -5,12 +5,19 @@ import { getCurrentUser } from '@/lib/auth'
 
 export async function GET(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
+    if (!user) {
+      return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    }
+    const companyId = user.companyId ?? null
+
     const { searchParams } = new URL(req.url)
     const from = searchParams.get('from')
     const to = searchParams.get('to')
     const workerId = searchParams.get('workerId')
 
-    const where: any = {}
+    // عزل الشركات إجباري
+    const where: any = { companyId }
     if (from || to) {
       where.date = {}
       if (from) where.date.gte = new Date(from)
@@ -37,8 +44,15 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const user = await getCurrentUser()
+    if (!user) {
+      return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    }
+    const companyId = user.companyId ?? null
+
     const body = await req.json()
-    const { workerId, companyId, amount, date, notes } = body
+    // companyId لا يُقبل من العميل أبداً — يُؤخذ من الجلسة فقط (منع الحقن عبر الشركات)
+    const { workerId, amount, date, notes } = body
 
     // التحقق من البيانات
     if (!workerId) {
@@ -61,8 +75,8 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // التحقق من وجود الموظف
-    const worker = await db.worker.findUnique({ where: { id: workerId } })
+    // التحقق من وجود الموظف داخل نفس الشركة
+    const worker = await db.worker.findFirst({ where: { id: workerId, companyId } })
     if (!worker) {
       return NextResponse.json(
         { error: 'الموظف غير موجود' },
@@ -74,7 +88,7 @@ export async function POST(req: NextRequest) {
       const rcpt = await tx.workerReceipt.create({
         data: {
           workerId,
-          companyId: companyId || null,
+          companyId,
           amount: amt,
           date: new Date(date),
           notes: notes?.trim() || null,
@@ -84,6 +98,7 @@ export async function POST(req: NextRequest) {
 
       await tx.treasuryTransaction.create({
         data: {
+          companyId,
           type: 'deposit',
           amount: amt,
           date: new Date(date),
