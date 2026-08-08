@@ -29,10 +29,12 @@ export async function GET(req: NextRequest) {
     }
     if (workerId) where.workerId = workerId
 
+    // حد أقصى آمن + ترتيب ثابت (id كفاصل للتعادل) دون تغيير عقد الاستجابة
     const advances = await db.workerAdvance.findMany({
       where,
       include: { worker: true },
-      orderBy: { date: 'desc' },
+      orderBy: [{ date: 'desc' }, { id: 'desc' }],
+      take: 1000,
     })
 
     // المفتاح workerAdvances كما يتوقع العميل (contract fix)

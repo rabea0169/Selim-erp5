@@ -116,6 +116,20 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
       return NextResponse.json({ error: 'المنتج غير موجود' }, { status: 404 })
     }
 
+    // ملاحظة schema: SaleItem.productId و ProductionOrder.productId مراجع نصية بلا FK،
+    // و Production.productId على SetNull — الحذف لا يكسر قاعدة البيانات.
+    // لكن حذف منتج له أوامر تشغيل يكسر عكس أثر المخزون عند حذف تلك الأوامر لاحقاً،
+    // لذا نمنع الحذف عند وجود أوامر تشغيل مرتبطة (نفس نمط حماية المواد من حركاتها)
+    const ordersCount = await db.productionOrder.count({
+      where: { productId: id, companyId },
+    })
+    if (ordersCount > 0) {
+      return NextResponse.json(
+        { error: `لا يمكن حذف منتج مرتبط بأوامر تشغيل (${ordersCount} أمر) — احذف أوامر التشغيل أولاً` },
+        { status: 400 }
+      )
+    }
+
     await db.product.delete({ where: { id } })
     return NextResponse.json({ success: true })
   } catch (e) {

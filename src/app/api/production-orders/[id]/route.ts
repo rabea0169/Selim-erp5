@@ -261,8 +261,19 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
         }
       }
 
-      // 2) لو كان completed: إزالة الكمية المنتجة من مخزون المنتج
+      // 2) لو كان completed: إزالة الكمية المنتجة من مخزون المنتج — مع فحص الكفاية
+      //    المنتجات ليس لها حركات مخزن في الـ schema، فالخيار الآمن هو منع الحذف إن كان
+      //    الخصم سيجعل مخزون المنتج سالباً (باع العميل جزءاً من الكمية مثلاً)
       if (existing.status === 'completed' && existing.completedQuantity > 0) {
+        const product = await tx.product.findFirst({ where: { id: existing.productId, companyId } })
+        if (!product) {
+          throw new Error('المنتج المرتبط بأمر التشغيل غير موجود — لا يمكن عكس أثر المخزون')
+        }
+        if (product.quantity < existing.completedQuantity) {
+          throw new Error(
+            `لا يمكن حذف الأمر: خصم الكمية المنتجة (${existing.completedQuantity}) سيجعل مخزون المنتج سالباً (المتاح حالياً ${product.quantity})`
+          )
+        }
         await tx.product.update({
           where: { id: existing.productId },
           data: { quantity: { decrement: existing.completedQuantity }, updatedAt: new Date() },
@@ -280,6 +291,9 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
 
     return NextResponse.json({ success: true })
   } catch (e) {
+    if (e instanceof Error && (e.message.includes('غير موجود') || e.message.includes('سالباً'))) {
+      return NextResponse.json({ error: e.message }, { status: 400 })
+    }
     const { error, status } = safeError(e, 500)
     return NextResponse.json({ error }, { status })
   }
