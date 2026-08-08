@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
 import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
+import { requireAdmin } from '@/lib/admin-check'
 import { assertValidPaid, weightedAverageCost } from '@/lib/calc'
 
 // GET /api/purchases/[id] — جلب فاتورة شراء واحدة (معزولة بالشركة)
@@ -294,9 +295,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const user = await getCurrentUser()
-    if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
-    const companyId = user.companyId ?? null
+    const admin = await requireAdmin()
+    if (!admin.ok) {
+      return NextResponse.json({ error: admin.error }, { status: admin.status })
+    }
+    const companyId = admin.companyId
     const { id } = await params
 
     const purchase = await db.purchase.findFirst({
