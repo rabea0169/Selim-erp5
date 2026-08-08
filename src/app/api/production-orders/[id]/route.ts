@@ -1,17 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
-import { getCurrentUser } from '@/lib/auth'
+import { requireCompanyScope } from '@/lib/company-scope'
 import { safeError } from '@/lib/safe-error'
 import { requireAdmin } from '@/lib/admin-check'
 
 // GET /api/production-orders/:id
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const user = await getCurrentUser()
+    const scope = await requireCompanyScope()
+    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
+    const user = scope.user
     if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
     const { id } = await params
     const order = await db.productionOrder.findFirst({
-      where: { id, companyId: user.companyId ?? null },
+      where: { id, companyId: scope.companyId },
     })
     if (!order) {
       return NextResponse.json({ error: 'أمر التشغيل غير موجود' }, { status: 404 })
@@ -28,9 +30,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 // وكذلك التحديث المباشر للحقول (مثل إلغاء الأمر status=cancelled)
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const user = await getCurrentUser()
+    const scope = await requireCompanyScope()
+    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
+    const user = scope.user
     if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
-    const companyId = user.companyId ?? null
+    const companyId = scope.companyId
     const { id } = await params
     const body = await req.json()
     const { action, stageId, workerId, orderNumber, productId, productName, quantity, completedQuantity, unit, status, materials, stages, date, expectedEndDate, completedDate, notes } = body

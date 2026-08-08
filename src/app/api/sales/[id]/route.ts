@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
-import { getCurrentUser } from '@/lib/auth'
+import { requireCompanyScope } from '@/lib/company-scope'
 import { safeError } from '@/lib/safe-error'
 import { requireAdmin } from '@/lib/admin-check'
 import { computeInvoiceTotals, assertValidPaid } from '@/lib/calc'
@@ -8,9 +8,11 @@ import { computeInvoiceTotals, assertValidPaid } from '@/lib/calc'
 // GET /api/sales/[id] — جلب فاتورة بيع واحدة (معزولة بالشركة)
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const user = await getCurrentUser()
+    const scope = await requireCompanyScope()
+    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
+    const user = scope.user
     if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
-    const companyId = user.companyId ?? null
+    const companyId = scope.companyId
     const { id } = await params
 
     // findFirst بدلاً من findUnique لضمان تبعية الفاتورة للشركة الحالية (حماية IDOR)
@@ -57,9 +59,11 @@ async function getReturnedQtyByProduct(tx: any, saleId: string, companyId: strin
 //  2) تحديث المدفوع/الملاحظات فقط (استلام دفعة) — السلوك السابق كما هو ويعمل دائماً.
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const user = await getCurrentUser()
+    const scope = await requireCompanyScope()
+    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
+    const user = scope.user
     if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
-    const companyId = user.companyId ?? null
+    const companyId = scope.companyId
     const { id } = await params
     const body = await req.json()
 

@@ -1,15 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
-import { getCurrentUser } from '@/lib/auth'
+import { requireCompanyScope } from '@/lib/company-scope'
 import { safeError } from '@/lib/safe-error'
 import { computeInvoiceTotals, assertValidPaid, weightedAverageCost } from '@/lib/calc'
 
 // GET /api/purchases?from=&to=&q=&page=1&limit=50
 export async function GET(req: NextRequest) {
   try {
-    const user = await getCurrentUser()
+    const scope = await requireCompanyScope()
+    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
+    const user = scope.user
     if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
-    const companyId = user.companyId ?? null
+    const companyId = scope.companyId
 
     const { searchParams } = new URL(req.url)
     const from = searchParams.get('from')
@@ -69,9 +71,11 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const user = await getCurrentUser()
+    const scope = await requireCompanyScope()
+    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
+    const user = scope.user
     if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
-    const companyId = user.companyId ?? null
+    const companyId = scope.companyId
 
     const body = await req.json()
     const {

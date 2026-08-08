@@ -1,15 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
-import { getCurrentUser } from '@/lib/auth'
+import { requireCompanyScope } from '@/lib/company-scope'
 import { safeError } from '@/lib/safe-error'
 
 export async function GET() {
   try {
-    const user = await getCurrentUser()
+    const scope = await requireCompanyScope()
+    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
+    const user = scope.user
     if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
 
     const cats = await db.expenseCategory.findMany({
-      where: { companyId: user.companyId ?? null },
+      where: { companyId: scope.companyId },
       orderBy: { name: 'asc' },
       include: { _count: { select: { expenses: true } } },
     })
@@ -22,7 +24,9 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    const user = await getCurrentUser()
+    const scope = await requireCompanyScope()
+    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
+    const user = scope.user
     if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
 
     const body = await req.json()
@@ -31,7 +35,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'اسم الفئة مطلوب' }, { status: 400 })
     }
     const cat = await db.expenseCategory.create({
-      data: { companyId: user.companyId ?? null, name: name.trim(), notes: notes || null },
+      data: { companyId: scope.companyId, name: name.trim(), notes: notes || null },
     })
     return NextResponse.json({ category: cat })
   } catch (e) {

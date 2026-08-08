@@ -1,18 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
-import { getCurrentUser } from '@/lib/auth'
+import { requireCompanyScope } from '@/lib/company-scope'
 import { safeError } from '@/lib/safe-error'
 
-// GET /api/payments?type=customer_payment&partyId=xxx&from=&to=&page=1&limit=50
+// GET /api/payments
 export async function GET(req: NextRequest) {
   try {
-    const user = await getCurrentUser()
-    if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
-    const companyId = user.companyId ?? null
+    const scope = await requireCompanyScope()
+    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
+    const companyId = scope.companyId
 
     const { searchParams } = new URL(req.url)
     const type = searchParams.get('type')
     const partyId = searchParams.get('partyId')
+    const customerId = searchParams.get('customerId')
+    const supplierId = searchParams.get('supplierId')
     const from = searchParams.get('from')
     const to = searchParams.get('to')
     const page = Math.max(1, Number(searchParams.get('page')) || 1)
@@ -20,12 +22,10 @@ export async function GET(req: NextRequest) {
     const skip = (page - 1) * limit
 
     const where: any = { companyId }
-    if (type) {
-      where.type = type
-    }
-    if (partyId) {
-      where.partyId = partyId
-    }
+    if (type) where.type = type
+    if (customerId) where.customerId = customerId
+    else if (supplierId) where.supplierId = supplierId
+    else if (partyId) where.partyId = partyId
     if (from || to) {
       where.date = {}
       if (from) where.date.gte = new Date(from)
@@ -37,127 +37,71 @@ export async function GET(req: NextRequest) {
     }
 
     const [payments, total] = await Promise.all([
-      db.payment.findMany({
-        where,
-        orderBy: { date: 'desc' },
-        skip,
-        take: limit,
-      }),
+      db.payment.findMany({ where, orderBy: { date: 'desc' }, skip, take: limit }),
       db.payment.count({ where }),
     ])
 
-    return NextResponse.json({
-      payments,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
-    })
+    return NextResponse.json({ payments, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } })
   } catch (e) {
-    const { error, status } = safeError(e); return NextResponse.json({ error }, { status })
+    const { error, status } = safeError(e)
+    return NextResponse.json({ error }, { status })
   }
 }
 
 // POST /api/payments
 export async function POST(req: NextRequest) {
   try {
-    const user = await getCurrentUser()
-    if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
-    const companyId = user.companyId ?? null
+    const scope = await requireCompanyScope()
+    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
+    const companyId = scope.companyId
 
     const body = await req.json()
-    const {
-      type,
-      partyId,
-      partyName,
-      invoiceId,
-      invoiceNo,
-      amount,
-      date,
-      method,
-      notes,
-    } = body
+    const { type, partyId, partyName, invoiceId, invoiceNo, amount, date, method, notes } = body
 
-    // التحقق من نوع السداد
     if (type !== 'customer_payment' && type !== 'supplier_payment') {
-      return NextResponse.json(
-        { error: 'نوع السداد غير صالح (يجب أن يكون customer_payment أو supplier_payment)' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'نوع السداد غير صالح' }, { status: 400 })
     }
-
-    // التحقق من بيانات الطرف
     if (!partyId?.trim()) {
-      return NextResponse.json(
-        { error: type === 'customer_payment' ? 'العميل مطلوب' : 'المورد مطلوب' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: type === 'customer_payment' ? 'العميل مطلوب' : 'المورد مطلوب' }, { status: 400 })
     }
     if (!partyName?.trim()) {
-      return NextResponse.json(
-        { error: 'اسم الطرف مطلوب' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'اسم الطرف مطلوب' }, { status: 400 })
     }
-
-    // التحقق من التاريخ
     if (!date) {
-      return NextResponse.json(
-        { error: 'التاريخ مطلوب' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'التاريخ مطلوب' }, { status: 400 })
     }
-
-    // التحقق من المبلغ
     const amountNumber = Number(amount)
     if (!Number.isFinite(amountNumber) || amountNumber <= 0) {
-      return NextResponse.json(
-        { error: 'المبلغ يجب أن يكون أكبر من صفر' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'المبلغ يجب أن يكون أكبر من صفر' }, { status: 400 })
     }
 
-    // تنفيذ العملية في transaction واحد
     const payment = await db.$transaction(async (tx: any) => {
-      // التحقق من أن الطرف ينتمي لنفس الشركة (منع التسجيل على طرف من شركة أخرى)
+      // التحقق من وجود العميل/المورد ضمن نفس الشركة
       if (type === 'customer_payment') {
         const customer = await tx.customer.findFirst({ where: { id: partyId.trim(), companyId } })
-        if (!customer) {
-          throw new Error('العميل المحدد غير موجود')
-        }
+        if (!customer) throw new Error('العميل المحدد غير موجود في شركتك')
       } else {
         const supplier = await tx.supplier.findFirst({ where: { id: partyId.trim(), companyId } })
-        if (!supplier) {
-          throw new Error('المورد المحدد غير موجود')
-        }
+        if (!supplier) throw new Error('المورد المحدد غير موجود في شركتك')
       }
 
-      // التحقق من الفاتورة وربطها حسب النوع — داخل نفس الشركة
+      // التحقق من الفاتورة إن وُجدت
       let sale: any = null
       let purchase: any = null
-
       if (invoiceId?.trim()) {
         if (type === 'customer_payment') {
           sale = await tx.sale.findFirst({ where: { id: invoiceId.trim(), companyId } })
-          if (!sale) {
-            throw new Error('فاتورة البيع المحددة غير موجودة')
-          }
-          // F4-01 fix: منع الدفع من تجاوز الرصيد المتبقي
+          if (!sale) throw new Error('فاتورة البيع غير موجودة')
           const remaining = sale.total - sale.paid
-          if (amountNumber > remaining) {
-            throw new Error(`المبلغ (${amountNumber}) يتجاوز الرصيد المتبقي (${remaining})`)
+          if (amountNumber > remaining + 0.01) {
+            throw new Error(`المبلغ (${amountNumber}) يتجاوز الرصيد المتبقي (${remaining.toFixed(2)})`)
           }
         } else {
           purchase = await tx.purchase.findFirst({ where: { id: invoiceId.trim(), companyId } })
-          if (!purchase) {
-            throw new Error('فاتورة الشراء المحددة غير موجودة')
-          }
-          // F4-01 fix: منع الدفع من تجاوز الرصيد المتبقي
+          if (!purchase) throw new Error('فاتورة الشراء غير موجودة')
           const remaining = purchase.total - purchase.paid
-          if (amountNumber > remaining) {
-            throw new Error(`المبلغ (${amountNumber}) يتجاوز الرصيد المتبقي (${remaining})`)
+          if (amountNumber > remaining + 0.01) {
+            throw new Error(`المبلغ (${amountNumber}) يتجاوز الرصيد المتبقي (${remaining.toFixed(2)})`)
           }
         }
       }
@@ -180,51 +124,29 @@ export async function POST(req: NextRequest) {
         },
       })
 
-      // تحديث الفاتورة وإنشاء حركة خزينة حسب النوع
+      // تحديث الفاتورة وإنشاء حركة خزينة
       if (type === 'customer_payment') {
-        // سداد من عميل = إيداع في الخزينة
         if (sale) {
-          await tx.sale.update({
-            where: { id: sale.id },
-            data: { paid: { increment: amountNumber } },
-          })
+          await tx.sale.update({ where: { id: sale.id }, data: { paid: { increment: amountNumber } } })
         }
         await tx.treasuryTransaction.create({
           data: {
-            companyId,
-            type: 'deposit',
-            amount: amountNumber,
-            date: new Date(date),
+            companyId, type: 'deposit', amount: amountNumber, date: new Date(date),
             description: `تحصيل من عميل - ${partyName.trim()}`,
-            category: 'سدادات عملاء',
-            referenceType: 'payment',
-            referenceId: newPayment.id,
-            notes: invoiceNo?.trim()
-              ? `فاتورة رقم ${invoiceNo.trim()}`
-              : notes?.trim() || null,
+            category: 'سدادات عملاء', referenceType: 'payment', referenceId: newPayment.id,
+            notes: invoiceNo?.trim() ? `فاتورة رقم ${invoiceNo.trim()}` : notes?.trim() || null,
           },
         })
       } else {
-        // سداد لمورد = سحب من الخزينة
         if (purchase) {
-          await tx.purchase.update({
-            where: { id: purchase.id },
-            data: { paid: { increment: amountNumber } },
-          })
+          await tx.purchase.update({ where: { id: purchase.id }, data: { paid: { increment: amountNumber } } })
         }
         await tx.treasuryTransaction.create({
           data: {
-            companyId,
-            type: 'withdrawal',
-            amount: amountNumber,
-            date: new Date(date),
+            companyId, type: 'withdrawal', amount: amountNumber, date: new Date(date),
             description: `سداد لمورد - ${partyName.trim()}`,
-            category: 'سدادات موردين',
-            referenceType: 'payment',
-            referenceId: newPayment.id,
-            notes: invoiceNo?.trim()
-              ? `فاتورة رقم ${invoiceNo.trim()}`
-              : notes?.trim() || null,
+            category: 'سدادات موردين', referenceType: 'payment', referenceId: newPayment.id,
+            notes: invoiceNo?.trim() ? `فاتورة رقم ${invoiceNo.trim()}` : notes?.trim() || null,
           },
         })
       }
@@ -233,14 +155,12 @@ export async function POST(req: NextRequest) {
     })
 
     return NextResponse.json({ payment })
-  } catch (e) {
-    // رسائل الأخطاء الصادرة من داخل الـ transaction بالعربية
-    if (e instanceof Error && e.message.includes('يتجاوز الرصيد المتبقي')) {
+  } catch (e: any) {
+    // أخطاء بالعربية من داخل الـ transaction
+    if (e instanceof Error && /غير موجود|يتجاوز|غير صالح/.test(e.message)) {
       return NextResponse.json({ error: e.message }, { status: 400 })
     }
-    if (e instanceof Error && (e.message.includes('غير موجودة') || e.message.includes('غير موجود') || e.message.includes('غير صالح'))) {
-      return NextResponse.json({ error: e.message }, { status: 400 })
-    }
-    const { error, status } = safeError(e); return NextResponse.json({ error }, { status })
+    const { error, status } = safeError(e)
+    return NextResponse.json({ error }, { status })
   }
 }

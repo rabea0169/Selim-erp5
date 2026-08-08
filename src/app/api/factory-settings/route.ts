@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
-import { getCurrentUser } from '@/lib/auth'
+import { requireCompanyScope } from '@/lib/company-scope'
 import { requireAdmin } from '@/lib/admin-check'
 import { safeError } from '@/lib/safe-error'
 
@@ -29,12 +29,14 @@ const DEFAULT_SETTINGS = {
 
 export async function GET() {
   try {
-    const user = await getCurrentUser()
+    const scope = await requireCompanyScope()
+    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
+    const user = scope.user
     if (!user) {
       return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
     }
 
-    const companyId = user.companyId ?? null
+    const companyId = scope.companyId
     if (!companyId) {
       // لا توجد شركة — نعيد الإعدادات الافتراضية حتى لا تتعطل الواجهة
       return NextResponse.json({ id: null, ...DEFAULT_SETTINGS, updatedAt: new Date().toISOString() })

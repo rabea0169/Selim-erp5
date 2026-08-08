@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
-import { getCurrentUser } from '@/lib/auth'
+import { requireCompanyScope } from '@/lib/company-scope'
 import { safeError } from '@/lib/safe-error'
 
 // GET /api/sale-returns/[id] — جلب مرتجع واحد (مقيد بالشركة)
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const user = await getCurrentUser()
+    const scope = await requireCompanyScope()
+    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
+    const user = scope.user
     if (!user) return NextResponse.json({ error: 'غير مصرح' }, { status: 401 })
-    const companyId = user.companyId ?? null
+    const companyId = scope.companyId
     const { id } = await params
 
     const saleReturn = await db.saleReturn.findFirst({ where: { id, companyId } })
@@ -23,9 +25,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 // DELETE /api/sale-returns/[id] — حذف المرتجع مع عكس المخزون والخزينة ذرّياً
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const user = await getCurrentUser()
+    const scope = await requireCompanyScope()
+    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
+    const user = scope.user
     if (!user) return NextResponse.json({ error: 'غير مصرح' }, { status: 401 })
-    const companyId = user.companyId ?? null
+    const companyId = scope.companyId
     const { id } = await params
 
     const saleReturn = await db.saleReturn.findFirst({ where: { id, companyId } })
