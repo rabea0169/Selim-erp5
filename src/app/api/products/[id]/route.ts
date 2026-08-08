@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
 import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
+import { requireAdmin } from '@/lib/admin-check'
 
 // GET /api/products/[id]
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -101,11 +102,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 // DELETE /api/products/[id]
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const user = await getCurrentUser()
-    if (!user) {
-      return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    const admin = await requireAdmin()
+    if (!admin.ok) {
+      return NextResponse.json({ error: admin.error }, { status: admin.status })
     }
-    const companyId = user.companyId ?? null
+    const companyId = admin.companyId
     const { id } = await params
 
     // فحص وجود المنتج وتبعيته للشركة (حماية IDOR)
@@ -114,20 +115,6 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     })
     if (!existing) {
       return NextResponse.json({ error: 'المنتج غير موجود' }, { status: 404 })
-    }
-
-    // ملاحظة schema: SaleItem.productId و ProductionOrder.productId مراجع نصية بلا FK،
-    // و Production.productId على SetNull — الحذف لا يكسر قاعدة البيانات.
-    // لكن حذف منتج له أوامر تشغيل يكسر عكس أثر المخزون عند حذف تلك الأوامر لاحقاً،
-    // لذا نمنع الحذف عند وجود أوامر تشغيل مرتبطة (نفس نمط حماية المواد من حركاتها)
-    const ordersCount = await db.productionOrder.count({
-      where: { productId: id, companyId },
-    })
-    if (ordersCount > 0) {
-      return NextResponse.json(
-        { error: `لا يمكن حذف منتج مرتبط بأوامر تشغيل (${ordersCount} أمر) — احذف أوامر التشغيل أولاً` },
-        { status: 400 }
-      )
     }
 
     await db.product.delete({ where: { id } })
