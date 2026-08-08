@@ -10,6 +10,39 @@ import { escapeHtml } from '@/lib/escape-html'
  * - أنواع ورق مختلفة (A4, A5, 80mm, 58mm حراري)
  */
 
+/**
+ * تنظيف HTML قبل إدراجه في DOM أو نافذة الطباعة (document.write / dangerouslySetInnerHTML)
+ * لمنع XSS: يزيل script/iframe/object/embed/form وحقول الإدخال ومعالجات الأحداث on*
+ * وروابط javascript:/vbscript:، ويسقط أي <img> بمصدر غير http(s)/data:image/مسار نسبي.
+ */
+export function sanitizeHtml(html: string): string {
+  let sanitized = html
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+    .replace(/<script\b[^>]*>/gi, '')
+    .replace(/on\w+\s*=\s*["'][^"']*["']/gi, '')
+    .replace(/on\w+\s*=\s*\S+/gi, '')
+    .replace(/javascript:/gi, '')
+    .replace(/vbscript:/gi, '')
+    .replace(/<iframe\b[^>]*>.*?<\/iframe>/gi, '')
+    .replace(/<object\b[^>]*>.*?<\/object>/gi, '')
+    .replace(/<embed\b[^>]*>/gi, '')
+    .replace(/<form\b[^>]*>.*?<\/form>/gi, '')
+    .replace(/<input\b[^>]*>/gi, '')
+    .replace(/<select\b[^>]*>.*?<\/select>/gi, '')
+    .replace(/<textarea\b[^>]*>.*?<\/textarea>/gi, '')
+    .replace(/<link\b[^>]*>/gi, '')
+    .replace(/<meta\b[^>]*>/gi, '')
+    .replace(/<base\b[^>]*>/gi, '')
+  // إسقاط أي صورة بمصدر غير آمن (javascript:/data:text/html... إلخ)
+  sanitized = sanitized.replace(/<img\b[^>]*>/gi, (tag) => {
+    const m = tag.match(/src\s*=\s*["']([^"']+)["']/i)
+    if (!m) return tag
+    const src = m[1].trim()
+    return /^(https?:\/\/|data:image\/|\/)/i.test(src) ? tag : ''
+  })
+  return sanitized
+}
+
 export type PaperSize = 'A4' | 'A5' | 'A6' | 'THERMAL_80' | 'THERMAL_58'
 
 export interface PaperSizeConfig {
@@ -282,6 +315,9 @@ export async function printViaBrowser(
     `
   }
 
+  // تنظيف المحتوى قبل document.write لمنع XSS عبر HTML مُمرر من مصدر غير موثوق
+  const safeContent = sanitizeHtml(contentHtml)
+
   printWindow.document.write(`
     <!DOCTYPE html>
     <html lang="ar" dir="rtl">
@@ -342,7 +378,7 @@ export async function printViaBrowser(
     </head>
     <body>
       <div class="print-content">
-        ${contentHtml}
+        ${safeContent}
       </div>
       <script>
         window.onload = function() {
