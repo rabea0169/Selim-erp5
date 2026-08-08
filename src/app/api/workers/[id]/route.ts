@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
 import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
+import { requireAdmin } from '@/lib/admin-check'
 
 // تحويل رقم اختياري: قيمة فارغة/غير صالحة → null
 function optNum(v: any): number | null {
@@ -86,11 +87,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const user = await getCurrentUser()
-    if (!user) {
-      return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    const admin = await requireAdmin()
+    if (!admin.ok) {
+      return NextResponse.json({ error: admin.error }, { status: admin.status })
     }
-    const companyId = user.companyId ?? null
+    const companyId = admin.companyId
     const { id } = await params
 
     // فحص وجود الموظف وتبعيته للشركة (حماية IDOR)
