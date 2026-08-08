@@ -9,7 +9,14 @@ datasource db {
 }
 
 enum UserRole {
+  owner
   admin
+  manager
+  accountant
+  sales
+  purchase
+  warehouse
+  viewer
   user
 }
 
@@ -642,4 +649,52 @@ model PurchaseReturn {
   @@index([companyId])
   @@index([date])
   @@index([purchaseId])
+}
+
+
+// ====== نظام الصلاحيات (RBAC) ======
+enum PermissionAction {
+  CREATE
+  READ
+  UPDATE
+  DELETE
+  EXPORT
+  APPROVE
+}
+
+model UserPermission {
+  id          String             @id @default(cuid())
+  userId      String
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // الموارد والإجراءات
+  resource    String             // 'sales' | 'purchases' | 'customers' | 'suppliers' | 'reports' | 'payments' | 'inventory'
+  action      PermissionAction   // CREATE | READ | UPDATE | DELETE | EXPORT | APPROVE
+  
+  // الحدود (اختياري)
+  canViewAll  Boolean            @default(false)  // يمكن عرض جميع السجلات
+  canEditOwn  Boolean            @default(false)  // يمكن تعديل السجلات الخاصة به فقط
+  
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  
+  @@unique([userId, resource, action])
+  @@index([userId])
+  @@index([resource])
+}
+
+model RoleTemplate {
+  id          String   @id @default(cuid())
+  name        String   @unique  // 'Sales Manager' | 'Accountant' | 'Warehouse Manager'
+  description String?
+  
+  // JSON array of permissions
+  // Format: [{ resource: 'sales', action: 'CREATE' }, ...]
+  permissions Json     @default("[]")
+  
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([isActive])
 }
