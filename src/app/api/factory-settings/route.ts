@@ -27,7 +27,7 @@ export async function GET() {
     if (!scope.ok) return NextResponse.json({ settings: null })
     const companyId = scope.companyId
 
-    const settings = await db.factorySettings.findFirst({
+    const settings = await db.factorySettings.findUnique({
       where: { companyId },
     })
 
@@ -80,8 +80,7 @@ export async function PUT(req: NextRequest) {
       taxRate: body.taxRate != null ? Number(body.taxRate) : 0,
     }
 
-    // نستخدم findFirst + update أو create لتفادي أي صراع على حقل id في قاعدة البيانات القديمة
-    let settings = await db.factorySettings.findFirst({
+    let settings = await db.factorySettings.findUnique({
       where: { companyId },
     })
 
@@ -93,10 +92,9 @@ export async function PUT(req: NextRequest) {
     } else {
       settings = await db.factorySettings.create({
         data: {
-          id: companyId,
           companyId,
           ...payload,
-        } as any,
+        },
       })
     }
 

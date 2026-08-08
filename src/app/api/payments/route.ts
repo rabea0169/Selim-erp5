@@ -137,14 +137,17 @@ export async function POST(req: NextRequest) {
         }
       }
 
+      // ضبط الحقول بحذر شديد:
+      // عند دفعات العملاء: supplierId يكون دائماً null صريح لتفادي قيود payment_supplier_fk
+      // عند دفعات الموردين: customerId يكون دائماً null صريح لتفادي قيود payment_customer_fk
       const newPayment = await tx.payment.create({
         data: {
           companyId,
           type,
           partyId: pId,
           partyName: pName,
-          customerId: validCustomerId,
-          supplierId: validSupplierId,
+          customerId: type === 'customer_payment' ? (validCustomerId || null) : null,
+          supplierId: type === 'supplier_payment' ? (validSupplierId || null) : null,
           invoiceId: invoiceId?.trim() || null,
           invoiceNo: invoiceNo?.trim() || null,
           amount: amountNumber,
