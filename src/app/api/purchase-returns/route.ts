@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
-import { requireCompanyScope } from '@/lib/company-scope'
+import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
 
 export async function GET(req: NextRequest) {
@@ -28,8 +28,7 @@ export async function GET(req: NextRequest) {
       db.purchaseReturn.count({ where }),
     ])
 
-    // المفتاح purchaseReturns كما يتوقع العميل (contract fix)
-    return NextResponse.json({ purchaseReturns: returns, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } })
+    return NextResponse.json({ purchaseReturns: returns, returns, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } })
   } catch (e) {
     const { error, status } = safeError(e); return NextResponse.json({ error }, { status })
   }
@@ -42,9 +41,9 @@ export async function POST(req: NextRequest) {
 
     const companyId = user.companyId || null
     const body = await req.json()
-    const { purchaseId, invoiceNo, supplierName, supplierId_ref, date, reason, restockItems, items, notes } = body
+    const { purchaseId, invoiceNo, supplierName, supplierId_ref, date, total, reason, restockItems, items, notes } = body
 
-    if (!purchaseId || !date) {
+    if (!purchaseId || !supplierName || !date) {
       return NextResponse.json({ error: 'بيانات مطلوبة ناقصة' }, { status: 400 })
     }
 
@@ -61,48 +60,19 @@ export async function POST(req: NextRequest) {
         throw new Error(`مبلغ المرتجع (${totalNum}) يتجاوز إجمالي فاتورة الشراء (${purchaseTotal})`)
       }
 
-      // تحقق كميات الأصناف: مجموع المرتجعات السابقة + الجديدة ≤ كمية الفاتورة لكل صنف
-      const returnedQtyByItem = new Map<string, number>()
-      for (const r of previousReturns) {
-        const rItems = Array.isArray(r.items) ? (r.items as any[]) : []
-        for (const ri of rItems) {
-          if (ri?.purchaseItemId && Number(ri.quantity) > 0) {
-            returnedQtyByItem.set(ri.purchaseItemId, (returnedQtyByItem.get(ri.purchaseItemId) || 0) + Number(ri.quantity))
-          }
-        }
-      }
-      for (const it of itemsArr) {
-        const qty = Number(it.quantity) || 0
-        if (qty <= 0) throw new Error(`كمية المرتجع غير صالحة للصنف: ${it.itemName || ''}`)
-        if (it.purchaseItemId) {
-          const purchaseItem = purchase.items.find((pi: any) => pi.id === it.purchaseItemId)
-          if (!purchaseItem) throw new Error(`الصنف (${it.itemName || it.purchaseItemId}) لا ينتمي لهذه الفاتورة`)
-          const alreadyQty = returnedQtyByItem.get(it.purchaseItemId) || 0
-          if (alreadyQty + qty > purchaseItem.quantity) {
-            throw new Error(`كمية المرتجع للصنف (${purchaseItem.itemName}) تتجاوز المتبقي من الفاتورة (${Math.max(0, purchaseItem.quantity - alreadyQty)})`)
-          }
-        }
-      }
-
-      // اشتقاق بيانات المورد من الفاتورة (العميل لا يرسلها)
-      const sName = supplierName?.trim() || purchase.supplierName
-      const invNo = invoiceNo?.trim() || purchase.invoiceNo
-      const sRef = supplierId_ref || purchase.supplierId_ref
-
       const ret = await tx.purchaseReturn.create({
         data: {
           companyId,
           returnNumber: `PR-${Date.now()}`,
           purchaseId,
-          invoiceNo: invNo || null,
-          supplierName: sName,
-          supplierId_ref: sRef || null,
+          invoiceNo: invoiceNo?.trim() || null,
+          supplierName: supplierName.trim(),
+          supplierId_ref: supplierId_ref || null,
           date: new Date(date),
           total: totalNum,
           reason: reason?.trim() || null,
-          items: itemsArr,
+          items: items || [],
           notes: notes?.trim() || null,
-          restockItems: shouldRestock,
         },
       })
 
@@ -122,26 +92,7 @@ export async function POST(req: NextRequest) {
           if (it.materialId && it.quantity > 0) {
             await tx.material.update({
               where: { id: it.materialId },
-              data: {
-                quantity: Math.max(0, remainingQuantity),
-                unitCost: newUnitCost,
-                updatedAt: new Date(),
-              },
-            })
-
-            await tx.materialTransaction.create({
-              data: {
-                companyId,
-                materialId: it.materialId,
-                warehouseId: mat.warehouseId,
-                type: 'out',
-                quantity: qty,
-                unitCost: price,
-                date: new Date(date),
-                reason: `مرتجع مشتريات - ${sName}${invNo ? ` (فاتورة ${invNo})` : ''}`,
-                referenceType: 'purchase_return',
-                referenceId: ret.id,
-              },
+              data: { quantity: { decrement: Number(it.quantity) }, updatedAt: new Date() },
             })
           }
         }
@@ -154,11 +105,11 @@ export async function POST(req: NextRequest) {
             type: 'deposit',
             amount: ret.total,
             date: new Date(date),
-            description: `مرتجع مشتريات - ${sName}`,
+            description: `مرتجع مشتريات - ${supplierName}`,
             category: 'مرتجعات مشتريات',
             referenceType: 'purchase_return',
             referenceId: ret.id,
-            notes: invNo ? `فاتورة رقم ${invNo}` : null,
+            notes: invoiceNo ? `فاتورة رقم ${invoiceNo}` : null,
           },
         })
       }
@@ -166,7 +117,7 @@ export async function POST(req: NextRequest) {
       return ret
     })
 
-    return NextResponse.json({ return: purchaseReturn })
+    return NextResponse.json({ return: purchaseReturn, purchaseReturn })
   } catch (e: any) {
     const { error, status } = safeError(e, 400)
     return NextResponse.json({ error }, { status })

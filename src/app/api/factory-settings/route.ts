@@ -3,11 +3,6 @@ import { db } from '@/lib/db-server'
 import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
 
-// Fix: المفتاح الأساسي لـ FactorySettings هو companyId وليس id
-// كل شركة لها إعداداتها الخاصة (Multi-Tenancy)
-// Fix: العقد مع العميل (factorySettingsRepository) يتوقع كائن الإعدادات مباشرة
-// وليس مغلفاً بـ { settings } — بدون هذا الإصلاح تظهر صفحة الإعدادات فارغة دائماً
-
 const DEFAULT_SETTINGS = {
   factoryName: 'Selim ERP',
   factoryNameEn: '',
@@ -32,16 +27,15 @@ export async function GET() {
     if (!user?.companyId) {
       return NextResponse.json({ settings: null })
     }
+    const companyId = user.companyId
     const settings = await db.factorySettings.findUnique({
-      where: { companyId: user.companyId },
+      where: { companyId },
     })
 
     if (!settings) {
-      // أول مرة — نعيد الافتراضيات (لا ننشئ سجلاً حتى يحفظ الأدمن)
       return NextResponse.json({ id: companyId, ...DEFAULT_SETTINGS, updatedAt: new Date().toISOString() })
     }
 
-    // العميل يتوقع id — نمرره من companyId (المفتاح الأساسي)
     return NextResponse.json({ ...settings, id: settings.companyId })
   } catch (e) {
     const { error, status } = safeError(e)
@@ -62,14 +56,6 @@ export async function PUT(req: NextRequest) {
     const companyId = user.companyId
     if (!companyId) {
       return NextResponse.json({ error: 'لم يتم العثور على شركة مرتبطة بالحساب' }, { status: 400 })
-    }
-
-    const companyId = admin.companyId ?? null
-    if (!companyId) {
-      return NextResponse.json(
-        { error: 'لا توجد شركة مرتبطة بهذا المستخدم' },
-        { status: 400 }
-      )
     }
 
     const body = await req.json()
@@ -108,7 +94,6 @@ export async function PUT(req: NextRequest) {
       },
     })
 
-    // نعيد كائن الإعدادات مباشرة كما يتوقع العميل
     return NextResponse.json({ ...settings, id: settings.companyId })
   } catch (e) {
     const { error, status } = safeError(e)

@@ -196,7 +196,7 @@ export async function POST(req: NextRequest) {
         for (const s of data.factorySettings) {
           await tx.factorySettings.create({
             data: {
-              companyId: s.companyId || s.id || user?.companyId,
+              companyId: s.companyId || s.id || companyId,
               factoryName: s.factoryName,
               factoryNameEn: s.factoryNameEn ?? null,
               slogan: s.slogan ?? null,
