@@ -1,3 +1,10 @@
+// ملاحظة مهمة: المشروع يستخدم Tailwind CSS v4 (انظر devDependencies في
+// package.json و `@import "tailwindcss"` في src/app/globals.css).
+// في الإصدار v4 يتم تعريف التوكنات (الألوان، نصف القطر...) عبر `@theme`
+// داخل globals.css — وهي معرّفة هناك فعلاً — ولا يقرأ v4 هذا الملف إلا
+// إذا أُشير إليه صراحةً بـ `@config` في CSS (غير موجود حالياً).
+// لذا هذا الملف حالياً "ملف إرشادي/توثيقي" ولا يؤثر على التصميم الفعلي.
+// لا تحذفه قبل التأكد من نقل أي إعداد إضافي هنا إلى globals.css.
 import type { Config } from "tailwindcss";
 import tailwindcssAnimate from "tailwindcss-animate";
 
