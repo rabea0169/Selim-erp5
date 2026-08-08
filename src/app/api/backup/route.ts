@@ -28,8 +28,8 @@ export async function GET() {
     // Fix: عزل كامل بالشركة — الجداول الفرعية (saleItems/purchaseItems) عبر معرفات الآباء
     const sales = await tryQuery('sales', warnings, () => db.sale.findMany({ where: { companyId } }))
     const purchases = await tryQuery('purchases', warnings, () => db.purchase.findMany({ where: { companyId } }))
-    const saleIds = sales.map((s) => s.id)
-    const purchaseIds = purchases.map((p) => p.id)
+    const saleIds = sales.map((s: any) => s.id)
+    const purchaseIds = purchases.map((p: any) => p.id)
 
     const [
       workers,

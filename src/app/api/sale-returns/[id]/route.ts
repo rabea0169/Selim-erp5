@@ -31,7 +31,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     const saleReturn = await db.saleReturn.findFirst({ where: { id, companyId } })
     if (!saleReturn) return NextResponse.json({ error: 'المرتجع غير موجود' }, { status: 404 })
 
-    await db.$transaction(async (tx) => {
+    await db.$transaction(async (tx: any) => {
       // عكس إعادة المخزون إن كان المرتجع قد أعاد الأصناف
       if (saleReturn.restockItems && Array.isArray(saleReturn.items)) {
         for (const item of saleReturn.items as any[]) {

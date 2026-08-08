@@ -62,7 +62,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
       return NextResponse.json({ error: 'المورد غير موجود' }, { status: 404 })
     }
 
-    await db.$transaction(async (tx) => {
+    await db.$transaction(async (tx: any) => {
       // فصل المشتريات المرتبطة بهذا المورد — داخل نفس الشركة فقط
       await tx.purchase.updateMany({
         where: { supplierId_ref: id, companyId },

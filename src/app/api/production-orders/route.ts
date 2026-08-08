@@ -90,7 +90,7 @@ export async function POST(req: NextRequest) {
     // تطبيع المراحل: إضافة id وحالة pending (بدونها لا تعمل أزرار بدء/إكمال المرحلة)
     const parsedStages = (stages || []) as Array<{ name: string }>
     const normalizedStages = parsedStages
-      .filter((s) => s?.name?.trim())
+      .filter((s: any) => s?.name?.trim())
       .map((s, i) => ({
         id: `stage-${i + 1}`,
         name: s.name.trim(),
@@ -105,7 +105,7 @@ export async function POST(req: NextRequest) {
       // رقم تسلسلي من الأكبر الموجود داخل الشركة — لا يتكرر بعد الحذف (إصلاح count+1)
       orderNumber = await nextOrderNumber(companyId)
       try {
-        order = await db.$transaction(async (tx) => {
+        order = await db.$transaction(async (tx: any) => {
           const product = await tx.product.findFirst({ where: { id: productId, companyId } })
           if (!product) {
             throw new Error('المنتج غير موجود')

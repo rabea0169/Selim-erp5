@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Fix C: Wrap in transaction with treasury withdrawal
-    const expense = await db.$transaction(async (tx) => {
+    const expense = await db.$transaction(async (tx: any) => {
       // التحقق من وجود الفئة داخل نفس الشركة
       const cat = await tx.expenseCategory.findFirst({ where: { id: categoryId, companyId } })
       if (!cat) {

@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'تكلفة الوحدة يجب أن تكون رقماً غير سالب' }, { status: 400 })
     }
 
-    const result = await db.$transaction(async (tx) => {
+    const result = await db.$transaction(async (tx: any) => {
       // التحقق من المادة داخل نفس الشركة (منع IDOR)
       const material = await tx.material.findFirst({ where: { id: materialId, companyId } })
       if (!material) {

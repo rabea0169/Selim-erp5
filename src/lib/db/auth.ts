@@ -60,7 +60,7 @@ export async function login(username: string, password: string): Promise<{ succe
       localStorage.setItem(SESSION_KEY, JSON.stringify(serverUser))
       // مزامنة المستخدم محلياً لضمان العمل offline بعد ذلك
       try {
-        const existingLocal = await userRepository.getByUsername(username)
+        const existingLocal = await userRepository.getUsername(username)
         if (!existingLocal) {
           await userRepository.createWithPassword({ username, password: '', name: serverUser.name, role: serverUser.role })
           console.log('[Auth] Server login OK — user synced to local IndexedDB')

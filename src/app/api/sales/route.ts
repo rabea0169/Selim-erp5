@@ -176,7 +176,7 @@ export async function POST(req: NextRequest) {
     const manualInvoiceNo = invoiceNo?.trim() || null
 
     const runCreate = () =>
-      db.$transaction(async (tx) => {
+      db.$transaction(async (tx: any) => {
         // توليد رقم الفاتورة داخل الـ transaction (داخل نفس الاستعلام المتسلسل لمنع التكرار)
         const finalInvoiceNo = manualInvoiceNo ?? (await generateInvoiceNo(tx, companyId))
 

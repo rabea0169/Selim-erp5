@@ -100,7 +100,7 @@ export async function POST(req: NextRequest) {
     // Fix K: Move all checks inside transaction
     let targetProductId = productId || null
 
-    const production = await db.$transaction(async (tx) => {
+    const production = await db.$transaction(async (tx: any) => {
       // التحقق من وجود الموظف داخل نفس الشركة
       const worker = await tx.worker.findFirst({ where: { id: workerId, companyId } })
       if (!worker) {

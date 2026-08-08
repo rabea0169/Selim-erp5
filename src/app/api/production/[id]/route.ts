@@ -11,7 +11,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     const { id } = await params
     let notFound = false
 
-    await db.$transaction(async (tx) => {
+    await db.$transaction(async (tx: any) => {
       const prod = await tx.production.findFirst({ where: { id, companyId }, include: { product: true } })
       if (!prod) { notFound = true; return }
 

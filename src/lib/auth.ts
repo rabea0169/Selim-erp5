@@ -131,7 +131,7 @@ export async function registerUser(
 
   let user: any
   try {
-    user = await db.$transaction(async (tx) => {
+    user = await db.$transaction(async (tx: any) => {
       const existing = await tx.user.findUnique({ where: { username: username.trim() } })
       if (existing) throw new Error('اسم المستخدم موجود بالفعل')
 

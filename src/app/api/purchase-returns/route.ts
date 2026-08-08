@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
 
     const shouldRestock = restockItems !== false
 
-    const purchaseReturn = await db.$transaction(async (tx) => {
+    const purchaseReturn = await db.$transaction(async (tx: any) => {
       // Fix IDOR: البحث عن فاتورة الشراء مقيد بالشركة (مع الأصناف للتحقق من الكميات)
       const purchase = await tx.purchase.findFirst({ where: { id: purchaseId, companyId }, include: { items: true } })
       if (!purchase) throw new Error('فاتورة الشراء غير موجودة')
@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
       })
 
       // Validate return total does not exceed purchase total (تراكمياً)
-      const alreadyReturnedTotal = previousReturns.reduce((s, r) => s + (Number(r.total) || 0), 0)
+      const alreadyReturnedTotal = previousReturns.reduce((s: number, r: any) => s + (Number(r.total) || 0), 0)
       if (alreadyReturnedTotal + total > purchase.total) {
         throw new Error(`مبلغ المرتجع (${total}) يتجاوز المتبقي من إجمالي فاتورة الشراء (${Math.max(0, purchase.total - alreadyReturnedTotal)})`)
       }
@@ -90,7 +90,7 @@ export async function POST(req: NextRequest) {
         const qty = Number(it.quantity) || 0
         if (qty <= 0) throw new Error(`كمية المرتجع غير صالحة للصنف: ${it.itemName || ''}`)
         if (it.purchaseItemId) {
-          const purchaseItem = purchase.items.find((pi) => pi.id === it.purchaseItemId)
+          const purchaseItem = purchase.items.find((pi: any) => pi.id === it.purchaseItemId)
           if (!purchaseItem) throw new Error(`الصنف (${it.itemName || it.purchaseItemId}) لا ينتمي لهذه الفاتورة`)
           const alreadyQty = returnedQtyByItem.get(it.purchaseItemId) || 0
           if (alreadyQty + qty > purchaseItem.quantity) {

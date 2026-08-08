@@ -104,7 +104,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: 'إجراء غير معروف' }, { status: 400 })
     }
 
-    const order = await db.$transaction(async (tx) => {
+    const order = await db.$transaction(async (tx: any) => {
       // 1) سحب المواد الخام من المخزن — مرة واحدة فقط في دورة الحياة:
       //    عند بدء المسودة (draft → in_progress)، أو عند إكمال مسودة مباشرة دون بدء
       //    (مسودة بمواد لم تُسحب — وإلا أُضيف المنتج للمخزون دون استهلاك المواد)
@@ -247,7 +247,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
       return NextResponse.json({ error: 'أمر التشغيل غير موجود' }, { status: 404 })
     }
 
-    await db.$transaction(async (tx) => {
+    await db.$transaction(async (tx: any) => {
       // 1) لو كان in_progress: إرجاع المواد الخام
       if (existing.status === 'in_progress') {
         const orderMaterials = (existing.materials) as Array<{ materialId: string; materialName: string; quantity: number; unit: string }> || []

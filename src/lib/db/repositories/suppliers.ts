@@ -33,7 +33,7 @@ class SupplierRepository extends BaseRepository<Supplier> {
 
   async getAllWithStats(): Promise<Array<Supplier & { totalPurchases: number; totalPaid: number; totalRemaining: number; purchasesCount: number }>> {
     const suppliers = await this.getAll()
-    return suppliers
+    return suppliers as any
   }
 }
 

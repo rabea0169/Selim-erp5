@@ -31,7 +31,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     const purchaseReturn = await db.purchaseReturn.findFirst({ where: { id, companyId } })
     if (!purchaseReturn) return NextResponse.json({ error: 'المرتجع غير موجود' }, { status: 404 })
 
-    await db.$transaction(async (tx) => {
+    await db.$transaction(async (tx: any) => {
       // عكس خصم المخزون: الإنشاء خصم الكميات من المواد مع تعديل متوسط التكلفة،
       // الحذف يعيد الكميات ويعيد حساب متوسط التكلفة المرجح بإضافة قيمة المرتجع
       if (purchaseReturn.restockItems && Array.isArray(purchaseReturn.items)) {

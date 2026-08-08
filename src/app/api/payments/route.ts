@@ -120,7 +120,7 @@ export async function POST(req: NextRequest) {
     }
 
     // تنفيذ العملية في transaction واحد
-    const payment = await db.$transaction(async (tx) => {
+    const payment = await db.$transaction(async (tx: any) => {
       // التحقق من أن الطرف ينتمي لنفس الشركة (منع التسجيل على طرف من شركة أخرى)
       if (type === 'customer_payment') {
         const customer = await tx.customer.findFirst({ where: { id: partyId.trim(), companyId } })

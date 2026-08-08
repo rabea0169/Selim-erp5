@@ -26,7 +26,7 @@ export async function POST(
       return NextResponse.json({ error: 'نوع الحركة يجب أن يكون in أو out' }, { status: 400 })
     }
 
-    const product = await db.$transaction(async (tx) => {
+    const product = await db.$transaction(async (tx: any) => {
       // التحقق من المنتج داخل نفس الشركة (منع IDOR)
       const existing = await tx.product.findFirst({ where: { id, companyId } })
       if (!existing) {

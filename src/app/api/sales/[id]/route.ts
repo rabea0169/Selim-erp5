@@ -125,7 +125,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         return NextResponse.json({ error: paidError }, { status: 400 })
       }
 
-      const sale = await db.$transaction(async (tx) => {
+      const sale = await db.$transaction(async (tx: any) => {
         // 1) جلب الفاتورة الحالية بعناصرها — داخل الشركة فقط (حماية IDOR)
         const existing = await tx.sale.findFirst({
           where: { id, companyId },
@@ -283,7 +283,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     }
 
     // تحديث الفاتورة + مزامنة الخزينة ذرّياً: أي زيادة في المدفوع = إيداع، وأي نقص = سحب
-    const sale = await db.$transaction(async (tx) => {
+    const sale = await db.$transaction(async (tx: any) => {
       const updated = await tx.sale.update({
         where: { id },
         data,
@@ -349,7 +349,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
       return NextResponse.json({ error: 'الفاتورة غير موجودة' }, { status: 404 })
     }
 
-    await db.$transaction(async (tx) => {
+    await db.$transaction(async (tx: any) => {
       // 1) إرجاع كميات المنتجات للمخزون — صافي الكمية فقط
       //    إصلاح التضخيم المزدوج: المرتجعات (restockItems=true) سبق أن أعادت كمياتها للمخزون،
       //    لذا نعيد فقط صافي الكمية = max(0, كمية الفاتورة − الكميات المُرتجعة سابقاً لنفس المنتج)
@@ -381,7 +381,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
       })
       if (salePayments.length > 0) {
         await tx.treasuryTransaction.deleteMany({
-          where: { referenceType: 'payment', referenceId: { in: salePayments.map((p) => p.id) }, companyId },
+          where: { referenceType: 'payment', referenceId: { in: salePayments.map((p: any) => p.id) }, companyId },
         })
       }
       await tx.payment.deleteMany({
@@ -394,7 +394,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
         select: { id: true },
       })
       if (returnIds.length > 0) {
-        const ids = returnIds.map(r => r.id)
+        const ids = returnIds.map((r: any) => r.id)
         // حذف حركات الخزينة للمرتجعات
         await tx.treasuryTransaction.deleteMany({
           where: { referenceType: 'sale_return', referenceId: { in: ids }, companyId },

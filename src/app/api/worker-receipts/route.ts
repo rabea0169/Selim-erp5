@@ -87,7 +87,7 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const receipt = await db.$transaction(async (tx) => {
+    const receipt = await db.$transaction(async (tx: any) => {
       const rcpt = await tx.workerReceipt.create({
         data: {
           workerId,

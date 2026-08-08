@@ -62,7 +62,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     }
 
     // Fix F: Wrap in transaction
-    await db.$transaction(async (tx) => {
+    await db.$transaction(async (tx: any) => {
       // فصل المبيعات المرتبطة بهذا العميل (SetNull بسبب العلاقة الاختيارية) — داخل الشركة فقط
       await tx.sale.updateMany({
         where: { customerId_ref: id, companyId },

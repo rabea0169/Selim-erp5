@@ -13,7 +13,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     if (!existing) {
       return NextResponse.json({ error: 'السلفة غير موجودة' }, { status: 404 })
     }
-    await db.$transaction(async (tx) => {
+    await db.$transaction(async (tx: any) => {
       // حذف حركة الخزينة المرتبطة بالسلفة — داخل الشركة فقط
       await tx.treasuryTransaction.deleteMany({
         where: { referenceType: 'worker_advance', referenceId: id, companyId },

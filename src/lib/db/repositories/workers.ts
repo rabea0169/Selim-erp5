@@ -39,7 +39,7 @@ class WorkerRepository extends BaseRepository<Worker> {
 
   async getAllWithStats(): Promise<Array<Worker & { totalAdvances: number; totalReceipts: number; balance: number }>> {
     const workers = await this.getAll()
-    return workers  // Stats computed lazily when needed; for list view, basic data is enough
+    return workers as any // Stats computed lazily when needed; for list view, basic data is enough
   }
 
   async deleteWithRelations(workerId: string): Promise<void> {

@@ -2,7 +2,7 @@
  * معالجة آمنة للأخطاء — لا يكشف تفاصيل داخلية للعميل
  */
 
-import { Prisma } from '@prisma/client'
+
 
 // رسائل عامة لكل HTTP status
 const SAFE_MESSAGES: Record<number, string> = {
@@ -40,7 +40,7 @@ export function safeError(e: unknown, defaultStatus: number = 500): {
  * معرفة إن كان الخطأ Prisma unique constraint
  */
 export function isUniqueConstraintError(e: any): boolean {
-        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') return true
+        if (e?.code === 'P2002') return true
         if (typeof e?.message === 'string' && (
                 e.message.includes('Unique constraint') ||
                 e.message.includes('unique constraint')
@@ -52,7 +52,7 @@ export function isUniqueConstraintError(e: any): boolean {
  * معرفة إن كان الخطأ Prisma not found
  */
 export function isNotFoundError(e: any): boolean {
-        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2025') return true
+        if (e?.code === 'P2025') return true
         if (typeof e?.message === 'string' && (
                 e.message.includes('Record to update') ||
                 e.message.includes('Record to delete') ||

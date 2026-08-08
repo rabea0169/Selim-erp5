@@ -33,7 +33,7 @@ class CustomerRepository extends BaseRepository<Customer> {
 
   async getAllWithStats(): Promise<Array<Customer & { totalSales: number; totalPaid: number; totalRemaining: number; salesCount: number }>> {
     const customers = await this.getAll()
-    return customers
+    return customers as any
   }
 }
 

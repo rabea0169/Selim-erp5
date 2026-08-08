@@ -147,7 +147,7 @@ export async function GET(req: NextRequest) {
       orderBy: { _sum: { total: 'desc' } },
       take: 10,
     })
-    const topItems = topItemsRaw.map(r => ({
+    const topItems = topItemsRaw.map((r: any) => ({
       name: r.itemName,
       qty: r._sum.quantity || 0,
       total: r._sum.total || 0,
@@ -161,7 +161,7 @@ export async function GET(req: NextRequest) {
       orderBy: { _sum: { total: 'desc' } },
       take: 10,
     })
-    const topModels = topModelsRaw.map(r => ({
+    const topModels = topModelsRaw.map((r: any) => ({
       name: r.modelName,
       qty: r._sum.quantity || 0,
       total: r._sum.total || 0,

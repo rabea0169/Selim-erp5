@@ -29,7 +29,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     }
 
     // ذرّية كاملة: تحديث المصروف + مزامنة حركة الخزينة في معاملة واحدة
-    const expense = await db.$transaction(async (tx) => {
+    const expense = await db.$transaction(async (tx: any) => {
       // فحص وجود المصروف وتبعيته للشركة (حماية IDOR) — الفلتر إجباري
       const existing = await tx.expense.findFirst({
         where: { id, companyId },
@@ -120,7 +120,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
       return NextResponse.json({ error: 'المصروف غير موجود' }, { status: 404 })
     }
 
-    await db.$transaction(async (tx) => {
+    await db.$transaction(async (tx: any) => {
       // حذف حركة الخزينة المرتبطة بهذا المصروف — داخل نفس الشركة فقط
       await tx.treasuryTransaction.deleteMany({
         where: { referenceType: 'expense', referenceId: id, companyId },

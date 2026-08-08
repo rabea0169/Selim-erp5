@@ -153,12 +153,12 @@ export async function POST(req: NextRequest) {
     // ⚠️ ملاحظة: جدول users و auditLogs لا يتم مسحهما أو استرجاعهما (حماية الصلاحيات وسجل التدقيق)
     // Fix: كل عمليات الحذف والإنشاء مقيدة بالشركة الحالية فقط
     await db.$transaction(
-      async (tx) => {
+      async (tx: any) => {
       // معرفات فواتير الشركة لحذف الجداول الفرعية (لا تحتوي companyId)
       const companySales = await tx.sale.findMany({ where: { companyId }, select: { id: true } })
       const companyPurchases = await tx.purchase.findMany({ where: { companyId }, select: { id: true } })
-      const saleIds = companySales.map((s) => s.id)
-      const purchaseIds = companyPurchases.map((p) => p.id)
+      const saleIds = companySales.map((s: any) => s.id)
+      const purchaseIds = companyPurchases.map((p: any) => p.id)
 
       // حذف بيانات الشركة الحالية فقط بالترتيب الصحيح (للعلاقات)
       // Children first, then parents

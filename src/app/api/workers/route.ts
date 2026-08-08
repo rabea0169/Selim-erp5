@@ -36,9 +36,9 @@ export async function GET(req: NextRequest) {
     })
 
     // Calculate totals
-    const workersWithTotals = workers.map((w) => {
-      const totalAdvances = w.advances.reduce((s, a) => s + a.amount, 0)
-      const totalReceipts = w.receipts.reduce((s, r) => s + r.amount, 0)
+    const workersWithTotals = workers.map((w: any) => {
+      const totalAdvances = w.advances.reduce((s: number, a: any) => s + a.amount, 0)
+      const totalReceipts = w.receipts.reduce((s: number, r: any) => s + r.amount, 0)
       return {
         ...w,
         totalAdvances,

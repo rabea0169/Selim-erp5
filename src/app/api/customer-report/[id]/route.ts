@@ -38,19 +38,19 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         orderBy: { date: 'desc' },
       }),
       db.payment.findMany({
-        where: { partyId: id, type: 'customer_payment', companyId, ...dateFilter },
+        where: { customerId: id, type: 'customer_payment', companyId, ...dateFilter },
         orderBy: { date: 'desc' },
       }),
     ])
 
-    const totalSales = sales.reduce((s, x) => s + x.total, 0)
-    const totalReturns = returns.reduce((s, x) => s + x.total, 0)
-    const totalPayments = payments.reduce((s, x) => s + x.amount, 0)
-    const totalPaid = sales.reduce((s, x) => s + x.paid, 0)
+    const totalSales = sales.reduce((s: number, x: any) => s + x.total, 0)
+    const totalReturns = returns.reduce((s: number, x: any) => s + x.total, 0)
+    const totalPayments = payments.reduce((s: number, x: any) => s + x.amount, 0)
+    const totalPaid = sales.reduce((s: number, x: any) => s + x.paid, 0)
     // fix(receivables): المدفوعات غير المرتبطة بفاتورة (سداد عام) لا تُحدِّث paid على أي فاتورة،
     // فيجب خصمها منفصلة من الرصيد — وإلا بقيت الذمة ظاهرة رغم تسجيل التحصيل.
     // المدفوعات المرتبطة بفاتورة محسوبة أصلاً ضمن totalPaid (تحدِّث sale.paid) فلا تُخصم مجدداً (منع الاحتساب المزدوج).
-    const standalonePayments = payments.filter((p) => !p.invoiceId).reduce((s, x) => s + x.amount, 0)
+    const standalonePayments = payments.filter((p: any) => !p.invoiceId).reduce((s: number, x: any) => s + x.amount, 0)
     // الرصيد المتبقي = إجمالي المبيعات - المدفوع على الفواتير - المرتجعات - السدادات العامة
     const totalRemaining = totalSales - totalPaid - totalReturns - standalonePayments
 

@@ -109,7 +109,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Fix J: Wrap check+create in transaction to prevent race condition
-    const result = await db.$transaction(async (tx) => {
+    const result = await db.$transaction(async (tx: any) => {
       // التحقق من وجود الموظف داخل نفس الشركة
       const worker = await tx.worker.findFirst({ where: { id: workerId, companyId } })
       if (!worker) {

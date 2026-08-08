@@ -35,12 +35,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       db.production.findMany({ where: filter, orderBy: { date: 'desc' } }),
     ])
 
-    const totalAdvances = advances.reduce((s, a) => s + a.amount, 0)
-    const totalReceipts = receipts.reduce((s, r) => s + r.amount, 0)
-    const totalProduction = productions.reduce((s, p) => s + p.total, 0)
-    const totalPieces = productions.reduce((s, p) => s + p.quantity, 0)
-    const presentDays = attendance.filter((a) => a.status === 'present').length
-    const absentDays = attendance.filter((a) => a.status === 'absent').length
+    const totalAdvances = advances.reduce((s: number, a: any) => s + a.amount, 0)
+    const totalReceipts = receipts.reduce((s: number, r: any) => s + r.amount, 0)
+    const totalProduction = productions.reduce((s: number, p: any) => s + p.total, 0)
+    const totalPieces = productions.reduce((s: number, p: any) => s + p.quantity, 0)
+    const presentDays = attendance.filter((a: any) => a.status === 'present').length
+    const absentDays = attendance.filter((a: any) => a.status === 'absent').length
 
     return NextResponse.json({
       worker,

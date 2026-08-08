@@ -87,7 +87,7 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const advance = await db.$transaction(async (tx) => {
+    const advance = await db.$transaction(async (tx: any) => {
       const adv = await tx.workerAdvance.create({
         data: {
           workerId,

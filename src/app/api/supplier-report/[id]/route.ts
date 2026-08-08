@@ -38,18 +38,18 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         orderBy: { date: 'desc' },
       }),
       db.payment.findMany({
-        where: { partyId: id, type: 'supplier_payment', companyId, ...dateFilter },
+        where: { supplierId: id, type: 'supplier_payment', companyId, ...dateFilter },
         orderBy: { date: 'desc' },
       }),
     ])
 
-    const totalPurchases = purchases.reduce((s, x) => s + x.total, 0)
-    const totalReturns = returns.reduce((s, x) => s + x.total, 0)
-    const totalPayments = payments.reduce((s, x) => s + x.amount, 0)
-    const totalPaid = purchases.reduce((s, x) => s + x.paid, 0)
+    const totalPurchases = purchases.reduce((s: number, x: any) => s + x.total, 0)
+    const totalReturns = returns.reduce((s: number, x: any) => s + x.total, 0)
+    const totalPayments = payments.reduce((s: number, x: any) => s + x.amount, 0)
+    const totalPaid = purchases.reduce((s: number, x: any) => s + x.paid, 0)
     // fix(receivables): السدادات العامة (بدون فاتورة) لا تُحدِّث paid على أي فاتورة شراء،
     // فيجب خصمها منفصلة من المستحق — والمرتبطة بفاتورة محسوبة ضمن totalPaid (منع الاحتساب المزدوج).
-    const standalonePayments = payments.filter((p) => !p.invoiceId).reduce((s, x) => s + x.amount, 0)
+    const standalonePayments = payments.filter((p: any) => !p.invoiceId).reduce((s: number, x: any) => s + x.amount, 0)
     // الرصيد المتبقي = إجمالي المشتريات - المدفوع على الفواتير - المرتجعات - السدادات العامة
     const totalRemaining = totalPurchases - totalPaid - totalReturns - standalonePayments
 

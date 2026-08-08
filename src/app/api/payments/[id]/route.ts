@@ -43,7 +43,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     }
 
     // تنفيذ الحذف في transaction واحد
-    await db.$transaction(async (tx) => {
+    await db.$transaction(async (tx: any) => {
       // التراجع عن تحديث الفاتورة المرتبطة إن وُجدت
       if (payment.invoiceId) {
         if (payment.type === 'customer_payment') {

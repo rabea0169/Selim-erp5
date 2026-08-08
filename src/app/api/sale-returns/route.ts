@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
     const retNum = returnNumber || `RET-${Date.now()}`
     const shouldRestock = restockItems !== false
 
-    const ret = await db.$transaction(async (tx) => {
+    const ret = await db.$transaction(async (tx: any) => {
       // Fix IDOR: البحث عن الفاتورة مقيد بالشركة
       const sale = await tx.sale.findFirst({ where: { id: saleId, companyId }, include: { items: true } })
       if (!sale) throw new Error('الفاتورة غير موجودة')
@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
 
       // Validate return total does not exceed what was paid or the invoice total (تراكمياً)
       const maxReturnable = Math.min(sale.total, sale.paid)
-      const alreadyReturnedTotal = previousReturns.reduce((s, r) => s + (Number(r.total) || 0), 0)
+      const alreadyReturnedTotal = previousReturns.reduce((s: number, r: any) => s + (Number(r.total) || 0), 0)
       if (alreadyReturnedTotal + total > maxReturnable) {
         throw new Error(`مبلغ المرتجع (${total}) يتجاوز الحد المسموح (${Math.max(0, maxReturnable - alreadyReturnedTotal)})`)
       }
@@ -92,7 +92,7 @@ export async function POST(req: NextRequest) {
         const qty = Number(it.quantity) || 0
         if (qty <= 0) throw new Error(`كمية المرتجع غير صالحة للصنف: ${it.itemName || ''}`)
         if (it.saleItemId) {
-          const saleItem = sale.items.find((si) => si.id === it.saleItemId)
+          const saleItem = sale.items.find((si: any) => si.id === it.saleItemId)
           if (!saleItem) throw new Error(`الصنف (${it.itemName || it.saleItemId}) لا ينتمي لهذه الفاتورة`)
           const alreadyQty = returnedQtyByItem.get(it.saleItemId) || 0
           if (alreadyQty + qty > saleItem.quantity) {

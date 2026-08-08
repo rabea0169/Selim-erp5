@@ -145,7 +145,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         return NextResponse.json({ error: paidError }, { status: 400 })
       }
 
-      const purchase = await db.$transaction(async (tx) => {
+      const purchase = await db.$transaction(async (tx: any) => {
         // فحص المواد والمورد داخل الـ transaction — مع عزل الشركة
         for (const it of validItems) {
           if (it.materialId) {
@@ -310,7 +310,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
       return NextResponse.json({ error: 'فاتورة الشراء غير موجودة' }, { status: 404 })
     }
 
-    await db.$transaction(async (tx) => {
+    await db.$transaction(async (tx: any) => {
       // 1) إرجاع كميات المواد الخام مع إعادة حساب متوسط التكلفة المرجح (GAP-04 fix)
       //    إصلاح الخصم المزدوج: المرتجعات (restockItems=true) سبق أن خصمت كمياتها من المخزون،
       //    لذا نعكس فقط صافي الكمية = كمية الفاتورة − الكميات المُرتجعة سابقاً لنفس المادة
@@ -348,7 +348,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
         select: { id: true },
       })
       if (returnIds.length > 0) {
-        const ids = returnIds.map(r => r.id)
+        const ids = returnIds.map((r: any) => r.id)
         await tx.treasuryTransaction.deleteMany({
           where: { referenceType: 'purchase_return', referenceId: { in: ids }, companyId },
         })

@@ -124,7 +124,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: paidError }, { status: 400 })
     }
 
-    const purchase = await db.$transaction(async (tx) => {
+    const purchase = await db.$transaction(async (tx: any) => {
       // فحص المواد والمورد داخل الـ transaction (TOCTOU fix) — مع عزل الشركة
       for (const it of validItems) {
         if (it.materialId) {
