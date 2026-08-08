@@ -37,6 +37,7 @@ export function CustomerPaymentDialog({ open, onOpenChange, sale }: CustomerPaym
   const [date, setDate] = useState(todayStr())
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
   const { toast } = useToast()
 
   const remaining = sale.total - sale.paid
@@ -47,25 +48,37 @@ export function CustomerPaymentDialog({ open, onOpenChange, sale }: CustomerPaym
       setMethod('cash')
       setDate(todayStr())
       setNotes('')
+      setError('')
     }
   }, [open, remaining])
 
   const save = async () => {
     const amountNum = Number(amount) || 0
+    
+    // التحقق من البيانات
     if (amountNum <= 0) {
+      setError('أدخل مبلغاً صحيحاً')
       toast({ title: 'تنبيه', description: 'أدخل مبلغاً صحيحاً', variant: 'destructive' })
       return
     }
+    
     if (amountNum > remaining) {
-      toast({ title: 'تنبيه', description: `المبلغ أكبر من المتبقي (${formatCurrency(remaining)})`, variant: 'destructive' })
+      setError(`المبلغ أكبر من المتبقي (${formatCurrency(remaining)})`)
+      toast({ 
+        title: 'تنبيه', 
+        description: `المبلغ أكبر من المتبقي (${formatCurrency(remaining)})`, 
+        variant: 'destructive' 
+      })
       return
     }
+    
     setSaving(true)
+    setError('')
+    
     try {
       if (sale.customerId_ref) {
-        // عميل مسجل: POST /api/payments يحدّث paid في الفاتورة ويسجّل حركة الخزينة ذرّياً على الخادم —
-        // لا يجوز تحديث paid من العميل هنا وإلا يُحسب المبلغ مرتين (تناقض مع الخادم)
-        await paymentRepository.create({
+        // عميل مسجل: POST /api/payments
+        const response = await paymentRepository.create({
           type: 'customer_payment',
           partyId: sale.customerId_ref,
           partyName: sale.customerName,
@@ -76,21 +89,39 @@ export function CustomerPaymentDialog({ open, onOpenChange, sale }: CustomerPaym
           method,
           notes: notes || undefined,
         })
+        
+        // التحقق من الاستجابة
+        if (!response || response.error) {
+          throw new Error(response?.error || 'فشل تسجيل الدفعة')
+        }
       } else {
-        // عميل غير مسجل (اسم يدوي): /api/payments يرفض لعدم وجود عميل بالمعرف،
-        // لذا نحدّث paid مباشرة عبر PUT /api/sales/[id] الذي يسجّل حركة الخزينة ذرّياً على الخادم
-        await saleRepository.update(sale.id, { paid: sale.paid + amountNum } as any)
+        // عميل غير مسجل: تحديث مباشر
+        const response = await saleRepository.update(sale.id, { paid: sale.paid + amountNum } as any)
+        
+        if (!response || response.error) {
+          throw new Error(response?.error || 'فشل تحديث الفاتورة')
+        }
       }
+      
+      // تحديث البيانات
       dataChangeEmitter.notifyUpdate('sales')
       dataChangeEmitter.notifyUpdate('payments')
       dataChangeEmitter.notifyUpdate('treasuryTransactions')
+      
       toast({
         title: 'تم',
         description: `تم استلام ${formatCurrency(amountNum)} من ${sale.customerName}`,
       })
+      
       onOpenChange(false)
     } catch (e: any) {
-      toast({ title: 'خطأ', description: e.message, variant: 'destructive' })
+      const errorMsg = e.message || 'حدث خطأ في تسجيل الدفعة'
+      setError(errorMsg)
+      toast({ 
+        title: 'خطأ', 
+        description: errorMsg, 
+        variant: 'destructive' 
+      })
     } finally {
       setSaving(false)
     }
@@ -104,115 +135,137 @@ export function CustomerPaymentDialog({ open, onOpenChange, sale }: CustomerPaym
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md" dir="rtl" variant="bottom-sheet">
+      <DialogContent 
+        className="w-full max-w-md sm:max-w-lg md:max-w-xl lg:max-w-2xl max-h-[90vh] overflow-y-auto" 
+        dir="rtl" 
+        variant="bottom-sheet"
+      >
         <div className="flex justify-center pt-3 pb-2">
           <div className="w-12 h-1 bg-slate-300 rounded-full" />
         </div>
+        
         <DialogHeader>
-          <DialogTitle className="text-right flex items-center gap-2">
+          <DialogTitle className="text-right flex items-center gap-2 text-lg sm:text-xl">
             استلام دفعة من {sale.customerName}
           </DialogTitle>
           <DialogDescription className="sr-only">تسجيل دفعة مستلمة من العميل</DialogDescription>
         </DialogHeader>
-        <div className="space-y-3 px-1 pb-2">
-          {/* ملخص الفاتورة */}
-          <div className="bg-emerald-50 rounded-lg p-3 space-y-2">
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-600">فاتورة</span>
-              <span className="font-bold text-slate-800">{sale.invoiceNo || formatDate(sale.date)}</span>
+
+        <div className="space-y-4 px-1 pb-2">
+          {/* ملخص الفاتورة - Responsive */}
+          <div className="bg-emerald-50 rounded-lg p-3 sm:p-4 space-y-2">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs sm:text-sm">
+              <span className="text-slate-600">رقم الفاتورة:</span>
+              <Badge variant="outline" className="text-xs sm:text-sm">{sale.invoiceNo}</Badge>
             </div>
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-600">إجمالي الفاتورة</span>
-              <span className="font-bold text-emerald-700">{formatCurrency(sale.total)}</span>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs sm:text-sm">
+              <span className="text-slate-600">الإجمالي:</span>
+              <span className="font-semibold text-sm sm:text-base">{formatCurrency(sale.total)}</span>
             </div>
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-600">المدفوع سابقاً</span>
-              <span className="font-bold text-blue-700">{formatCurrency(sale.paid)}</span>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs sm:text-sm">
+              <span className="text-slate-600">المدفوع:</span>
+              <span className="text-amber-600 font-semibold text-sm sm:text-base">{formatCurrency(sale.paid)}</span>
             </div>
-            <div className="border-t border-emerald-200 pt-2 flex items-center justify-between text-xs">
-              <span className="text-slate-700 font-bold">المتبقي</span>
-              <span className="font-bold text-rose-700 text-base">{formatCurrency(remaining)}</span>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs sm:text-sm">
+              <span className="text-slate-600">المتبقي:</span>
+              <span className="text-emerald-600 font-bold text-sm sm:text-base">{formatCurrency(remaining)}</span>
             </div>
           </div>
 
-          {/* المبلغ */}
-          <div>
-            <Label className="text-xs">مبلغ الاستلام *</Label>
-            <Input
-              type="number"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="0"
-              className="bg-slate-50 text-lg font-bold"
-              min="0"
-              max={remaining}
-            />
-            <div className="flex justify-between mt-1">
-              <button
-                type="button"
-                onClick={() => setAmount(String(remaining))}
-                className="text-[10px] text-emerald-600 hover:underline"
-              >
-                استلام المتبقي كاملاً ({formatCurrency(remaining)})
-              </button>
-              {Number(amount) > 0 && (
-                <span className="text-[10px] text-slate-500">
-                  سيتبقى: {formatCurrency(Math.max(0, remaining - Number(amount)))}
-                </span>
-              )}
+          {/* رسالة الخطأ */}
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-xs sm:text-sm">
+              {error}
             </div>
-          </div>
+          )}
 
-          {/* طريقة الدفع والتاريخ */}
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <Label className="text-xs">طريقة الاستلام</Label>
-              <Select value={method} onValueChange={(v) => setMethod(v as any)}>
-                <SelectTrigger className="bg-slate-50">
+          {/* نموذج الإدخال - Responsive */}
+          <div className="space-y-3">
+            {/* المبلغ */}
+            <div className="space-y-1.5">
+              <Label htmlFor="amount" className="text-xs sm:text-sm">
+                المبلغ المستلم <span className="text-red-500">*</span>
+              </Label>
+              <Input
+                id="amount"
+                type="number"
+                placeholder="أدخل المبلغ"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                disabled={saving}
+                className="text-sm sm:text-base"
+              />
+              <div className="text-xs text-slate-500">
+                الحد الأقصى: {formatCurrency(remaining)}
+              </div>
+            </div>
+
+            {/* طريقة الدفع */}
+            <div className="space-y-1.5">
+              <Label htmlFor="method" className="text-xs sm:text-sm">
+                طريقة الدفع
+              </Label>
+              <Select value={method} onValueChange={(v: any) => setMethod(v)} disabled={saving}>
+                <SelectTrigger id="method" className="text-sm sm:text-base">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent dir="rtl">
                   <SelectItem value="cash">كاش</SelectItem>
                   <SelectItem value="transfer">تحويل بنكي</SelectItem>
                   <SelectItem value="card">بطاقة</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            <div>
-              <Label className="text-xs">التاريخ</Label>
+
+            {/* التاريخ */}
+            <div className="space-y-1.5">
+              <Label htmlFor="date" className="text-xs sm:text-sm">
+                التاريخ
+              </Label>
               <Input
+                id="date"
                 type="date"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                className="bg-slate-50"
+                disabled={saving}
+                className="text-sm sm:text-base"
+              />
+            </div>
+
+            {/* ملاحظات */}
+            <div className="space-y-1.5">
+              <Label htmlFor="notes" className="text-xs sm:text-sm">
+                ملاحظات
+              </Label>
+              <Textarea
+                id="notes"
+                placeholder="أضف ملاحظات إضافية (اختياري)"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                disabled={saving}
+                rows={3}
+                className="text-sm sm:text-base resize-none"
               />
             </div>
           </div>
-
-          {/* ملاحظات */}
-          <div>
-            <Label className="text-xs">ملاحظات</Label>
-            <Textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="ملاحظات الدفعة..."
-              className="bg-slate-50 text-sm"
-              rows={2}
-            />
-          </div>
         </div>
 
-        {/* الأزرار: الإجراء الأساسي (استلام) أولاً، ثم الإلغاء في النهاية */}
-        <DialogFooter className="gap-2 px-1 pb-6">
+        {/* الأزرار - Responsive */}
+        <DialogFooter className="flex gap-2 sm:gap-3 flex-col-reverse sm:flex-row">
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={saving}
+            className="w-full sm:w-auto text-sm sm:text-base"
+          >
+            إلغاء
+          </Button>
           <Button
             onClick={save}
-            disabled={saving || !amount || Number(amount) <= 0}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white"
+            disabled={saving}
+            className="w-full sm:w-auto text-sm sm:text-base"
           >
-            {saving ? 'جارٍ الحفظ...' : `استلام ${formatCurrency(Number(amount) || 0)}`}
-          </Button>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
-            إلغاء
+            {saving ? 'جاري الحفظ...' : 'حفظ الدفعة'}
           </Button>
         </DialogFooter>
       </DialogContent>
