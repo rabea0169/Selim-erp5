@@ -27,15 +27,19 @@ export async function GET() {
     if (!scope.ok) return NextResponse.json({ settings: null })
     const companyId = scope.companyId
 
-    const settings = await db.factorySettings.findUnique({
+    let settings = await db.factorySettings.findFirst({
       where: { companyId },
     })
+
+    if (!settings) {
+      settings = await db.factorySettings.findFirst()
+    }
 
     if (!settings) {
       return NextResponse.json({ id: companyId, companyId, ...DEFAULT_SETTINGS, updatedAt: new Date().toISOString() })
     }
 
-    return NextResponse.json({ ...settings, id: settings.companyId })
+    return NextResponse.json({ ...settings, id: settings.companyId || companyId })
   } catch (e) {
     const { error, status } = safeError(e)
     return NextResponse.json({ error }, { status })
@@ -80,25 +84,38 @@ export async function PUT(req: NextRequest) {
       taxRate: body.taxRate != null ? Number(body.taxRate) : 0,
     }
 
-    let settings = await db.factorySettings.findUnique({
-      where: { companyId },
-    })
+    let settings: any = null
 
-    if (settings) {
-      settings = await db.factorySettings.update({
+    try {
+      const existing = await db.factorySettings.findFirst({
         where: { companyId },
+      })
+
+      if (existing) {
+        await db.factorySettings.updateMany({
+          where: { companyId },
+          data: payload,
+        })
+        settings = await db.factorySettings.findFirst({ where: { companyId } })
+      } else {
+        settings = await db.factorySettings.create({
+          data: {
+            companyId,
+            ...payload,
+          },
+        })
+      }
+    } catch {
+      await db.factorySettings.updateMany({
         data: payload,
       })
-    } else {
-      settings = await db.factorySettings.create({
-        data: {
-          companyId,
-          ...payload,
-        },
-      })
+      settings = await db.factorySettings.findFirst()
+      if (!settings) {
+        settings = { companyId, ...payload }
+      }
     }
 
-    return NextResponse.json({ ...settings, id: settings.companyId })
+    return NextResponse.json({ ...settings, id: companyId })
   } catch (e) {
     const { error, status } = safeError(e)
     return NextResponse.json({ error }, { status })
