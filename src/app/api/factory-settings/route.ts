@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
-import { getCurrentUser } from '@/lib/auth'
+import { requireCompanyScope } from '@/lib/company-scope'
 import { safeError } from '@/lib/safe-error'
 
 const DEFAULT_SETTINGS = {
@@ -23,11 +23,10 @@ const DEFAULT_SETTINGS = {
 
 export async function GET() {
   try {
-    const user = await getCurrentUser()
-    if (!user?.companyId) {
-      return NextResponse.json({ settings: null })
-    }
-    const companyId = user.companyId
+    const scope = await requireCompanyScope()
+    if (!scope.ok) return NextResponse.json({ settings: null })
+    const companyId = scope.companyId
+
     const settings = await db.factorySettings.findUnique({
       where: { companyId },
     })
@@ -45,19 +44,15 @@ export async function GET() {
 
 export async function PUT(req: NextRequest) {
   try {
-    const user = await getCurrentUser()
-    if (!user) {
-      return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
-    }
+    const scope = await requireCompanyScope()
+    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
+    const user = scope.user
+    if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
     if (user.role !== 'admin' && user.role !== 'owner') {
       return NextResponse.json({ error: 'غير مصرح — يتطلب صلاحيات مدير' }, { status: 403 })
     }
 
-    const companyId = user.companyId
-    if (!companyId) {
-      return NextResponse.json({ error: 'لم يتم العثور على شركة مرتبطة بالحساب' }, { status: 400 })
-    }
-
+    const companyId = scope.companyId
     const body = await req.json()
 
     if (!body.factoryName?.trim()) {
