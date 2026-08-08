@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
 import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
+import { requireAdmin } from '@/lib/admin-check'
 
 const VALID_WAREHOUSE_TYPES = ['raw_materials', 'finished_goods', 'general']
 
@@ -77,11 +78,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 // DELETE /api/warehouses/[id]
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const user = await getCurrentUser()
-    if (!user) {
-      return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    const admin = await requireAdmin()
+    if (!admin.ok) {
+      return NextResponse.json({ error: admin.error }, { status: admin.status })
     }
-    const companyId = user.companyId ?? null
+    const companyId = admin.companyId
     const { id } = await params
     // فحص وجود المخزن وتبعيته للشركة (حماية IDOR)
     const existing = await db.warehouse.findFirst({
