@@ -5,7 +5,7 @@ import { dataChangeEmitter } from '../live-data'
 import type { Payment } from '../types'
 
 class PaymentRepository extends BaseRepository<Payment> {
-  constructor() { super('/api/payments', 'payments') }
+  constructor() { super('/api/payments', 'payments', 'payments') }
 
   async getByParty(partyId: string): Promise<Payment[]> {
     return this.getAll({ partyId })

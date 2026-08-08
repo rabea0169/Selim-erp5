@@ -5,7 +5,7 @@ import { dataChangeEmitter } from '../live-data'
 import type { PurchaseReturn } from '../types'
 
 class PurchaseReturnRepository extends BaseRepository<PurchaseReturn> {
-  constructor() { super('/api/purchase-returns', 'purchaseReturns') }
+  constructor() { super('/api/purchase-returns', 'purchaseReturns', 'purchaseReturns') }
 
   async getByDateRange(from?: string, to?: string): Promise<PurchaseReturn[]> {
     const params: Record<string, string> = {}

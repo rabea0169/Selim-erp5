@@ -5,7 +5,7 @@ import { dataChangeEmitter } from '../live-data'
 import type { Expense } from '../types'
 
 class ExpenseRepository extends BaseRepository<Expense> {
-  constructor() { super('/api/expenses', 'expenses') }
+  constructor() { super('/api/expenses', 'expenses', 'expenses') }
 
   async search(query: string, from?: string, to?: string, categoryId?: string): Promise<Expense[]> {
     const params: Record<string, string> = {}

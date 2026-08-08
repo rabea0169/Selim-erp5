@@ -19,7 +19,7 @@ interface PurchasePayload {
 }
 
 class PurchaseRepository extends BaseRepository<Purchase> {
-  constructor() { super('/api/purchases', 'purchases') }
+  constructor() { super('/api/purchases', 'purchases', 'purchases') }
 
   async search(query: string, from?: string, to?: string): Promise<Purchase[]> {
     const params: Record<string, string> = {}

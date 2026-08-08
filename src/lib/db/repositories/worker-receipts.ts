@@ -5,7 +5,7 @@ import { dataChangeEmitter } from '../live-data'
 import type { WorkerReceipt } from '../types'
 
 class WorkerReceiptRepository extends BaseRepository<WorkerReceipt> {
-  constructor() { super('/api/worker-receipts', 'workerReceipts') }
+  constructor() { super('/api/worker-receipts', 'workerReceipts', 'workerReceipts') }
 
   async getByWorker(workerId: string): Promise<WorkerReceipt[]> {
     return this.getAll({ workerId })

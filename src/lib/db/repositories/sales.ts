@@ -19,7 +19,7 @@ interface SalePayload {
 }
 
 class SaleRepository extends BaseRepository<Sale> {
-  constructor() { super('/api/sales', 'sales') }
+  constructor() { super('/api/sales', 'sales', 'sales') }
 
   async search(query: string, from?: string, to?: string): Promise<Sale[]> {
     const params: Record<string, string> = {}
