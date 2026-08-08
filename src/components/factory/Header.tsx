@@ -16,6 +16,7 @@ import { globalSearchService, type SearchResult } from '@/lib/db'
 import { useTheme } from '@/lib/use-theme'
 import { useConnectionStatus } from '@/lib/use-connection-status'
 import { formatCurrency } from '@/lib/format'
+import { AlertsPanel } from './AlertsPanel'
 import type { TabKey } from './BottomNav'
 
 interface HeaderProps {
@@ -27,6 +28,13 @@ interface HeaderProps {
   onLogout: () => void
   onNavigate: (tab: TabKey) => void
 }
+
+// أهداف التنقل المسموح بها من التنبيهات (تطابق TabKey)
+const VALID_TABS: TabKey[] = [
+  'dashboard', 'sales', 'purchases', 'workers', 'expenses', 'products',
+  'warehouses', 'customers', 'suppliers', 'reports', 'production',
+  'treasury', 'attendance', 'returns',
+] as TabKey[]
 
 export function Header({
   factoryName,
@@ -106,6 +114,13 @@ export function Header({
     setSearchResults([])
   }
 
+  // تنقل آمن من التنبيهات: تجاهل أي هدف غير معروف
+  const handleAlertNavigate = (target: string) => {
+    if ((VALID_TABS as string[]).includes(target)) {
+      onNavigate(target as TabKey)
+    }
+  }
+
   return (
     <>
       <header className="sticky top-0 z-20 bg-white/95 backdrop-blur-md border-b border-slate-200">
@@ -129,6 +144,8 @@ export function Header({
 
           {/* Action Buttons */}
           <div className="flex items-center gap-1 shrink-0">
+            {/* التنبيهات الذكية */}
+            <AlertsPanel onNavigate={handleAlertNavigate} />
             <button
               onClick={() => setSearchOpen(true)}
               className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 transition-colors"
