@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { Badge } from '@/components/ui/badge'
 import {
   Dialog,
   DialogContent,
@@ -22,7 +23,7 @@ import {
 } from '@/components/ui/select'
 import { useToast } from '@/hooks/use-toast'
 import { formatCurrency, formatDate, todayStr } from '@/lib/format'
-import { paymentRepository, dataChangeEmitter, type Purchase } from '@/lib/db'
+import { paymentRepository, purchaseRepository, dataChangeEmitter, type Purchase } from '@/lib/db'
 
 interface SupplierPaymentDialogProps {
   open: boolean
@@ -32,10 +33,11 @@ interface SupplierPaymentDialogProps {
 
 export function SupplierPaymentDialog({ open, onOpenChange, purchase }: SupplierPaymentDialogProps) {
   const [amount, setAmount] = useState('')
-  const [method, setMethod] = useState<'cash' | 'transfer' | 'card'>('cash')
+  const [method, setMethod] = useState<'cash' | 'transfer' | 'card'>('transfer')
   const [date, setDate] = useState(todayStr())
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
   const { toast } = useToast()
 
   const remaining = purchase.total - purchase.paid
@@ -43,173 +45,227 @@ export function SupplierPaymentDialog({ open, onOpenChange, purchase }: Supplier
   useEffect(() => {
     if (open) {
       setAmount(String(remaining))
-      setMethod('cash')
+      setMethod('transfer')
       setDate(todayStr())
       setNotes('')
+      setError('')
     }
   }, [open, remaining])
 
   const save = async () => {
     const amountNum = Number(amount) || 0
+    
+    // التحقق من البيانات
     if (amountNum <= 0) {
+      setError('أدخل مبلغاً صحيحاً')
       toast({ title: 'تنبيه', description: 'أدخل مبلغاً صحيحاً', variant: 'destructive' })
       return
     }
+    
     if (amountNum > remaining) {
-      toast({ title: 'تنبيه', description: `المبلغ أكبر من المتبقي (${formatCurrency(remaining)})`, variant: 'destructive' })
-      return
-    }
-    // السيرفر (POST /api/payments) يتحقق من وجود المورد ويحدّث paid ذرّياً —
-    // لا يمكن تسجيل دفعة لفاتورة غير مرتبطة بمورد مسجل
-    if (!purchase.supplierId_ref) {
-      toast({
-        title: 'تنبيه',
-        description: 'لا يمكن تسجيل الدفعة: الفاتورة غير مرتبطة بمورد مسجل. اربطها بمورد من قائمة الموردين أولاً',
-        variant: 'destructive',
+      setError(`المبلغ أكبر من المتبقي (${formatCurrency(remaining)})`)
+      toast({ 
+        title: 'تنبيه', 
+        description: `المبلغ أكبر من المتبقي (${formatCurrency(remaining)})`, 
+        variant: 'destructive' 
       })
       return
     }
+    
     setSaving(true)
+    setError('')
+    
     try {
-      // ملاحظة: السيرفر يزيد purchase.paid وينشئ حركة الخزينة ذرّياً داخل نفس الـ transaction
-      // — لا نحتاج لأي تحديث إضافي للفاتورة من العميل (كان يسبب تحديثاً مكرراً وسباق بيانات)
-      await paymentRepository.create({
-        type: 'supplier_payment',
-        partyId: purchase.supplierId_ref,
-        partyName: purchase.supplierName,
-        invoiceId: purchase.id,
-        invoiceNo: purchase.invoiceNo,
-        amount: amountNum,
-        date,
-        method,
-        notes: notes || undefined,
-      })
+      if (purchase.supplierId_ref) {
+        // مورد مسجل: POST /api/payments
+        const response = await paymentRepository.create({
+          type: 'supplier_payment',
+          partyId: purchase.supplierId_ref,
+          partyName: purchase.supplierName,
+          invoiceId: purchase.id,
+          invoiceNo: purchase.invoiceNo,
+          amount: amountNum,
+          date,
+          method,
+          notes: notes || undefined,
+        })
+        
+        // التحقق من الاستجابة
+        if (!response || response.error) {
+          throw new Error(response?.error || 'فشل تسجيل الدفعة')
+        }
+      } else {
+        // مورد غير مسجل: تحديث مباشر
+        const response = await purchaseRepository.update(purchase.id, { paid: purchase.paid + amountNum } as any)
+        
+        if (!response || response.error) {
+          throw new Error(response?.error || 'فشل تحديث الفاتورة')
+        }
+      }
+      
+      // تحديث البيانات
       dataChangeEmitter.notifyUpdate('purchases')
       dataChangeEmitter.notifyUpdate('payments')
       dataChangeEmitter.notifyUpdate('treasuryTransactions')
+      
       toast({
         title: 'تم',
         description: `تم دفع ${formatCurrency(amountNum)} للمورد ${purchase.supplierName}`,
       })
+      
       onOpenChange(false)
     } catch (e: any) {
-      toast({ title: 'خطأ', description: e.message, variant: 'destructive' })
+      const errorMsg = e.message || 'حدث خطأ في تسجيل الدفعة'
+      setError(errorMsg)
+      toast({ 
+        title: 'خطأ', 
+        description: errorMsg, 
+        variant: 'destructive' 
+      })
     } finally {
       setSaving(false)
     }
   }
 
+  const methodLabels: Record<string, string> = {
+    cash: 'كاش',
+    transfer: 'تحويل بنكي',
+    card: 'بطاقة',
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md" dir="rtl" variant="bottom-sheet">
+      <DialogContent 
+        className="w-full max-w-md sm:max-w-lg md:max-w-xl lg:max-w-2xl max-h-[90vh] overflow-y-auto" 
+        dir="rtl" 
+        variant="bottom-sheet"
+      >
         <div className="flex justify-center pt-3 pb-2">
           <div className="w-12 h-1 bg-slate-300 rounded-full" />
         </div>
+        
         <DialogHeader>
-          <DialogTitle className="text-right">
-            دفع للمورد: {purchase.supplierName}
+          <DialogTitle className="text-right flex items-center gap-2 text-lg sm:text-xl">
+            دفع فاتورة للمورد {purchase.supplierName}
           </DialogTitle>
           <DialogDescription className="sr-only">تسجيل دفعة للمورد</DialogDescription>
         </DialogHeader>
-        <div className="space-y-3 px-1 pb-2">
-          {/* ملخص الفاتورة */}
-          <div className="bg-amber-50 rounded-lg p-3 space-y-2">
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-600">فاتورة</span>
-              <span className="font-bold text-slate-800">{purchase.invoiceNo || formatDate(purchase.date)}</span>
+
+        <div className="space-y-4 px-1 pb-2">
+          {/* ملخص الفاتورة - Responsive */}
+          <div className="bg-blue-50 rounded-lg p-3 sm:p-4 space-y-2">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs sm:text-sm">
+              <span className="text-slate-600">رقم الفاتورة:</span>
+              <Badge variant="outline" className="text-xs sm:text-sm">{purchase.invoiceNo}</Badge>
             </div>
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-600">إجمالي الفاتورة</span>
-              <span className="font-bold text-amber-700">{formatCurrency(purchase.total)}</span>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs sm:text-sm">
+              <span className="text-slate-600">الإجمالي:</span>
+              <span className="font-semibold text-sm sm:text-base">{formatCurrency(purchase.total)}</span>
             </div>
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-600">المدفوع سابقاً</span>
-              <span className="font-bold text-blue-700">{formatCurrency(purchase.paid)}</span>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs sm:text-sm">
+              <span className="text-slate-600">المدفوع:</span>
+              <span className="text-amber-600 font-semibold text-sm sm:text-base">{formatCurrency(purchase.paid)}</span>
             </div>
-            <div className="border-t border-amber-200 pt-2 flex items-center justify-between text-xs">
-              <span className="text-slate-700 font-bold">المتبقي</span>
-              <span className="font-bold text-rose-700 text-base">{formatCurrency(remaining)}</span>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs sm:text-sm">
+              <span className="text-slate-600">المتبقي:</span>
+              <span className="text-blue-600 font-bold text-sm sm:text-base">{formatCurrency(remaining)}</span>
             </div>
           </div>
 
-          {/* المبلغ */}
-          <div>
-            <Label className="text-xs">مبلغ الدفع *</Label>
-            <Input
-              type="number"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="0"
-              className="bg-slate-50 text-lg font-bold"
-              min="0"
-              max={remaining}
-            />
-            <div className="flex justify-between mt-1">
-              <button
-                type="button"
-                onClick={() => setAmount(String(remaining))}
-                className="text-[10px] text-emerald-600 hover:underline"
-              >
-                دفع المتبقي كاملاً ({formatCurrency(remaining)})
-              </button>
-              {Number(amount) > 0 && (
-                <span className="text-[10px] text-slate-500">
-                  سيتبقى: {formatCurrency(Math.max(0, remaining - Number(amount)))}
-                </span>
-              )}
+          {/* رسالة الخطأ */}
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-xs sm:text-sm">
+              {error}
             </div>
-          </div>
+          )}
 
-          {/* طريقة الدفع والتاريخ */}
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <Label className="text-xs">طريقة الدفع</Label>
-              <Select value={method} onValueChange={(v) => setMethod(v as any)}>
-                <SelectTrigger className="bg-slate-50">
+          {/* نموذج الإدخال - Responsive */}
+          <div className="space-y-3">
+            {/* المبلغ */}
+            <div className="space-y-1.5">
+              <Label htmlFor="amount" className="text-xs sm:text-sm">
+                المبلغ المراد دفعه <span className="text-red-500">*</span>
+              </Label>
+              <Input
+                id="amount"
+                type="number"
+                placeholder="أدخل المبلغ"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                disabled={saving}
+                className="text-sm sm:text-base"
+              />
+              <div className="text-xs text-slate-500">
+                الحد الأقصى: {formatCurrency(remaining)}
+              </div>
+            </div>
+
+            {/* طريقة الدفع */}
+            <div className="space-y-1.5">
+              <Label htmlFor="method" className="text-xs sm:text-sm">
+                طريقة الدفع
+              </Label>
+              <Select value={method} onValueChange={(v: any) => setMethod(v)} disabled={saving}>
+                <SelectTrigger id="method" className="text-sm sm:text-base">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent dir="rtl">
                   <SelectItem value="cash">كاش</SelectItem>
                   <SelectItem value="transfer">تحويل بنكي</SelectItem>
                   <SelectItem value="card">بطاقة</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            <div>
-              <Label className="text-xs">التاريخ</Label>
+
+            {/* التاريخ */}
+            <div className="space-y-1.5">
+              <Label htmlFor="date" className="text-xs sm:text-sm">
+                التاريخ
+              </Label>
               <Input
+                id="date"
                 type="date"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                className="bg-slate-50"
+                disabled={saving}
+                className="text-sm sm:text-base"
+              />
+            </div>
+
+            {/* ملاحظات */}
+            <div className="space-y-1.5">
+              <Label htmlFor="notes" className="text-xs sm:text-sm">
+                ملاحظات
+              </Label>
+              <Textarea
+                id="notes"
+                placeholder="أضف ملاحظات إضافية (اختياري)"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                disabled={saving}
+                rows={3}
+                className="text-sm sm:text-base resize-none"
               />
             </div>
           </div>
-
-          {/* ملاحظات */}
-          <div>
-            <Label className="text-xs">ملاحظات</Label>
-            <Textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="ملاحظات الدفعة..."
-              className="bg-slate-50 text-sm"
-              rows={2}
-            />
-          </div>
         </div>
 
-        {/* الأزرار: الإجراء الأساسي (دفع) أولاً، ثم الإلغاء في النهاية */}
-        <DialogFooter className="gap-2 px-1 pb-6">
+        {/* الأزرار - Responsive */}
+        <DialogFooter className="flex gap-2 sm:gap-3 flex-col-reverse sm:flex-row">
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={saving}
+            className="w-full sm:w-auto text-sm sm:text-base"
+          >
+            إلغاء
+          </Button>
           <Button
             onClick={save}
-            disabled={saving || !amount || Number(amount) <= 0}
-            className="bg-amber-600 hover:bg-amber-700 text-white"
+            disabled={saving}
+            className="w-full sm:w-auto text-sm sm:text-base"
           >
-            {saving ? 'جارٍ الحفظ...' : `دفع ${formatCurrency(Number(amount) || 0)}`}
-          </Button>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
-            إلغاء
+            {saving ? 'جاري الحفظ...' : 'حفظ الدفعة'}
           </Button>
         </DialogFooter>
       </DialogContent>
