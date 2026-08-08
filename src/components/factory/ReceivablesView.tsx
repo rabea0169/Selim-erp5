@@ -69,6 +69,8 @@ interface TxRow {
 
 // ============================================================
 // جلب ذمم العملاء
+// fix(receivables): جلب إحصائيات العملاء بالتوازي (Promise.all) بدل التسلسل
+// — كان استعلاماً متسلسلاً لكل عميل (N+1) ويسبب 100+ طلب متتابع
 // ============================================================
 async function fetchCustomerDebts(search: string): Promise<{ items: CustomerDebt[]; total: number }> {
   const raw = search
@@ -76,9 +78,12 @@ async function fetchCustomerDebts(search: string): Promise<{ items: CustomerDebt
     : await customerRepository.getAll()
   const customers: Customer[] = Array.isArray(raw) ? raw : (raw as any)?.customers ?? []
 
+  const statsList = await Promise.all(customers.map((c) => customerRepository.getWithStats(c.id)))
+
   const items: CustomerDebt[] = []
-  for (const c of customers) {
-    const stats = await customerRepository.getWithStats(c.id)
+  for (let i = 0; i < customers.length; i++) {
+    const c = customers[i]
+    const stats = statsList[i]
     if (!stats) continue
     const openingBalance = c.openingBalance || 0
     const totalDebt = stats.totalRemaining + openingBalance
@@ -103,6 +108,7 @@ async function fetchCustomerDebts(search: string): Promise<{ items: CustomerDebt
 // جلب ذمم الموردين
 // fix(receivables): أصبح يعتمد على supplier-report (يخصم مرتجعات الشراء
 // والسدادات العامة) بدل تجميع المشتريات فقط الذي كان يبالغ في المستحق
+// + جلب الإحصائيات بالتوازي (Promise.all) بدل التسلسل (إصلاح N+1)
 // ============================================================
 async function fetchSupplierDebts(search: string): Promise<{ items: SupplierDebt[]; total: number }> {
   const rawSupp = search
@@ -110,9 +116,12 @@ async function fetchSupplierDebts(search: string): Promise<{ items: SupplierDebt
     : await supplierRepository.getAll()
   const suppliers: Supplier[] = Array.isArray(rawSupp) ? rawSupp : (rawSupp as any)?.suppliers ?? []
 
+  const statsList = await Promise.all(suppliers.map((s) => supplierRepository.getWithStats(s.id)))
+
   const items: SupplierDebt[] = []
-  for (const s of suppliers) {
-    const stats = await supplierRepository.getWithStats(s.id)
+  for (let i = 0; i < suppliers.length; i++) {
+    const s = suppliers[i]
+    const stats = statsList[i]
     if (!stats) continue
     const openingBalance = (s as any).openingBalance || 0
     const totalDebt = stats.totalRemaining + openingBalance
@@ -152,6 +161,8 @@ export function ReceivablesView({ onBack }: { onBack?: () => void }) {
     ['suppliers', 'purchases', 'payments', 'purchaseReturns']
   )
 
+  // إعادة التحميل عند تغيّر البحث — reload يتجاهل الاستدعاء قبل اكتمال
+  // التحميل الأول تلقائياً (منع الجلب المزدوج عند فتح الشاشة)
   useEffect(() => { reloadCust(); reloadSupp() }, [search, reloadCust, reloadSupp])
 
   const customers = custData?.items || []
