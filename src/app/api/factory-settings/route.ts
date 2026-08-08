@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
-import { requireAdmin } from '@/lib/admin-check'
+import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
 
 export async function GET() {
   try {
+    const user = await getCurrentUser()
+    if (!user?.companyId) {
+      return NextResponse.json({ settings: null })
+    }
     const settings = await db.factorySettings.findUnique({
-      where: { id: 'singleton' },
+      where: { companyId: user.companyId },
     })
     return NextResponse.json({ settings })
   } catch (e) {
@@ -17,9 +21,17 @@ export async function GET() {
 
 export async function PUT(req: NextRequest) {
   try {
-    const admin = await requireAdmin()
-    if (!admin.ok) {
-      return NextResponse.json({ error: admin.error }, { status: admin.status })
+    const user = await getCurrentUser()
+    if (!user) {
+      return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    }
+    if (user.role !== 'admin' && user.role !== 'owner') {
+      return NextResponse.json({ error: 'غير مصرح — يتطلب صلاحيات مدير' }, { status: 403 })
+    }
+
+    const companyId = user.companyId
+    if (!companyId) {
+      return NextResponse.json({ error: 'لم يتم العثور على شركة مرتبطة بالحساب' }, { status: 400 })
     }
 
     const body = await req.json()
@@ -31,42 +43,30 @@ export async function PUT(req: NextRequest) {
       )
     }
 
+    const data = {
+      factoryName: body.factoryName.trim(),
+      factoryNameEn: body.factoryNameEn?.trim() || null,
+      slogan: body.slogan?.trim() || null,
+      phone: body.phone?.trim() || null,
+      whatsapp: body.whatsapp?.trim() || null,
+      email: body.email?.trim() || null,
+      address: body.address?.trim() || null,
+      taxNumber: body.taxNumber?.trim() || null,
+      commercialRegister: body.commercialRegister?.trim() || null,
+      logo: body.logo || null,
+      currency: body.currency?.trim() || 'ج.م',
+      invoicePrefix: body.invoicePrefix?.trim() || 'INV-',
+      invoiceFooter: body.invoiceFooter?.trim() || null,
+      defaultPaperSize: body.defaultPaperSize?.trim() || 'A4',
+      taxRate: body.taxRate != null ? Number(body.taxRate) : 0,
+    }
+
     const settings = await db.factorySettings.upsert({
-      where: { id: 'singleton' },
-      update: {
-        factoryName: body.factoryName.trim(),
-        factoryNameEn: body.factoryNameEn?.trim() || null,
-        slogan: body.slogan?.trim() || null,
-        phone: body.phone?.trim() || null,
-        whatsapp: body.whatsapp?.trim() || null,
-        email: body.email?.trim() || null,
-        address: body.address?.trim() || null,
-        taxNumber: body.taxNumber?.trim() || null,
-        commercialRegister: body.commercialRegister?.trim() || null,
-        logo: body.logo || null,
-        currency: body.currency?.trim() || 'ج.م',
-        invoicePrefix: body.invoicePrefix?.trim() || 'INV-',
-        invoiceFooter: body.invoiceFooter?.trim() || null,
-        defaultPaperSize: body.defaultPaperSize?.trim() || 'A4',
-        taxRate: body.taxRate != null ? Number(body.taxRate) : 0,
-      },
+      where: { companyId },
+      update: data,
       create: {
-        id: 'singleton',
-        factoryName: body.factoryName.trim(),
-        factoryNameEn: body.factoryNameEn?.trim() || null,
-        slogan: body.slogan?.trim() || null,
-        phone: body.phone?.trim() || null,
-        whatsapp: body.whatsapp?.trim() || null,
-        email: body.email?.trim() || null,
-        address: body.address?.trim() || null,
-        taxNumber: body.taxNumber?.trim() || null,
-        commercialRegister: body.commercialRegister?.trim() || null,
-        logo: body.logo || null,
-        currency: body.currency?.trim() || 'ج.م',
-        invoicePrefix: body.invoicePrefix?.trim() || 'INV-',
-        invoiceFooter: body.invoiceFooter?.trim() || null,
-        defaultPaperSize: body.defaultPaperSize?.trim() || 'A4',
-        taxRate: body.taxRate != null ? Number(body.taxRate) : 0,
+        companyId,
+        ...data,
       },
     })
 

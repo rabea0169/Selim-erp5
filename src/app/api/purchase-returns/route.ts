@@ -6,7 +6,7 @@ import { safeError } from '@/lib/safe-error'
 export async function GET(req: NextRequest) {
   try {
     const user = await getCurrentUser()
-    if (!user) return NextResponse.json({ error: 'غير مصرح' }, { status: 401 })
+    if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
 
     const { searchParams } = new URL(req.url)
     const purchaseId = searchParams.get('purchaseId')
@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
     const page = Math.max(1, Number(searchParams.get('page')) || 1)
     const limit = Math.min(100, Math.max(1, Number(searchParams.get('limit')) || 50))
 
-    const where: any = {}
+    const where: any = user.companyId ? { companyId: user.companyId } : {}
     if (purchaseId) where.purchaseId = purchaseId
     if (from || to) {
       where.date = {}
@@ -37,8 +37,9 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const user = await getCurrentUser()
-    if (!user) return NextResponse.json({ error: 'غير مصرح' }, { status: 401 })
+    if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
 
+    const companyId = user.companyId || null
     const body = await req.json()
     const { purchaseId, invoiceNo, supplierName, supplierId_ref, date, total, reason, restockItems, items, notes } = body
 
@@ -46,25 +47,29 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'بيانات مطلوبة ناقصة' }, { status: 400 })
     }
 
+    const totalNum = Math.round((Number(total) || 0) * 100) / 100
+
     const purchaseReturn = await db.$transaction(async (tx) => {
-      // Fix I + Fix U: Move purchase fetch inside transaction + use findUnique
-      const purchase = await tx.purchase.findUnique({ where: { id: purchaseId } })
+      const purchase = await tx.purchase.findFirst({
+        where: { id: purchaseId, ...(companyId ? { companyId } : {}) },
+      })
       if (!purchase) throw new Error('فاتورة الشراء غير موجودة')
 
-      // Validate return total does not exceed purchase total
-      if (Number(total) > purchase.total) {
-        throw new Error(`مبلغ المرتجع (${Number(total)}) يتجاوز إجمالي فاتورة الشراء (${purchase.total})`)
+      const purchaseTotal = Math.round(purchase.total * 100) / 100
+      if (totalNum - purchaseTotal > 0.01) {
+        throw new Error(`مبلغ المرتجع (${totalNum}) يتجاوز إجمالي فاتورة الشراء (${purchaseTotal})`)
       }
 
       const ret = await tx.purchaseReturn.create({
         data: {
+          companyId,
           returnNumber: `PR-${Date.now()}`,
           purchaseId,
           invoiceNo: invoiceNo?.trim() || null,
           supplierName: supplierName.trim(),
           supplierId_ref: supplierId_ref || null,
           date: new Date(date),
-          total: Number(total) || 0,
+          total: totalNum,
           reason: reason?.trim() || null,
           items: items || [],
           notes: notes?.trim() || null,
@@ -72,10 +77,11 @@ export async function POST(req: NextRequest) {
       })
 
       if (restockItems !== false && Array.isArray(items)) {
-        // Validate material quantities won't go negative before decrementing
         for (const it of items) {
           if (it.materialId && it.quantity > 0) {
-            const mat = await tx.material.findUnique({ where: { id: it.materialId } })
+            const mat = await tx.material.findFirst({
+              where: { id: it.materialId, ...(companyId ? { companyId } : {}) },
+            })
             if (!mat) throw new Error(`المادة غير موجودة: ${it.materialId}`)
             if (mat.quantity < Number(it.quantity)) {
               throw new Error(`كمية المرتجع (${Number(it.quantity)}) تتجاوز المخزون المتاح (${mat.quantity}) للمادة: ${mat.name || it.materialId}`)
@@ -84,7 +90,6 @@ export async function POST(req: NextRequest) {
         }
         for (const it of items) {
           if (it.materialId && it.quantity > 0) {
-            // Fix I: Atomic decrement instead of read-then-write
             await tx.material.update({
               where: { id: it.materialId },
               data: { quantity: { decrement: Number(it.quantity) }, updatedAt: new Date() },
@@ -96,6 +101,7 @@ export async function POST(req: NextRequest) {
       if (ret.total > 0) {
         await tx.treasuryTransaction.create({
           data: {
+            companyId,
             type: 'deposit',
             amount: ret.total,
             date: new Date(date),
@@ -112,10 +118,8 @@ export async function POST(req: NextRequest) {
     })
 
     return NextResponse.json({ return: purchaseReturn })
-  } catch (e) {
-    if (e instanceof Error && e.message.includes('غير موجودة')) {
-      return NextResponse.json({ error: e.message }, { status: 404 })
-    }
-    const { error, status } = safeError(e); return NextResponse.json({ error }, { status })
+  } catch (e: any) {
+    const { error, status } = safeError(e, 400)
+    return NextResponse.json({ error }, { status })
   }
 }
