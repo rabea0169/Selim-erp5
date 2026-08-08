@@ -206,7 +206,7 @@ export async function POST(req: NextRequest) {
           supplierId: type === 'supplier_payment' ? validSupplierId : null,
           invoiceId: invoiceId?.trim() || null,
           invoiceNo: invoiceNo?.trim() || null,
-          amount: new Decimal(amountNumber),
+          amount: amountNumber,
           date: new Date(date || Date.now()),
           method: method?.trim() || 'cash',
           notes: notes?.trim() || null,
@@ -218,12 +218,12 @@ export async function POST(req: NextRequest) {
         if (type === 'customer_payment') {
           await tx.sale.update({
             where: { id: invoice.id },
-            data: { paid: new Decimal(invoice.paid).plus(new Decimal(amountNumber)) },
+            data: { paid: (invoice.paid || 0) + amountNumber },
           })
         } else {
           await tx.purchase.update({
             where: { id: invoice.id },
-            data: { paid: new Decimal(invoice.paid).plus(new Decimal(amountNumber)) },
+            data: { paid: (invoice.paid || 0) + amountNumber },
           })
         }
       }
@@ -233,7 +233,7 @@ export async function POST(req: NextRequest) {
         data: {
           companyId,
           type: type === 'customer_payment' ? 'deposit' : 'withdrawal',
-          amount: new Decimal(amountNumber),
+          amount: amountNumber,
           date: new Date(date || Date.now()),
           description: type === 'customer_payment' 
             ? `تحصيل من عميل - ${validCustomerId}`

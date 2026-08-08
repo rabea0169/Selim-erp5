@@ -127,9 +127,9 @@ export async function PUT(req: NextRequest) {
     let settings: any = null
 
     if (existing) {
-      // تحديث السجل الموجود باستخدام ID بدلاً من updateMany
+      // تحديث السجل الموجود باستخدام companyId
       settings = await db.factorySettings.update({
-        where: { id: existing.id },
+        where: { companyId },
         data: payload,
       })
     } else {
