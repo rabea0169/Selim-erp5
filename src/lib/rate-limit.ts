@@ -56,11 +56,20 @@ export function rateLimit(
 
 /**
  * الحصول على IP العميل من الطلب
+ *
+ * افتراض النشر: التطبيق يعمل خلف وكيل عكسي موثوق (Railway) يضبط
+ * x-real-ip ويلحق IP العميل في نهاية x-forwarded-for.
+ * لذلك نفضّل x-real-ip أولاً، وإلا نأخذ **آخر** عنصر في x-forwarded-for
+ * (الأقرب للوكيل الموثوق — العناصر الأولى قابلة للتزوير من العميل).
+ * تحذير: لو نُشر التطبيق بدون وكيل موثوق يصبح هذا المصدر قابلاً للتزوير.
  */
 export function getClientIP(request: Request): string {
-  const forwarded = request.headers.get('x-forwarded-for')
-  if (forwarded) return forwarded.split(',')[0].trim()
   const realIP = request.headers.get('x-real-ip')
   if (realIP) return realIP.trim()
+  const forwarded = request.headers.get('x-forwarded-for')
+  if (forwarded) {
+    const parts = forwarded.split(',').map((p) => p.trim()).filter(Boolean)
+    if (parts.length > 0) return parts[parts.length - 1]
+  }
   return 'unknown'
 }

@@ -2,12 +2,23 @@ import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { db } from '@/lib/db-server'
 import { safeError } from '@/lib/safe-error'
+import { rateLimit, getClientIP } from '@/lib/rate-limit'
 
 // POST /api/auth/reset-registration — حذف مستخدمي شركة واحدة لإعادة فتح التسجيل
 // محمي بـ RESET_KEY من متغيرات البيئة + يتطلب تحديد الشركة صراحةً
 // Fix: كان يحذف مستخدمي كل الشركات — الآن مقيد بشركة محددة فقط
 export async function POST(req: NextRequest) {
   try {
+    // Rate limiting صارم: 5 محاولات في الدقيقة لكل IP لمنع التخمين المتكرر للمفتاح
+    const ip = getClientIP(req)
+    const { limited, retryAfter } = rateLimit(`reset-registration:${ip}`, 5, 60_000)
+    if (limited) {
+      return NextResponse.json(
+        { error: `محاولات كثيرة جداً. حاول بعد ${retryAfter} ثانية` },
+        { status: 429, headers: { 'Retry-After': String(retryAfter) } }
+      )
+    }
+
     const body = await req.json()
     const resetKey = body.resetKey
     const targetCompanyId = body.companyId

@@ -4,8 +4,13 @@ import { cookies } from 'next/headers'
 import { db } from '@/lib/db-server'
 import { getTokenSecret } from './auth-secret'
 
+// تحذير: منطق التحقق من التوكن مكرر في src/lib/auth-edge.ts (Edge Runtime / Web Crypto).
+// أي تغيير في صيغة التوكن أو التوقيع هنا يجب أن يعكس هناك وإلا يتعطل الـ middleware.
 const SESSION_COOKIE = 'factory_session'
-const SESSION_EXPIRY_DAYS = 30
+// مدة الجلسة مقلّصة من 30 إلى 7 أيام لتقليل نافذة إساءة استخدام توكن مسروق.
+// ملاحظة: الدور يُقرأ دائماً من قاعدة البيانات (getCurrentUser / requireAdmin)
+// ولا يُعتمد على role داخل التوكن، فتغيير الدور يسري فوراً حتى مع توكن قديم.
+const SESSION_EXPIRY_DAYS = 7
 
 // إنشاء session token ببيانات المستخدم + توقيع HMAC
 function createSessionToken(userId: string, username: string, role: string = 'user', companyId?: string | null): string {
@@ -36,6 +41,8 @@ export function verifySessionToken(token: string | undefined): { userId: string;
 }
 
 // الحصول على المستخدم الحالي من الكوكيز
+// ملاحظة أمنية: الدور (role) يُقرأ من قاعدة البيانات في كل طلب وليس من التوكن،
+// فأي تغيير في الدور أو حذف المستخدم يسري فوراً دون انتظار انتهاء التوكن.
 export async function getCurrentUser(): Promise<{
   id: string
   username: string
@@ -60,6 +67,8 @@ export async function isRegistrationAllowed(): Promise<boolean> {
 }
 
 // تسجيل الدخول
+// ملاحظة أمنية: كلمة المرور تُستقبل كنص عادي في جسم JSON — مقبول فقط فوق HTTPS
+// (يجب فرض HTTPS في الإنتاج؛ HSTS مفعّل في next.config.ts).
 export async function loginUser(username: string, password: string): Promise<{
   success: boolean
   error?: string
