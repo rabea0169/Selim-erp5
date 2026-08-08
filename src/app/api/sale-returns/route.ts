@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
-import { getCurrentUser } from '@/lib/auth'
+import { requireCompanyScope } from '@/lib/company-scope'
 import { safeError } from '@/lib/safe-error'
 
 export async function GET(req: NextRequest) {
   try {
-    const user = await getCurrentUser()
-    if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    const scope = await requireCompanyScope()
+    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
+    const companyId = scope.companyId
 
     const { searchParams } = new URL(req.url)
     const saleId = searchParams.get('saleId')
@@ -15,7 +16,7 @@ export async function GET(req: NextRequest) {
     const page = Math.max(1, Number(searchParams.get('page')) || 1)
     const limit = Math.min(100, Math.max(1, Number(searchParams.get('limit')) || 50))
 
-    const where: any = user.companyId ? { companyId: user.companyId } : {}
+    const where: any = { companyId }
     if (saleId) where.saleId = saleId
     if (from || to) {
       where.date = {}
@@ -27,7 +28,7 @@ export async function GET(req: NextRequest) {
       db.saleReturn.findMany({ where, orderBy: { date: 'desc' }, skip: (page - 1) * limit, take: limit }),
       db.saleReturn.count({ where }),
     ])
-    return NextResponse.json({ saleReturns: returns, returns, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } })
+    return NextResponse.json({ returns, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } })
   } catch (e) {
     const { error, status } = safeError(e); return NextResponse.json({ error }, { status })
   }
@@ -35,10 +36,9 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const user = await getCurrentUser()
-    if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
-
-    const companyId = user.companyId || null
+    const scope = await requireCompanyScope()
+    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
+    const companyId = scope.companyId
     const body = await req.json()
     const { saleId, date, total, reason, notes, items, returnNumber, customerName, restockItems } = body
 
@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
 
     const ret = await db.$transaction(async (tx) => {
       const sale = await tx.sale.findFirst({
-        where: { id: saleId, ...(companyId ? { companyId } : {}) },
+        where: { id: saleId, companyId },
         include: { items: true },
       })
       if (!sale) throw new Error('الفاتورة غير موجودة')
@@ -106,7 +106,7 @@ export async function POST(req: NextRequest) {
       return saleReturn
     })
 
-    return NextResponse.json({ return: ret, saleReturn: ret })
+    return NextResponse.json({ return: ret })
   } catch (e: any) {
     const { error, status } = safeError(e, 400)
     return NextResponse.json({ error }, { status })
