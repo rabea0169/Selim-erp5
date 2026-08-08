@@ -180,10 +180,28 @@ export async function POST(req: NextRequest) {
       }
 
       // إنشاء السداد
+      // الحصول على اسم العميل أو المورد
+      let partyName = ''
+      if (type === 'customer_payment' && validCustomerId) {
+        const customer = await tx.customer.findUnique({
+          where: { id: validCustomerId },
+          select: { name: true },
+        })
+        partyName = customer?.name || 'عميل'
+      } else if (type === 'supplier_payment' && validSupplierId) {
+        const supplier = await tx.supplier.findUnique({
+          where: { id: validSupplierId },
+          select: { name: true },
+        })
+        partyName = supplier?.name || 'مورد'
+      }
+
       const newPayment = await tx.payment.create({
         data: {
           companyId,
           type,
+          partyId: type === 'customer_payment' ? (validCustomerId || 'unlinked') : (validSupplierId || 'unlinked'),
+          partyName: partyName || (type === 'customer_payment' ? 'عميل' : 'مورد'),
           customerId: type === 'customer_payment' ? validCustomerId : null,
           supplierId: type === 'supplier_payment' ? validSupplierId : null,
           invoiceId: invoiceId?.trim() || null,
@@ -191,7 +209,6 @@ export async function POST(req: NextRequest) {
           amount: new Decimal(amountNumber),
           date: new Date(date || Date.now()),
           method: method?.trim() || 'cash',
-          referenceNumber: referenceNumber?.trim() || null,
           notes: notes?.trim() || null,
         },
       })
