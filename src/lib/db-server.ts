@@ -32,6 +32,7 @@ async function ensurePaymentPartyColumns(attempt = 1): Promise<void> {
 
     // Ensure FactorySettings id is dropped or not breaking
     // We drop the legacy id column entirely because Prisma no longer sends it (client-side CUID)
+    await db.$executeRawUnsafe('DELETE FROM "FactorySettings" WHERE "companyId" IS NULL').catch(() => {})
     await db.$executeRawUnsafe('ALTER TABLE "FactorySettings" DROP CONSTRAINT IF EXISTS "FactorySettings_pkey" CASCADE').catch(() => {})
     await db.$executeRawUnsafe('ALTER TABLE "FactorySettings" DROP COLUMN IF EXISTS "id" CASCADE').catch(() => {})
     await db.$executeRawUnsafe('ALTER TABLE "FactorySettings" ADD PRIMARY KEY ("companyId")').catch(() => {})

@@ -80,6 +80,7 @@ export function SupplierPaymentDialog({ open, onOpenChange, purchase }: Supplier
         // مورد مسجل: POST /api/payments
         const response = await paymentRepository.create({
           type: 'supplier_payment',
+          supplierId: purchase.supplierId_ref,
           partyId: purchase.supplierId_ref,
           partyName: purchase.supplierName,
           invoiceId: purchase.id,

@@ -80,6 +80,7 @@ export function CustomerPaymentDialog({ open, onOpenChange, sale }: CustomerPaym
         // عميل مسجل: POST /api/payments
         const response = await paymentRepository.create({
           type: 'customer_payment',
+          customerId: sale.customerId_ref,
           partyId: sale.customerId_ref,
           partyName: sale.customerName,
           invoiceId: sale.id,
