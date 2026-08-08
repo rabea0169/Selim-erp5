@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
 import { requireCompanyScope } from '@/lib/company-scope'
 import { safeError } from '@/lib/safe-error'
+import { checkPermission } from '@/lib/permissions'
 import { Decimal } from '@prisma/client/runtime/library'
 
 // GET /api/payments
@@ -9,6 +10,16 @@ export async function GET(req: NextRequest) {
   try {
     const scope = await requireCompanyScope()
     if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
+    
+    // التحقق من الصلاحيات
+    const hasPermission = await checkPermission(scope.user?.id || '', 'payments', 'READ')
+    if (!hasPermission) {
+      return NextResponse.json(
+        { error: 'ليس لديك صلاحية عرض المدفوعات' },
+        { status: 403 }
+      )
+    }
+    
     const companyId = scope.companyId
 
     const { searchParams } = new URL(req.url)
@@ -59,6 +70,16 @@ export async function POST(req: NextRequest) {
   try {
     const scope = await requireCompanyScope()
     if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
+    
+    // التحقق من الصلاحيات
+    const hasPermission = await checkPermission(scope.user?.id || '', 'payments', 'CREATE')
+    if (!hasPermission) {
+      return NextResponse.json(
+        { error: 'ليس لديك صلاحية إنشاء مدفوعات' },
+        { status: 403 }
+      )
+    }
+    
     const companyId = scope.companyId
 
     const body = await req.json()
