@@ -88,6 +88,24 @@ export async function POST(req: NextRequest) {
     const payment = await db.$transaction(async (tx) => {
       let sale: any = null
       let purchase: any = null
+      let validCustomerId: string | null = null
+      let validSupplierId: string | null = null
+
+      if (type === 'customer_payment') {
+        if (pId && pId !== 'unlinked') {
+          const cust = await tx.customer.findFirst({
+            where: { id: pId, ...(companyId ? { companyId } : {}) },
+          })
+          if (cust) validCustomerId = cust.id
+        }
+      } else {
+        if (pId && pId !== 'unlinked') {
+          const supp = await tx.supplier.findFirst({
+            where: { id: pId, ...(companyId ? { companyId } : {}) },
+          })
+          if (supp) validSupplierId = supp.id
+        }
+      }
 
       if (invoiceId?.trim()) {
         if (type === 'customer_payment') {
@@ -99,6 +117,10 @@ export async function POST(req: NextRequest) {
           if (amountNumber - remaining > 0.01) {
             throw new Error(`المبلغ (${amountNumber}) يتجاوز الرصيد المتبقي للفاتورة (${remaining})`)
           }
+          if (!validCustomerId && sale.customerId_ref) {
+            const cust = await tx.customer.findFirst({ where: { id: sale.customerId_ref } })
+            if (cust) validCustomerId = cust.id
+          }
         } else {
           purchase = await tx.purchase.findUnique({ where: { id: invoiceId.trim() } })
           if (!purchase) {
@@ -107,6 +129,10 @@ export async function POST(req: NextRequest) {
           const remaining = Math.round((purchase.total - purchase.paid) * 100) / 100
           if (amountNumber - remaining > 0.01) {
             throw new Error(`المبلغ (${amountNumber}) يتجاوز الرصيد المتبقي للفاتورة (${remaining})`)
+          }
+          if (!validSupplierId && purchase.supplierId_ref) {
+            const supp = await tx.supplier.findFirst({ where: { id: purchase.supplierId_ref } })
+            if (supp) validSupplierId = supp.id
           }
         }
       }
@@ -117,6 +143,8 @@ export async function POST(req: NextRequest) {
           type,
           partyId: pId,
           partyName: pName,
+          customerId: validCustomerId,
+          supplierId: validSupplierId,
           invoiceId: invoiceId?.trim() || null,
           invoiceNo: invoiceNo?.trim() || null,
           amount: amountNumber,

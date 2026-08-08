@@ -27,12 +27,12 @@ export async function GET() {
     if (!scope.ok) return NextResponse.json({ settings: null })
     const companyId = scope.companyId
 
-    const settings = await db.factorySettings.findUnique({
+    const settings = await db.factorySettings.findFirst({
       where: { companyId },
     })
 
     if (!settings) {
-      return NextResponse.json({ id: companyId, ...DEFAULT_SETTINGS, updatedAt: new Date().toISOString() })
+      return NextResponse.json({ id: companyId, companyId, ...DEFAULT_SETTINGS, updatedAt: new Date().toISOString() })
     }
 
     return NextResponse.json({ ...settings, id: settings.companyId })
@@ -62,7 +62,7 @@ export async function PUT(req: NextRequest) {
       )
     }
 
-    const data = {
+    const payload = {
       factoryName: body.factoryName.trim(),
       factoryNameEn: body.factoryNameEn?.trim() || null,
       slogan: body.slogan?.trim() || null,
@@ -80,14 +80,25 @@ export async function PUT(req: NextRequest) {
       taxRate: body.taxRate != null ? Number(body.taxRate) : 0,
     }
 
-    const settings = await db.factorySettings.upsert({
+    // نستخدم findFirst + update أو create لتفادي أي صراع على حقل id في قاعدة البيانات القديمة
+    let settings = await db.factorySettings.findFirst({
       where: { companyId },
-      update: data,
-      create: {
-        companyId,
-        ...data,
-      },
     })
+
+    if (settings) {
+      settings = await db.factorySettings.update({
+        where: { companyId },
+        data: payload,
+      })
+    } else {
+      settings = await db.factorySettings.create({
+        data: {
+          id: companyId,
+          companyId,
+          ...payload,
+        } as any,
+      })
+    }
 
     return NextResponse.json({ ...settings, id: settings.companyId })
   } catch (e) {
