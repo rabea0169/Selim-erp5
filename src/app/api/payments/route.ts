@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
 import { requireCompanyScope } from '@/lib/company-scope'
 import { safeError } from '@/lib/safe-error'
+import { Decimal } from '@prisma/client/runtime/library'
 
 // GET /api/payments
 export async function GET(req: NextRequest) {
@@ -12,14 +13,16 @@ export async function GET(req: NextRequest) {
 
     const { searchParams } = new URL(req.url)
     const type = searchParams.get('type')
-    const partyId = searchParams.get('partyId')
+    const customerId = searchParams.get('customerId')
+    const supplierId = searchParams.get('supplierId')
     const invoiceId = searchParams.get('invoiceId')
     const page = Math.max(1, Number(searchParams.get('page')) || 1)
     const limit = Math.min(100, Math.max(1, Number(searchParams.get('limit')) || 50))
 
     const where: any = { companyId }
     if (type) where.type = type
-    if (partyId) where.partyId = partyId
+    if (customerId) where.customerId = customerId
+    if (supplierId) where.supplierId = supplierId
     if (invoiceId) where.invoiceId = invoiceId
 
     const [payments, total] = await Promise.all([
@@ -28,6 +31,10 @@ export async function GET(req: NextRequest) {
         orderBy: { date: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
+        include: {
+          customer: { select: { id: true, name: true } },
+          supplier: { select: { id: true, name: true } },
+        },
       }),
       db.payment.count({ where }),
     ])
@@ -57,16 +64,18 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const {
       type,
-      partyId,
-      partyName,
+      customerId,
+      supplierId,
       invoiceId,
       invoiceNo,
       amount,
       date,
       method,
+      referenceNumber,
       notes,
     } = body
 
+    // التحقق من نوع السداد
     if (type !== 'customer_payment' && type !== 'supplier_payment') {
       return NextResponse.json(
         { error: 'نوع السداد غير صالح (يجب أن يكون customer_payment أو supplier_payment)' },
@@ -74,9 +83,7 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const pName = partyName?.trim() || (type === 'customer_payment' ? 'عميل' : 'مورد')
-    const pId = partyId?.trim() || invoiceId?.trim() || 'unlinked'
-
+    // التحقق من المبلغ
     const amountNumber = Math.round(Number(amount) * 100) / 100
     if (!Number.isFinite(amountNumber) || amountNumber <= 0) {
       return NextResponse.json(
@@ -85,147 +92,146 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    // التحقق من طريقة السداد
+    const validMethods = ['cash', 'check', 'bank_transfer', 'credit_card']
+    if (method && !validMethods.includes(method)) {
+      return NextResponse.json(
+        { error: `طريقة السداد غير صالحة. الخيارات المتاحة: ${validMethods.join(', ')}` },
+        { status: 400 }
+      )
+    }
+
+    // إنشاء السداد في transaction
     const payment = await db.$transaction(async (tx) => {
-      let sale: any = null
-      let purchase: any = null
       let validCustomerId: string | null = null
       let validSupplierId: string | null = null
+      let invoice: any = null
 
+      // التحقق من العميل أو المورد
       if (type === 'customer_payment') {
-        if (pId && pId !== 'unlinked') {
-          const cust = await tx.customer.findFirst({
-            where: { id: pId, ...(companyId ? { companyId } : {}) },
-          })
-          if (cust) validCustomerId = cust.id
+        if (!customerId && !invoiceId) {
+          throw new Error('معرف العميل أو معرف الفاتورة مطلوب')
         }
-      } else {
-        if (pId && pId !== 'unlinked') {
-          const supp = await tx.supplier.findFirst({
-            where: { id: pId, ...(companyId ? { companyId } : {}) },
-          })
-          if (supp) validSupplierId = supp.id
-        }
-      }
 
-      if (invoiceId?.trim()) {
-        if (type === 'customer_payment') {
-          sale = await tx.sale.findUnique({ where: { id: invoiceId.trim() } })
-          if (!sale) {
+        if (customerId) {
+          const customer = await tx.customer.findFirst({
+            where: { id: customerId, companyId },
+          })
+          if (!customer) {
+            throw new Error('العميل المحدد غير موجود')
+          }
+          validCustomerId = customer.id
+        }
+
+        // التحقق من الفاتورة إن وجدت
+        if (invoiceId) {
+          invoice = await tx.sale.findUnique({
+            where: { id: invoiceId },
+          })
+          if (!invoice) {
             throw new Error('فاتورة البيع المحددة غير موجودة')
           }
-          const remaining = Math.round((sale.total - sale.paid) * 100) / 100
-          if (amountNumber - remaining > 0.01) {
-            throw new Error(`المبلغ (${amountNumber}) يتجاوز الرصيد المتبقي للفاتورة (${remaining})`)
+
+          // التحقق من عدم تجاوز المبلغ المستحق
+          const remaining = new Decimal(invoice.total).minus(new Decimal(invoice.paid))
+          if (new Decimal(amountNumber).greaterThan(remaining)) {
+            throw new Error(`المبلغ (${amountNumber}) يتجاوز الرصيد المتبقي للفاتورة (${remaining.toNumber()})`)
           }
-          if (!validCustomerId && sale.customerId_ref) {
-            const cust = await tx.customer.findFirst({ where: { id: sale.customerId_ref } })
-            if (cust) validCustomerId = cust.id
+
+          if (!validCustomerId) {
+            validCustomerId = invoice.customerId
           }
-        } else {
-          purchase = await tx.purchase.findUnique({ where: { id: invoiceId.trim() } })
-          if (!purchase) {
+        }
+      } else {
+        // supplier_payment
+        if (!supplierId && !invoiceId) {
+          throw new Error('معرف المورد أو معرف الفاتورة مطلوب')
+        }
+
+        if (supplierId) {
+          const supplier = await tx.supplier.findFirst({
+            where: { id: supplierId, companyId },
+          })
+          if (!supplier) {
+            throw new Error('المورد المحدد غير موجود')
+          }
+          validSupplierId = supplier.id
+        }
+
+        // التحقق من الفاتورة إن وجدت
+        if (invoiceId) {
+          invoice = await tx.purchase.findUnique({
+            where: { id: invoiceId },
+          })
+          if (!invoice) {
             throw new Error('فاتورة الشراء المحددة غير موجودة')
           }
-          const remaining = Math.round((purchase.total - purchase.paid) * 100) / 100
-          if (amountNumber - remaining > 0.01) {
-            throw new Error(`المبلغ (${amountNumber}) يتجاوز الرصيد المتبقي للفاتورة (${remaining})`)
+
+          // التحقق من عدم تجاوز المبلغ المستحق
+          const remaining = new Decimal(invoice.total).minus(new Decimal(invoice.paid))
+          if (new Decimal(amountNumber).greaterThan(remaining)) {
+            throw new Error(`المبلغ (${amountNumber}) يتجاوز الرصيد المتبقي للفاتورة (${remaining.toNumber()})`)
           }
-          if (!validSupplierId && purchase.supplierId_ref) {
-            const supp = await tx.supplier.findFirst({ where: { id: purchase.supplierId_ref } })
-            if (supp) validSupplierId = supp.id
+
+          if (!validSupplierId) {
+            validSupplierId = invoice.supplierId
           }
         }
       }
 
-      let newPayment: any = null
-      try {
-        newPayment = await tx.payment.create({
-          data: {
-            companyId,
-            type,
-            partyId: type === 'customer_payment' ? (validCustomerId || 'unlinked') : (validSupplierId || 'unlinked'),
-            partyName: pName,
-            customerId: type === 'customer_payment' ? validCustomerId : null,
-            supplierId: type === 'supplier_payment' ? validSupplierId : null,
-            invoiceId: invoiceId?.trim() || null,
-            invoiceNo: invoiceNo?.trim() || null,
-            amount: amountNumber,
-            date: new Date(date || Date.now()),
-            method: method?.trim() || null,
-            notes: notes?.trim() || null,
-          },
-        })
-      } catch {
-        // حماية ممر الحالات التي تحتوي على قيود موروثة قديمة في PostgreSQL:
-        // إنشاء سجل بديل بدون ربط العلاقات الخارجية لتمرير الحركة بنجاح
-        try {
-          newPayment = await tx.payment.create({
-            data: {
-              companyId,
-              type,
-              partyId: 'unlinked',
-              partyName: pName,
-              customerId: null,
-              supplierId: null,
-              invoiceId: invoiceId?.trim() || null,
-              invoiceNo: invoiceNo?.trim() || null,
-              amount: amountNumber,
-              date: new Date(date || Date.now()),
-              method: method?.trim() || null,
-              notes: notes?.trim() || null,
-            },
-          })
-        } catch {
-          newPayment = { id: `pmt_${Date.now()}`, amount: amountNumber }
-        }
-      }
+      // إنشاء السداد
+      const newPayment = await tx.payment.create({
+        data: {
+          companyId,
+          type,
+          customerId: type === 'customer_payment' ? validCustomerId : null,
+          supplierId: type === 'supplier_payment' ? validSupplierId : null,
+          invoiceId: invoiceId?.trim() || null,
+          invoiceNo: invoiceNo?.trim() || null,
+          amount: new Decimal(amountNumber),
+          date: new Date(date || Date.now()),
+          method: method?.trim() || 'cash',
+          referenceNumber: referenceNumber?.trim() || null,
+          notes: notes?.trim() || null,
+        },
+      })
 
-      if (type === 'customer_payment') {
-        if (sale) {
+      // تحديث الفاتورة إن وجدت
+      if (invoice) {
+        if (type === 'customer_payment') {
           await tx.sale.update({
-            where: { id: sale.id },
-            data: { paid: { increment: amountNumber } },
+            where: { id: invoice.id },
+            data: { paid: new Decimal(invoice.paid).plus(new Decimal(amountNumber)) },
           })
-        }
-        await tx.treasuryTransaction.create({
-          data: {
-            companyId,
-            type: 'deposit',
-            amount: amountNumber,
-            date: new Date(date || Date.now()),
-            description: `تحصيل من عميل - ${pName}`,
-            category: 'سدادات عملاء',
-            referenceType: 'payment',
-            referenceId: newPayment.id,
-            notes: invoiceNo?.trim() ? `فاتورة رقم ${invoiceNo.trim()}` : notes?.trim() || null,
-          },
-        })
-      } else {
-        if (purchase) {
+        } else {
           await tx.purchase.update({
-            where: { id: purchase.id },
-            data: { paid: { increment: amountNumber } },
+            where: { id: invoice.id },
+            data: { paid: new Decimal(invoice.paid).plus(new Decimal(amountNumber)) },
           })
         }
-        await tx.treasuryTransaction.create({
-          data: {
-            companyId,
-            type: 'withdrawal',
-            amount: amountNumber,
-            date: new Date(date || Date.now()),
-            description: `سداد لمورد - ${pName}`,
-            category: 'سدادات موردين',
-            referenceType: 'payment',
-            referenceId: newPayment.id,
-            notes: invoiceNo?.trim() ? `فاتورة رقم ${invoiceNo.trim()}` : notes?.trim() || null,
-          },
-        })
       }
+
+      // تسجيل في خزينة الشركة
+      await tx.treasuryTransaction.create({
+        data: {
+          companyId,
+          type: type === 'customer_payment' ? 'deposit' : 'withdrawal',
+          amount: new Decimal(amountNumber),
+          date: new Date(date || Date.now()),
+          description: type === 'customer_payment' 
+            ? `تحصيل من عميل - ${validCustomerId}`
+            : `سداد لمورد - ${validSupplierId}`,
+          category: type === 'customer_payment' ? 'سدادات عملاء' : 'سدادات موردين',
+          referenceType: 'payment',
+          referenceId: newPayment.id,
+          notes: invoiceNo?.trim() ? `فاتورة رقم ${invoiceNo.trim()}` : notes?.trim() || null,
+        },
+      })
 
       return newPayment
     })
 
-    return NextResponse.json({ payment })
+    return NextResponse.json({ payment }, { status: 201 })
   } catch (e: any) {
     const { error, status } = safeError(e, 400)
     return NextResponse.json({ error }, { status })
