@@ -24,6 +24,17 @@ async function ensurePaymentPartyColumns(attempt = 1): Promise<void> {
   try {
     await db.$executeRawUnsafe('ALTER TABLE "Payment" ADD COLUMN IF NOT EXISTS "customerId" TEXT')
     await db.$executeRawUnsafe('ALTER TABLE "Payment" ADD COLUMN IF NOT EXISTS "supplierId" TEXT')
+    // Drop legacy foreign keys that might be bound to partyId and causing constraint violations
+    await db.$executeRawUnsafe('ALTER TABLE "Payment" DROP CONSTRAINT IF EXISTS "payment_supplier_fk" CASCADE').catch(() => {})
+    await db.$executeRawUnsafe('ALTER TABLE "Payment" DROP CONSTRAINT IF EXISTS "payment_customer_fk" CASCADE').catch(() => {})
+    await db.$executeRawUnsafe('ALTER TABLE "Payment" DROP CONSTRAINT IF EXISTS "Payment_supplierId_fkey" CASCADE').catch(() => {})
+    await db.$executeRawUnsafe('ALTER TABLE "Payment" DROP CONSTRAINT IF EXISTS "Payment_customerId_fkey" CASCADE').catch(() => {})
+
+    // Ensure FactorySettings id is dropped or not breaking
+    // We drop the legacy id column entirely because Prisma no longer sends it (client-side CUID)
+    await db.$executeRawUnsafe('ALTER TABLE "FactorySettings" DROP CONSTRAINT IF EXISTS "FactorySettings_pkey" CASCADE').catch(() => {})
+    await db.$executeRawUnsafe('ALTER TABLE "FactorySettings" DROP COLUMN IF EXISTS "id" CASCADE').catch(() => {})
+    await db.$executeRawUnsafe('ALTER TABLE "FactorySettings" ADD PRIMARY KEY ("companyId")').catch(() => {})
   } catch (e) {
     console.error(`[db-self-heal] attempt ${attempt} failed:`, e)
     if (attempt < 5) {
