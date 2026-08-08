@@ -104,8 +104,9 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  company   Company?   @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  auditLogs AuditLog[]
+  company     Company?         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  auditLogs   AuditLog[]
+  permissions UserPermission[]
 
   @@index([companyId])
 }
@@ -530,10 +531,10 @@ model Product {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
-  company          Company?         @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  warehouse         Warehouse?       @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
-  productions       Production[]
-  productionOrders  ProductionOrder[]
+  company          Company?          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  warehouse        Warehouse?        @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+  productions      Production[]
+  productionOrders ProductionOrder[]
 
   @@index([companyId])
   @@index([name])
@@ -561,7 +562,7 @@ model ProductionOrder {
   updatedAt         DateTime              @updatedAt
 
   company Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  product Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
+  product Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
 
   @@unique([orderNumber])
   @@index([companyId])
@@ -572,20 +573,20 @@ model ProductionOrder {
 
 // ====== السدادات ======
 model Payment {
-  id          String      @id @default(cuid())
-  companyId   String?
-  type        PaymentType
-  partyId     String
-  partyName   String
-  customerId  String?
-  supplierId  String?
-  invoiceId   String?
-  invoiceNo   String?
-  amount      Float
-  date        DateTime
-  method      String?
-  notes       String?
-  createdAt   DateTime    @default(now())
+  id         String      @id @default(cuid())
+  companyId  String?
+  type       PaymentType
+  partyId    String
+  partyName  String
+  customerId String?
+  supplierId String?
+  invoiceId  String?
+  invoiceNo  String?
+  amount     Float
+  date       DateTime
+  method     String?
+  notes      String?
+  createdAt  DateTime    @default(now())
 
   company  Company?  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   customer Customer? @relation("PaymentCustomer", fields: [customerId], references: [id], onDelete: SetNull)
@@ -651,7 +652,6 @@ model PurchaseReturn {
   @@index([purchaseId])
 }
 
-
 // ====== نظام الصلاحيات (RBAC) ======
 enum PermissionAction {
   CREATE
@@ -663,38 +663,38 @@ enum PermissionAction {
 }
 
 model UserPermission {
-  id          String             @id @default(cuid())
-  userId      String
-  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   // الموارد والإجراءات
-  resource    String             // 'sales' | 'purchases' | 'customers' | 'suppliers' | 'reports' | 'payments' | 'inventory'
-  action      PermissionAction   // CREATE | READ | UPDATE | DELETE | EXPORT | APPROVE
-  
+  resource String // 'sales' | 'purchases' | 'customers' | 'suppliers' | 'reports' | 'payments' | 'inventory'
+  action   PermissionAction // CREATE | READ | UPDATE | DELETE | EXPORT | APPROVE
+
   // الحدود (اختياري)
-  canViewAll  Boolean            @default(false)  // يمكن عرض جميع السجلات
-  canEditOwn  Boolean            @default(false)  // يمكن تعديل السجلات الخاصة به فقط
-  
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
-  
+  canViewAll Boolean @default(false) // يمكن عرض جميع السجلات
+  canEditOwn Boolean @default(false) // يمكن تعديل السجلات الخاصة به فقط
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@unique([userId, resource, action])
   @@index([userId])
   @@index([resource])
 }
 
 model RoleTemplate {
-  id          String   @id @default(cuid())
-  name        String   @unique  // 'Sales Manager' | 'Accountant' | 'Warehouse Manager'
+  id          String  @id @default(cuid())
+  name        String  @unique // 'Sales Manager' | 'Accountant' | 'Warehouse Manager'
   description String?
-  
+
   // JSON array of permissions
   // Format: [{ resource: 'sales', action: 'CREATE' }, ...]
-  permissions Json     @default("[]")
-  
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  
+  permissions Json @default("[]")
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@index([isActive])
 }
