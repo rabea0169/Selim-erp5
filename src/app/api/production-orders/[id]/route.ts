@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
 import { getCurrentUser } from '@/lib/auth'
 import { safeError } from '@/lib/safe-error'
+import { requireAdmin } from '@/lib/admin-check'
 
 // GET /api/production-orders/:id
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -235,9 +236,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 // DELETE /api/production-orders/:id
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const user = await getCurrentUser()
-    if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
-    const companyId = user.companyId ?? null
+    const admin = await requireAdmin()
+    if (!admin.ok) {
+      return NextResponse.json({ error: admin.error }, { status: admin.status })
+    }
+    const companyId = admin.companyId
     const { id } = await params
     const existing = await db.productionOrder.findFirst({ where: { id, companyId } })
     if (!existing) {
@@ -261,19 +264,8 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
         }
       }
 
-      // 2) لو كان completed: إزالة الكمية المنتجة من مخزون المنتج — مع فحص الكفاية
-      //    المنتجات ليس لها حركات مخزن في الـ schema، فالخيار الآمن هو منع الحذف إن كان
-      //    الخصم سيجعل مخزون المنتج سالباً (باع العميل جزءاً من الكمية مثلاً)
+      // 2) لو كان completed: إزالة الكمية المنتجة من مخزون المنتج
       if (existing.status === 'completed' && existing.completedQuantity > 0) {
-        const product = await tx.product.findFirst({ where: { id: existing.productId, companyId } })
-        if (!product) {
-          throw new Error('المنتج المرتبط بأمر التشغيل غير موجود — لا يمكن عكس أثر المخزون')
-        }
-        if (product.quantity < existing.completedQuantity) {
-          throw new Error(
-            `لا يمكن حذف الأمر: خصم الكمية المنتجة (${existing.completedQuantity}) سيجعل مخزون المنتج سالباً (المتاح حالياً ${product.quantity})`
-          )
-        }
         await tx.product.update({
           where: { id: existing.productId },
           data: { quantity: { decrement: existing.completedQuantity }, updatedAt: new Date() },
@@ -291,9 +283,6 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
 
     return NextResponse.json({ success: true })
   } catch (e) {
-    if (e instanceof Error && (e.message.includes('غير موجود') || e.message.includes('سالباً'))) {
-      return NextResponse.json({ error: e.message }, { status: 400 })
-    }
     const { error, status } = safeError(e, 500)
     return NextResponse.json({ error }, { status })
   }
