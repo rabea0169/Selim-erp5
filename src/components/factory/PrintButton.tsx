@@ -16,31 +16,9 @@ import {
   printDocument,
   getSavedPrintSettings,
   getDefaultPrintSettings,
+  sanitizeHtml,
   type PrintSettings,
 } from '@/lib/printer'
-
-function sanitizeHtml(html: string): string {
-  // Allow only safe formatting tags and attributes
-  const allowedTags = ['div', 'span', 'p', 'br', 'hr', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'b', 'strong', 'i', 'em', 'u', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'style', 'img']
-  // Replace script tags and event handlers
-  let sanitized = html
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-    .replace(/<script\b[^>]*>/gi, '')
-    .replace(/on\w+\s*=\s*["'][^"']*["']/gi, '')
-    .replace(/on\w+\s*=\s*\S+/gi, '')
-    .replace(/javascript:/gi, '')
-    .replace(/<iframe\b[^>]*>.*?<\/iframe>/gi, '')
-    .replace(/<object\b[^>]*>.*?<\/object>/gi, '')
-    .replace(/<embed\b[^>]*>/gi, '')
-    .replace(/<form\b[^>]*>.*?<\/form>/gi, '')
-    .replace(/<input\b[^>]*>/gi, '')
-    .replace(/<select\b[^>]*>.*?<\/select>/gi, '')
-    .replace(/<textarea\b[^>]*>.*?<\/textarea>/gi, '')
-    .replace(/<link\b[^>]*>/gi, '')
-    .replace(/<meta\b[^>]*>/gi, '')
-    .replace(/<base\b[^>]*>/gi, '')
-  return sanitized
-}
 
 interface PrintButtonProps {
   contentHtml: string
@@ -86,6 +64,8 @@ export function PrintButton({
     try {
       const currentSettings = await getDefaultPrintSettings()
       setSettings(currentSettings)
+      // ملاحظة: printDocument → printViaBrowser يطبّق sanitizeHtml على المحتوى
+      // قبل document.write، والمعاينة أدناه تستخدم نفس sanitizeHtml
       const result = await printDocument(contentHtml, currentSettings, title, plainText)
       if (result.success) {
         toast({ title: 'تم', description: 'تم إرسال المستند للطباعة' })
