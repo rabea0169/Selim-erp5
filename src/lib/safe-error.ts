@@ -1,10 +1,10 @@
 /**
- * معالجة آمنة للأخطاء — تحافظ على الرسائل الموجهة للمستخدم باللغة العربية مع إخفاء أخطاء النظام التقنية في الإنتاج
+ * معالجة آمنة للأخطاء — تُظهر الرسائل التوضيحية الصريحة للمستخدم وتُخفي التفاصيل التقنية المسربة في الإنتاج
  */
 
+import { Prisma } from '@prisma/client'
 
-
-// رسائل عامة لكل HTTP status
+// رسائل عامة للأخطاء التقنية بحسب الكود
 const SAFE_MESSAGES: Record<number, string> = {
   400: 'بيانات غير صالحة',
   401: 'غير مصرح — يجب تسجيل الدخول أولاً',
@@ -15,7 +15,7 @@ const SAFE_MESSAGES: Record<number, string> = {
 }
 
 /**
- * إنشاء رد خطأ آمن — يُظهر الرسائل العربية التوضيحية للمستخدم ويُخفي الأخطاء التقنية في الإنتاج
+ * إنشاء رد خطأ آمن يُرجع الرسائل المخصصة الواضحة للمستخدم
  */
 export function safeError(e: unknown, defaultStatus: number = 500): {
   error: string
@@ -25,26 +25,32 @@ export function safeError(e: unknown, defaultStatus: number = 500): {
   const rawMessage = e instanceof Error ? e.message : String(e)
 
   // تنظيف الرسالة من التفاف Prisma والتراسل الداخلي
-  const cleanMessage = rawMessage
+  let cleanMessage = rawMessage
     .replace(/^Error:\s*/, '')
     .replace(/^Transaction failed:\s*/, '')
     .replace(/^Invalid `.*` invocation:\s*/, '')
     .replace(/Context:.*$/, '')
     .trim()
 
-  // إذا كانت الرسالة باللغة العربية (رسالة مخصصة للمستخدم)، نُظهرها حتى في الإنتاج
-  const isUserFriendly =
-    /[\u0600-\u06FF]/.test(cleanMessage) &&
-    !cleanMessage.includes('Prisma') &&
-    !cleanMessage.includes('Transaction') &&
-    !cleanMessage.includes('Invocation') &&
-    !cleanMessage.includes('Unknown argument')
+  // معرفة هل الخطأ تقني صريح خاص بقاعدة البيانات أو التوصيل
+  const isTechnicalDbError =
+    cleanMessage.includes('Prisma') ||
+    cleanMessage.includes('Invocation') ||
+    cleanMessage.includes('Unknown argument') ||
+    cleanMessage.includes('connect ECONNREFUSED') ||
+    cleanMessage.includes('postgresql://')
 
-  if (!isDev && !isUserFriendly) {
+  // في الإنتاج، إذا كان الخطأ تقنياً وبحالة 500، نُخفي الاستاك ونُرجع الرسالة العامة
+  if (!isDev && isTechnicalDbError && defaultStatus === 500) {
     return {
-      error: SAFE_MESSAGES[defaultStatus] || SAFE_MESSAGES[500],
-      status: defaultStatus,
+      error: SAFE_MESSAGES[500],
+      status: 500,
     }
+  }
+
+  // إذا كان الخطأ تقنياً بحالة غير 500، نمرر رسالة مناسبة
+  if (isTechnicalDbError) {
+    cleanMessage = SAFE_MESSAGES[defaultStatus] || 'بيانات غير صالحة'
   }
 
   return { error: cleanMessage || 'حدث خطأ في النظام', status: defaultStatus }
