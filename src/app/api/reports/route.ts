@@ -1,29 +1,52 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { requireCompanyScope } from '@/lib/company-scope'
 import { safeError } from '@/lib/safe-error'
 
 // GET /api/reports?from=&to=
 // uses Prisma aggregation to avoid loading all records into memory (PERF fix)
 export async function GET(req: NextRequest) {
   try {
+    const scope = await requireCompanyScope()
+    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
+    const user = scope.user
+    if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    const companyId = scope.companyId
+
     const { searchParams } = new URL(req.url)
     const from = searchParams.get('from')
     const to = searchParams.get('to')
 
     // Fix Q: Date validation
-    const fromDate = from ? new Date(from) : undefined
-    const toDate = to ? new Date(to) : undefined
+    // إصلاح المناطق الزمنية: التواريخ تُخزَّن كـ new Date('YYYY-MM-DD') = منتصف الليل UTC،
+    // لذلك تُفلتر بنوافذ UTC صريحة بدلاً من setHours (التي تعتمد على منطقة السيرفر الزمنية)
+    const parseBoundary = (value: string, endOfDay: boolean): Date => {
+      const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(value.trim())
+      if (m) {
+        const y = Number(m[1])
+        const mo = Number(m[2]) - 1
+        const d = Number(m[3])
+        return endOfDay
+          ? new Date(Date.UTC(y, mo, d, 23, 59, 59, 999))
+          : new Date(Date.UTC(y, mo, d, 0, 0, 0, 0))
+      }
+      const dt = new Date(value)
+      if (endOfDay && !isNaN(dt.getTime())) dt.setUTCHours(23, 59, 59, 999)
+      return dt
+    }
+
+    const fromDate = from ? parseBoundary(from, false) : undefined
+    const toDate = to ? parseBoundary(to, true) : undefined
     if (from && isNaN(fromDate!.getTime())) return NextResponse.json({ error: 'تاريخ غير صالح' }, { status: 400 })
     if (to && isNaN(toDate!.getTime())) return NextResponse.json({ error: 'تاريخ غير صالح' }, { status: 400 })
 
     const dateRange: any = {}
     if (from) dateRange.gte = fromDate
-    if (to) {
-      toDate!.setHours(23, 59, 59, 999)
-      dateRange.lte = toDate
-    }
+    if (to) dateRange.lte = toDate
 
-    const dateFilter = from || to ? { date: dateRange } : {}
+    // عزل الشركات: كل التجميعات مقيدة بشركة المستخدم
+    const dateFilter: any = { companyId }
+    if (from || to) dateFilter.date = dateRange
 
     // Sales aggregation (PERF fix: aggregate instead of loading all)
     const salesAgg = await db.sale.aggregate({
@@ -34,6 +57,7 @@ export async function GET(req: NextRequest) {
     const salesTotal = salesAgg._sum.total || 0
     const salesPaid = salesAgg._sum.paid || 0
     const salesRemaining = salesTotal - salesPaid
+    const salesCount = salesAgg._count || 0
 
     // Purchases aggregation
     const purchasesAgg = await db.purchase.aggregate({
@@ -44,6 +68,7 @@ export async function GET(req: NextRequest) {
     const purchasesTotal = purchasesAgg._sum.total || 0
     const purchasesPaid = purchasesAgg._sum.paid || 0
     const purchasesRemaining = purchasesTotal - purchasesPaid
+    const purchasesCount = purchasesAgg._count || 0
 
     // Worker advances aggregation
     const advancesAgg = await db.workerAdvance.aggregate({
@@ -52,6 +77,7 @@ export async function GET(req: NextRequest) {
       _count: true,
     })
     const advancesTotal = advancesAgg._sum.amount || 0
+    const advancesCount = advancesAgg._count || 0
 
     // Worker receipts aggregation
     const receiptsAgg = await db.workerReceipt.aggregate({
@@ -60,6 +86,7 @@ export async function GET(req: NextRequest) {
       _count: true,
     })
     const receiptsTotal = receiptsAgg._sum.amount || 0
+    const receiptsCount = receiptsAgg._count || 0
 
     // Worker production aggregation
     const productionAgg = await db.production.aggregate({
@@ -69,6 +96,7 @@ export async function GET(req: NextRequest) {
     })
     const productionTotal = productionAgg._sum.total || 0
     const productionPieces = productionAgg._sum.quantity || 0
+    const productionCount = productionAgg._count || 0
 
     // Worker attendance count
     const attendanceCount = await db.workerAttendance.count({ where: dateFilter })
@@ -80,6 +108,7 @@ export async function GET(req: NextRequest) {
       _count: true,
     })
     const expensesTotal = expensesAgg._sum.amount || 0
+    const expensesCount = expensesAgg._count || 0
 
     // Sale returns aggregation (money refunded to customers)
     const saleReturnsAgg = await db.saleReturn.aggregate({
@@ -108,23 +137,19 @@ export async function GET(req: NextRequest) {
       expensesByCategory[e.categoryName || 'غير مصنف'] = e._sum.amount || 0
     }
 
-    // Top selling items (using groupBy on saleItem with sale date filter)
-    const saleIds = await db.sale.findMany({
-      where: dateFilter,
-      select: { id: true },
-    })
-    const saleIdSet = saleIds.map(s => s.id)
+    // Top selling items — groupBy على SaleItem مع فلتر عبر علاقة الفاتورة
+    // (بدون تحميل كل الـ IDs في الذاكرة — إصلاح مشكلة حد الـ parameters عند كبر البيانات)
+    const saleItemFilter: any = { sale: { companyId } }
+    if (from || to) saleItemFilter.sale.date = dateRange
 
-    const topItemsRaw = saleIdSet.length > 0
-      ? await db.saleItem.groupBy({
-          by: ['itemName'],
-          where: { saleId: { in: saleIdSet } },
-          _sum: { quantity: true, total: true },
-          orderBy: { _sum: { total: 'desc' } },
-          take: 10,
-        })
-      : []
-    const topItems = topItemsRaw.map(r => ({
+    const topItemsRaw = await db.saleItem.groupBy({
+      by: ['itemName'],
+      where: saleItemFilter,
+      _sum: { quantity: true, total: true },
+      orderBy: { _sum: { total: 'desc' } },
+      take: 10,
+    })
+    const topItems = topItemsRaw.map((r: any) => ({
       name: r.itemName,
       qty: r._sum.quantity || 0,
       total: r._sum.total || 0,
@@ -138,7 +163,7 @@ export async function GET(req: NextRequest) {
       orderBy: { _sum: { total: 'desc' } },
       take: 10,
     })
-    const topModels = topModelsRaw.map(r => ({
+    const topModels = topModelsRaw.map((r: any) => ({
       name: r.modelName,
       qty: r._sum.quantity || 0,
       total: r._sum.total || 0,
@@ -155,14 +180,21 @@ export async function GET(req: NextRequest) {
         salesTotal,
         salesPaid,
         salesRemaining,
+        salesCount,
         purchasesTotal,
         purchasesPaid,
         purchasesRemaining,
+        purchasesCount,
         advancesTotal,
+        advancesCount,
         receiptsTotal,
+        receiptsCount,
         productionTotal,
         productionPieces,
+        productionCount,
+        attendanceCount,
         expensesTotal,
+        expensesCount,
         saleReturnsTotal,
         purchaseReturnsTotal,
         netProfit,

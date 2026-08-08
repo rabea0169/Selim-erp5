@@ -11,7 +11,7 @@ import type { WorkerAttendance } from '../types'
  */
 class WorkerAttendanceRepository extends BaseRepository<WorkerAttendance> {
   constructor() {
-    super('/api/attendance', 'attendance')
+    super('/api/attendance', 'attendance', 'workerAttendance')
   }
 
   /** Get all attendance records for a specific worker */
@@ -57,9 +57,10 @@ class WorkerAttendanceRepository extends BaseRepository<WorkerAttendance> {
 
   /** Create or update attendance (server handles upsert logic) */
   async upsert(data: any): Promise<WorkerAttendance> {
-    const result = await apiPost<WorkerAttendance>('/api/attendance', data)
+    const res: any = await apiPost('/api/attendance', data)
     dataChangeEmitter.notifyCreate('workerAttendance')
-    return result
+    // فك تغليف الاستجابة — السيرفر يعيد { attendance, updated/created }
+    return (res?.attendance || res) as WorkerAttendance
   }
 }
 

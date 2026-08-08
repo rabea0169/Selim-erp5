@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { ArrowDownToLine, ArrowUpFromLine } from 'lucide-react'
+import { ArrowDownToLine, ArrowUpFromLine, Scale } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -33,7 +33,7 @@ interface StockDialogProps {
   open: boolean
   onOpenChange: (v: boolean) => void
   material: Material
-  mode: 'add' | 'consume'
+  mode: 'add' | 'consume' | 'adjust'
   onSaved: () => void
 }
 
@@ -45,9 +45,10 @@ export function StockDialog({
   onSaved,
 }: StockDialogProps) {
   const isAdd = mode === 'add'
+  const isAdjust = mode === 'adjust'
   const [quantity, setQuantity] = useState('')
   const [unitCost, setUnitCost] = useState('')
-  const [reason, setReason] = useState(isAdd ? 'شراء' : 'استهلاك')
+  const [reason, setReason] = useState(isAdd ? 'شراء' : isAdjust ? 'تسوية جرد' : 'استهلاك')
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const { toast } = useToast()
@@ -55,16 +56,21 @@ export function StockDialog({
   // reset عند فتح النموذج
   useEffect(() => {
     if (open) {
-      setQuantity('')
+      setQuantity(isAdjust ? String(material.quantity ?? 0) : '')
       setUnitCost(String(material.unitCost || ''))
-      setReason(isAdd ? 'شراء' : 'استهلاك')
+      setReason(isAdd ? 'شراء' : isAdjust ? 'تسوية جرد' : 'استهلاك')
       setNotes('')
     }
-  }, [open, material.id, isAdd])
+  }, [open, material.id, material.quantity, material.unitCost, isAdd, isAdjust])
 
   const save = async () => {
     const num = Number(quantity)
-    if (!num || num <= 0) {
+    if (isAdjust) {
+      if (quantity === '' || isNaN(num) || num < 0) {
+        toast({ title: 'أدخل رصيداً صحيحاً (صفر أو أكثر)', variant: 'destructive' })
+        return
+      }
+    } else if (!num || num <= 0) {
       toast({ title: 'أدخل كمية صحيحة', variant: 'destructive' })
       return
     }
@@ -72,7 +78,7 @@ export function StockDialog({
       toast({ title: 'أدخل تكلفة الوحدة', variant: 'destructive' })
       return
     }
-    if (!isAdd && num > material.quantity) {
+    if (!isAdd && !isAdjust && num > material.quantity) {
       toast({
         title: 'الكمية المطلوبة أكبر من المتاح',
         description: `المتاح: ${material.quantity} ${material.unit}`,
@@ -90,8 +96,13 @@ export function StockDialog({
           reason,
           notes.trim() || undefined
         )
-        dataChangeEmitter.notifyCreate('materialTransactions')
-        dataChangeEmitter.notifyUpdate('materials')
+      } else if (isAdjust) {
+        await materialRepository.adjustStock(
+          material.id,
+          num,
+          reason,
+          notes.trim() || undefined
+        )
       } else {
         await materialRepository.consumeStock(
           material.id,
@@ -101,11 +112,11 @@ export function StockDialog({
           undefined,
           notes.trim() || undefined
         )
-        dataChangeEmitter.notifyCreate('materialTransactions')
-        dataChangeEmitter.notifyUpdate('materials')
       }
+      dataChangeEmitter.notifyCreate('materialTransactions')
+      dataChangeEmitter.notifyUpdate('materials')
       toast({
-        title: isAdd ? 'تم إضافة الكمية' : 'تم سحب الكمية',
+        title: isAdd ? 'تم إضافة الكمية' : isAdjust ? 'تمت تسوية الرصيد' : 'تم سحب الكمية',
         description: `${num} ${material.unit}`,
       })
       onSaved()
@@ -116,6 +127,8 @@ export function StockDialog({
     }
   }
 
+  const title = isAdd ? 'إضافة كمية' : isAdjust ? 'تسوية رصيد' : 'سحب كمية'
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto" dir="rtl">
@@ -123,10 +136,12 @@ export function StockDialog({
           <DialogTitle className="text-right flex items-center gap-2">
             {isAdd ? (
               <ArrowDownToLine className="w-5 h-5 text-emerald-600" />
+            ) : isAdjust ? (
+              <Scale className="w-5 h-5 text-blue-600" />
             ) : (
               <ArrowUpFromLine className="w-5 h-5 text-rose-600" />
             )}
-            {isAdd ? 'إضافة كمية' : 'سحب كمية'}
+            {title}
           </DialogTitle>
           <DialogDescription className="sr-only">إدارة المخازن والمواد</DialogDescription>
         </DialogHeader>
@@ -148,14 +163,20 @@ export function StockDialog({
 
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <Label className="text-xs">الكمية *</Label>
+              <Label className="text-xs">
+                {isAdjust ? 'الرصيد الجديد *' : 'الكمية *'}
+              </Label>
               <Input
                 type="number"
                 value={quantity}
                 onChange={(e) => setQuantity(e.target.value)}
                 placeholder="0"
                 className={`bg-slate-50 font-bold ${
-                  isAdd ? 'text-emerald-700' : 'text-rose-700'
+                  isAdd
+                    ? 'text-emerald-700'
+                    : isAdjust
+                      ? 'text-blue-700'
+                      : 'text-rose-700'
                 }`}
               />
             </div>
@@ -185,7 +206,13 @@ export function StockDialog({
                     <SelectItem value="شراء">شراء</SelectItem>
                     <SelectItem value="مرتجع">مرتجع</SelectItem>
                     <SelectItem value="تحويل">تحويل من مخزن</SelectItem>
-                    <SelectItem value="تسوية">تسوية جرد</SelectItem>
+                    <SelectItem value="أخرى">أخرى</SelectItem>
+                  </>
+                ) : isAdjust ? (
+                  <>
+                    <SelectItem value="تسوية جرد">تسوية جرد</SelectItem>
+                    <SelectItem value="تالف">تالف</SelectItem>
+                    <SelectItem value="خطأ إدخال">خطأ إدخال</SelectItem>
                     <SelectItem value="أخرى">أخرى</SelectItem>
                   </>
                 ) : (
@@ -195,7 +222,6 @@ export function StockDialog({
                     <SelectItem value="مرتجع للعميل">مرتجع للعميل</SelectItem>
                     <SelectItem value="تالف">تالف</SelectItem>
                     <SelectItem value="تحويل">تحويل لمخزن</SelectItem>
-                    <SelectItem value="تسوية">تسوية جرد</SelectItem>
                     <SelectItem value="أخرى">أخرى</SelectItem>
                   </>
                 )}
@@ -229,10 +255,12 @@ export function StockDialog({
             className={`text-white h-9 text-xs font-medium ${
               isAdd
                 ? 'bg-emerald-600 hover:bg-emerald-700'
-                : 'bg-rose-600 hover:bg-rose-700'
+                : isAdjust
+                  ? 'bg-blue-600 hover:bg-blue-700'
+                  : 'bg-rose-600 hover:bg-rose-700'
             }`}
           >
-            {saving ? 'جارٍ الحفظ...' : isAdd ? 'إضافة' : 'سحب'}
+            {saving ? 'جارٍ الحفظ...' : isAdd ? 'إضافة' : isAdjust ? 'تسوية' : 'سحب'}
           </Button>
         </DialogFooter>
       </DialogContent>

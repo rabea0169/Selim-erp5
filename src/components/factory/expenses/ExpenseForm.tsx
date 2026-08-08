@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -23,22 +23,49 @@ import {
 import { useToast } from '@/hooks/use-toast'
 import { todayStr } from '@/lib/format'
 import { expenseRepository, dataChangeEmitter } from '@/lib/db'
-import type { ExpenseCategory } from './types'
+import type { Expense, ExpenseCategory } from './types'
 
 interface ExpenseFormProps {
   open: boolean
   onOpenChange: (v: boolean) => void
   categories: ExpenseCategory[]
   onSaved: () => void
+  /** عند تمريره يعمل النموذج في وضع التعديل */
+  expense?: Expense | null
 }
 
-export function ExpenseForm({ open, onOpenChange, categories, onSaved }: ExpenseFormProps) {
+// تحويل تاريخ المصروف (ISO) إلى صيغة yyyy-mm-dd المحلية لحقل الإدخال
+function toDateInput(d: string | Date): string {
+  const date = typeof d === 'string' ? new Date(d) : d
+  if (isNaN(date.getTime())) return todayStr()
+  const offset = date.getTimezoneOffset() * 60000
+  return new Date(date.getTime() - offset).toISOString().split('T')[0]
+}
+
+export function ExpenseForm({ open, onOpenChange, categories, onSaved, expense }: ExpenseFormProps) {
+  const isEdit = !!expense
   const [categoryId, setCategoryId] = useState('')
   const [amount, setAmount] = useState('')
   const [date, setDate] = useState(todayStr())
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const { toast } = useToast()
+
+  // تهيئة الحقول عند فتح النموذج (وضع تعديل أو إضافة جديدة)
+  useEffect(() => {
+    if (!open) return
+    if (expense) {
+      setCategoryId(expense.categoryId)
+      setAmount(String(expense.amount))
+      setDate(toDateInput(expense.date))
+      setNotes(expense.notes || '')
+    } else {
+      setCategoryId('')
+      setAmount('')
+      setDate(todayStr())
+      setNotes('')
+    }
+  }, [open, expense])
 
   const save = async () => {
     if (!categoryId) {
@@ -51,14 +78,24 @@ export function ExpenseForm({ open, onOpenChange, categories, onSaved }: Expense
     }
     setSaving(true)
     try {
-      await expenseRepository.createWithCategory({
-        categoryId,
-        amount: Number(amount),
-        date,
-        notes: notes || undefined,
-      })
-      dataChangeEmitter.notifyCreate('expenses')
-      toast({ title: 'تم', description: 'تم تسجيل المصروف' })
+      if (isEdit && expense) {
+        await expenseRepository.update(expense.id, {
+          categoryId,
+          amount: Number(amount),
+          date,
+          notes: notes || undefined,
+        })
+        toast({ title: 'تم', description: 'تم تعديل المصروف' })
+      } else {
+        await expenseRepository.createWithCategory({
+          categoryId,
+          amount: Number(amount),
+          date,
+          notes: notes || undefined,
+        })
+        dataChangeEmitter.notifyCreate('expenses')
+        toast({ title: 'تم', description: 'تم تسجيل المصروف' })
+      }
       setCategoryId('')
       setAmount('')
       setNotes('')
@@ -75,8 +112,10 @@ export function ExpenseForm({ open, onOpenChange, categories, onSaved }: Expense
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md" dir="rtl">
         <DialogHeader>
-          <DialogTitle className="text-right">مصروف جديد</DialogTitle>
-          <DialogDescription className="sr-only">تسجيل مصروف جديد</DialogDescription>
+          <DialogTitle className="text-right">{isEdit ? 'تعديل مصروف' : 'مصروف جديد'}</DialogTitle>
+          <DialogDescription className="sr-only">
+            {isEdit ? 'تعديل بيانات المصروف' : 'تسجيل مصروف جديد'}
+          </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <div>
@@ -123,7 +162,7 @@ export function ExpenseForm({ open, onOpenChange, categories, onSaved }: Expense
             disabled={saving}
             className="bg-rose-600 hover:bg-rose-700 text-white"
           >
-            {saving ? 'جارٍ الحفظ...' : 'حفظ'}
+            {saving ? 'جارٍ الحفظ...' : isEdit ? 'حفظ التعديل' : 'حفظ'}
           </Button>
         </DialogFooter>
       </DialogContent>

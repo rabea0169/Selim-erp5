@@ -1,16 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { requireCompanyScope } from '@/lib/company-scope'
 import { safeError } from '@/lib/safe-error'
 
 // GET /api/worker-report/[id]?from=&to=
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const scope = await requireCompanyScope()
+    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
+    const user = scope.user
+    if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    const companyId = scope.companyId
+
     const { id } = await params
     const { searchParams } = new URL(req.url)
     const from = searchParams.get('from')
     const to = searchParams.get('to')
 
-    const worker = await db.worker.findUnique({ where: { id } })
+    const worker = await db.worker.findFirst({ where: { id, companyId } })
     if (!worker) return NextResponse.json({ error: 'الموظف غير موجود' }, { status: 404 })
 
     const dateRange: any = {}
@@ -20,21 +27,22 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       t.setHours(23, 59, 59, 999)
       dateRange.lte = t
     }
-    const filter = from || to ? { date: dateRange } : {}
+    const filter: any = { workerId: id, companyId }
+    if (from || to) filter.date = dateRange
 
     const [advances, receipts, attendance, productions] = await Promise.all([
-      db.workerAdvance.findMany({ where: { workerId: id, ...filter }, orderBy: { date: 'desc' } }),
-      db.workerReceipt.findMany({ where: { workerId: id, ...filter }, orderBy: { date: 'desc' } }),
-      db.workerAttendance.findMany({ where: { workerId: id, ...filter }, orderBy: { date: 'desc' } }),
-      db.production.findMany({ where: { workerId: id, ...filter }, orderBy: { date: 'desc' } }),
+      db.workerAdvance.findMany({ where: filter, orderBy: { date: 'desc' } }),
+      db.workerReceipt.findMany({ where: filter, orderBy: { date: 'desc' } }),
+      db.workerAttendance.findMany({ where: filter, orderBy: { date: 'desc' } }),
+      db.production.findMany({ where: filter, orderBy: { date: 'desc' } }),
     ])
 
-    const totalAdvances = advances.reduce((s, a) => s + a.amount, 0)
-    const totalReceipts = receipts.reduce((s, r) => s + r.amount, 0)
-    const totalProduction = productions.reduce((s, p) => s + p.total, 0)
-    const totalPieces = productions.reduce((s, p) => s + p.quantity, 0)
-    const presentDays = attendance.filter((a) => a.status === 'present').length
-    const absentDays = attendance.filter((a) => a.status === 'absent').length
+    const totalAdvances = advances.reduce((s: number, a: any) => s + a.amount, 0)
+    const totalReceipts = receipts.reduce((s: number, r: any) => s + r.amount, 0)
+    const totalProduction = productions.reduce((s: number, p: any) => s + p.total, 0)
+    const totalPieces = productions.reduce((s: number, p: any) => s + p.quantity, 0)
+    const presentDays = attendance.filter((a: any) => a.status === 'present').length
+    const absentDays = attendance.filter((a: any) => a.status === 'absent').length
 
     return NextResponse.json({
       worker,

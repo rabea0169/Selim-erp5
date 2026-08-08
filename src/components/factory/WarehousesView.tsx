@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Plus,
   Sparkles,
@@ -74,6 +74,7 @@ export function WarehousesView() {
   const [selectedWarehouseId, setSelectedWarehouseId] = useState<string | null>(null)
   const [showTransactions, setShowTransactions] = useState(false)
   const [openWarehouse, setOpenWarehouse] = useState(false)
+  const [editingWarehouse, setEditingWarehouse] = useState<Warehouse | null>(null)
   const [openMaterial, setOpenMaterial] = useState(false)
   const { toast } = useToast()
 
@@ -125,6 +126,11 @@ export function WarehousesView() {
     }
   }
 
+  const handleEditWarehouse = (w: Warehouse) => {
+    setEditingWarehouse(w)
+    setOpenWarehouse(true)
+  }
+
   const handleDeleteMaterial = async (id: string) => {
     if (!confirm('حذف هذه المادة؟')) return
     try {
@@ -156,13 +162,25 @@ export function WarehousesView() {
   // لو في عرض تفاصيل مخزن
   if (selectedWarehouse) {
     return (
-      <MaterialList
-        warehouse={selectedWarehouse}
-        materials={selectedMaterials}
-        onBack={() => setSelectedWarehouseId(null)}
-        onAddMaterial={() => setOpenMaterial(true)}
-        onDeleteMaterial={handleDeleteMaterial}
-      />
+      <>
+        <MaterialList
+          warehouse={selectedWarehouse}
+          materials={selectedMaterials}
+          onBack={() => setSelectedWarehouseId(null)}
+          onAddMaterial={() => setOpenMaterial(true)}
+          onDeleteMaterial={handleDeleteMaterial}
+        />
+        <MaterialForm
+          open={openMaterial}
+          onOpenChange={setOpenMaterial}
+          warehouseId={selectedWarehouseId}
+          warehouses={warehouses}
+          onSaved={() => {
+            setOpenMaterial(false)
+            reload()
+          }}
+        />
+      </>
     )
   }
 
@@ -192,7 +210,10 @@ export function WarehousesView() {
             تهيئة
           </Button>
           <Button
-            onClick={() => setOpenWarehouse(true)}
+            onClick={() => {
+              setEditingWarehouse(null)
+              setOpenWarehouse(true)
+            }}
             className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm h-9 text-xs font-medium"
           >
             <Plus className="w-4 h-4 ml-1" />
@@ -247,6 +268,8 @@ export function WarehousesView() {
               warehouse={w}
               materials={allMaterials}
               onClick={() => setSelectedWarehouseId(w.id)}
+              onEdit={handleEditWarehouse}
+              onDelete={handleDeleteWarehouse}
             />
           ))}
         </div>
@@ -254,9 +277,14 @@ export function WarehousesView() {
 
       <WarehouseForm
         open={openWarehouse}
-        onOpenChange={setOpenWarehouse}
+        onOpenChange={(v) => {
+          setOpenWarehouse(v)
+          if (!v) setEditingWarehouse(null)
+        }}
+        warehouse={editingWarehouse}
         onSaved={() => {
           setOpenWarehouse(false)
+          setEditingWarehouse(null)
           reload()
         }}
       />
@@ -274,20 +302,32 @@ export function WarehousesView() {
   )
 }
 
-// ====== نموذج إضافة مخزن (يبقى في الملف الرئيسي) ======
+// ====== نموذج إضافة/تعديل مخزن (يبقى في الملف الرئيسي) ======
 interface WarehouseFormProps {
   open: boolean
   onOpenChange: (v: boolean) => void
+  warehouse?: Warehouse | null
   onSaved: () => void
 }
 
-function WarehouseForm({ open, onOpenChange, onSaved }: WarehouseFormProps) {
+function WarehouseForm({ open, onOpenChange, warehouse, onSaved }: WarehouseFormProps) {
+  const isEdit = !!warehouse
   const [name, setName] = useState('')
   const [type, setType] = useState<Warehouse['type']>('raw_materials')
   const [location, setLocation] = useState('')
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const { toast } = useToast()
+
+  // تعبئة الحقول عند فتح النموذج (تعديل) أو تصفيرها (إضافة)
+  useEffect(() => {
+    if (open) {
+      setName(warehouse?.name || '')
+      setType(warehouse?.type || 'raw_materials')
+      setLocation(warehouse?.location || '')
+      setNotes(warehouse?.notes || '')
+    }
+  }, [open, warehouse])
 
   const reset = () => {
     setName('')
@@ -303,16 +343,22 @@ function WarehouseForm({ open, onOpenChange, onSaved }: WarehouseFormProps) {
     }
     setSaving(true)
     try {
-      await warehouseRepository.create({
+      const payload = {
         name: name.trim(),
         type,
         location: location.trim() || undefined,
         notes: notes.trim() || undefined,
-      })
-      dataChangeEmitter.notifyCreate('warehouses')
+      }
+      if (isEdit && warehouse?.id) {
+        await warehouseRepository.update(warehouse.id, payload)
+        dataChangeEmitter.notifyUpdate('warehouses')
+      } else {
+        await warehouseRepository.create(payload)
+        dataChangeEmitter.notifyCreate('warehouses')
+      }
       reset()
       onSaved()
-      toast({ title: 'تم إنشاء المخزن' })
+      toast({ title: isEdit ? 'تم تحديث المخزن' : 'تم إنشاء المخزن' })
     } catch (e: any) {
       toast({ title: 'خطأ', description: e.message, variant: 'destructive' })
     } finally {
@@ -324,7 +370,9 @@ function WarehouseForm({ open, onOpenChange, onSaved }: WarehouseFormProps) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto" dir="rtl">
         <DialogHeader>
-          <DialogTitle className="text-right">مخزن جديد</DialogTitle>
+          <DialogTitle className="text-right">
+            {isEdit ? 'تعديل المخزن' : 'مخزن جديد'}
+          </DialogTitle>
           <DialogDescription className="sr-only">إدارة المخازن والمواد</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
@@ -387,7 +435,7 @@ function WarehouseForm({ open, onOpenChange, onSaved }: WarehouseFormProps) {
             disabled={saving}
             className="bg-blue-600 hover:bg-blue-700 text-white h-9 text-xs font-medium"
           >
-            {saving ? 'جارٍ الحفظ...' : 'حفظ المخزن'}
+            {saving ? 'جارٍ الحفظ...' : isEdit ? 'حفظ التعديلات' : 'حفظ المخزن'}
           </Button>
         </DialogFooter>
       </DialogContent>

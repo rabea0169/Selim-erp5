@@ -2,7 +2,7 @@
  * معالجة آمنة للأخطاء — تحافظ على الرسائل الموجهة للمستخدم باللغة العربية مع إخفاء أخطاء النظام التقنية في الإنتاج
  */
 
-import { Prisma } from '@prisma/client'
+
 
 // رسائل عامة لكل HTTP status
 const SAFE_MESSAGES: Record<number, string> = {

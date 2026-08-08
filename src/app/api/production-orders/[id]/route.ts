@@ -1,12 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { requireCompanyScope } from '@/lib/company-scope'
 import { safeError } from '@/lib/safe-error'
+import { requireAdmin } from '@/lib/admin-check'
 
 // GET /api/production-orders/:id
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const scope = await requireCompanyScope()
+    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
+    const user = scope.user
+    if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
     const { id } = await params
-    const order = await db.productionOrder.findUnique({ where: { id } })
+    const order = await db.productionOrder.findFirst({
+      where: { id, companyId: scope.companyId },
+    })
     if (!order) {
       return NextResponse.json({ error: 'أمر التشغيل غير موجود' }, { status: 404 })
     }
@@ -18,37 +26,101 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 }
 
 // PUT /api/production-orders/:id
+// يدعم إجراءات الواجهة: action = startStage | completeStage | completeOrder
+// وكذلك التحديث المباشر للحقول (مثل إلغاء الأمر status=cancelled)
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const scope = await requireCompanyScope()
+    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
+    const user = scope.user
+    if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    const companyId = scope.companyId
     const { id } = await params
     const body = await req.json()
-    const { orderNumber, productId, productName, quantity, completedQuantity, unit, status, materials, stages, date, expectedEndDate, completedDate, notes } = body
+    const { action, stageId, workerId, orderNumber, productId, productName, quantity, completedQuantity, unit, status, materials, stages, date, expectedEndDate, completedDate, notes } = body
 
-    const existing = await db.productionOrder.findUnique({ where: { id } })
+    const existing = await db.productionOrder.findFirst({ where: { id, companyId } })
     if (!existing) {
       return NextResponse.json({ error: 'أمر التشغيل غير موجود' }, { status: 404 })
     }
 
+    // حماية دورة الحياة: منع تعديل/إكمال أمر ملغي (يسمح فقط بتعديل ملاحظات/تواريخ بدون تغيير الحالة)
+    if (existing.status === 'cancelled' && (action || (status && status !== 'cancelled'))) {
+      return NextResponse.json({ error: 'لا يمكن تعديل أو إكمال أمر ملغي' }, { status: 400 })
+    }
+    // منع إلغاء أمر مكتمل — كمية المنتج أُضيفت للمخزون بالفعل (الحذف يعكس الأثر بشكل صحيح)
+    if (existing.status === 'completed' && status === 'cancelled') {
+      return NextResponse.json({ error: 'لا يمكن إلغاء أمر مكتمل — يمكن حذفه لعكس أثره على المخزون' }, { status: 400 })
+    }
+
     if (productId && productId !== existing.productId) {
-      const product = await db.product.findUnique({ where: { id: productId } })
+      const product = await db.product.findFirst({ where: { id: productId, companyId } })
       if (!product) {
         return NextResponse.json({ error: 'المنتج المحدد غير موجود' }, { status: 404 })
       }
     }
 
     // ===== ربط دورة الإنتاج بالمخزون =====
-    // عند تغيير الحالة نتعامل مع المخزون
-    const newStatus = status || existing.status
-    const finalCompletedQuantity = completedQuantity != null ? Number(completedQuantity) : existing.completedQuantity
+    let newStatus = status || existing.status
+    let finalCompletedQuantity = completedQuantity != null ? Number(completedQuantity) : existing.completedQuantity
+    let finalStages: any = stages !== undefined ? stages : existing.stages
+    let finalCompletedDate: Date | null | undefined =
+      completedDate !== undefined ? (completedDate ? new Date(completedDate) : null) : existing.completedDate
 
-    const order = await db.$transaction(async (tx) => {
-      // 1) عند بدء أمر التشغيل (draft → in_progress): سحب المواد الخام من المخزن
-      if (newStatus === 'in_progress' && existing.status === 'draft') {
+    // ===== معالجة الإجراءات القادمة من الواجهة =====
+    if (action === 'startStage' || action === 'completeStage') {
+      const list = (existing.stages as Array<{ id?: string; name: string; status: string; startedAt?: string; completedAt?: string; workerId?: string }>) || []
+      const idx = list.findIndex((s, i) =>
+        (s.id && s.id === stageId) || (!s.id && String(i) === String(stageId))
+      )
+      if (idx === -1) {
+        return NextResponse.json({ error: 'المرحلة غير موجودة' }, { status: 404 })
+      }
+      const stage = list[idx]
+      if (action === 'startStage' && stage.status !== 'pending') {
+        return NextResponse.json({ error: 'لا يمكن بدء مرحلة ليست في الانتظار' }, { status: 400 })
+      }
+      if (action === 'completeStage' && stage.status !== 'in_progress') {
+        return NextResponse.json({ error: 'لا يمكن إكمال مرحلة لم تبدأ' }, { status: 400 })
+      }
+      const nowIso = new Date().toISOString()
+      finalStages = list.map((s, i) => {
+        const withId = s.id ? s : { ...s, id: `stage-${i + 1}` }
+        if (i !== idx) return withId
+        if (action === 'startStage') {
+          return { ...withId, status: 'in_progress', startedAt: nowIso, workerId: workerId || s.workerId }
+        }
+        return { ...withId, status: 'completed', completedAt: nowIso, workerId: workerId || s.workerId }
+      })
+      // بدء أول مرحلة في مسودة ينقل الأمر إلى قيد التنفيذ (مع سحب المواد إن وجدت)
+      if (action === 'startStage' && existing.status === 'draft') {
+        newStatus = 'in_progress'
+      }
+    } else if (action === 'completeOrder') {
+      const qty = Number(completedQuantity)
+      if (completedQuantity == null || isNaN(qty) || qty <= 0) {
+        return NextResponse.json({ error: 'الكمية المنتهية يجب أن تكون أكبر من صفر' }, { status: 400 })
+      }
+      newStatus = 'completed'
+      finalCompletedQuantity = qty
+      finalCompletedDate = new Date()
+    } else if (action) {
+      return NextResponse.json({ error: 'إجراء غير معروف' }, { status: 400 })
+    }
+
+    const order = await db.$transaction(async (tx: any) => {
+      // 1) سحب المواد الخام من المخزن — مرة واحدة فقط في دورة الحياة:
+      //    عند بدء المسودة (draft → in_progress)، أو عند إكمال مسودة مباشرة دون بدء
+      //    (مسودة بمواد لم تُسحب — وإلا أُضيف المنتج للمخزون دون استهلاك المواد)
+      const shouldConsumeMaterials =
+        (newStatus === 'in_progress' && existing.status === 'draft') ||
+        (action === 'completeOrder' && existing.status === 'draft')
+      if (shouldConsumeMaterials) {
         const orderMaterials = (materials !== undefined ? materials : existing.materials) as Array<{ materialId: string; materialName: string; quantity: number; unit: string }> || []
         for (const mat of orderMaterials) {
           if (!mat.materialId) continue
 
-          const material = await tx.material.findUnique({ where: { id: mat.materialId } })
+          const material = await tx.material.findFirst({ where: { id: mat.materialId, companyId } })
           if (!material) {
             throw new Error(`المادة ${mat.materialName} غير موجودة`)
           }
@@ -65,6 +137,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
           // تسجيل حركة السحب
           await tx.materialTransaction.create({
             data: {
+              companyId,
               materialId: mat.materialId,
               warehouseId: material.warehouseId,
               type: 'out',
@@ -81,6 +154,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       }
 
       // 2) عند إكمال أمر التشغيل: إضافة الكمية المنتهية لمنتج المخزن
+      //    idempotent: الشرط existing.status !== 'completed' يمنع الإضافة المزدوجة عند إعادة الضغط
       if (newStatus === 'completed' && existing.status !== 'completed') {
         // F3-03 fix: منع إكمال بكمية أكبر من المطلوب
         if (finalCompletedQuantity > existing.quantity) {
@@ -89,15 +163,13 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         if (finalCompletedQuantity <= 0) {
           throw new Error('الكمية المنتهية يجب أن تكون أكبر من صفر')
         }
-        if (finalCompletedQuantity > 0) {
-          await tx.product.update({
-            where: { id: existing.productId },
-            data: {
-              quantity: { increment: finalCompletedQuantity },
-              updatedAt: new Date(),
-            },
-          })
-        }
+        await tx.product.update({
+          where: { id: existing.productId },
+          data: {
+            quantity: { increment: finalCompletedQuantity },
+            updatedAt: new Date(),
+          },
+        })
       }
 
       // 3) عند إلغاء أمر التشغيل: إرجاع المواد الخام للمخزن
@@ -108,7 +180,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
           for (const mat of orderMaterials) {
             if (!mat.materialId) continue
 
-            const material = await tx.material.findUnique({ where: { id: mat.materialId } })
+            const material = await tx.material.findFirst({ where: { id: mat.materialId, companyId } })
             if (!material) continue
 
             await tx.material.update({
@@ -118,6 +190,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
             await tx.materialTransaction.create({
               data: {
+                companyId,
                 materialId: mat.materialId,
                 warehouseId: material.warehouseId,
                 type: 'in',
@@ -145,10 +218,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
           unit: unit?.trim() || existing.unit,
           status: newStatus,
           materials: materials !== undefined ? materials : existing.materials,
-          stages: stages !== undefined ? stages : existing.stages,
+          stages: finalStages,
           date: date ? new Date(date) : existing.date,
           expectedEndDate: expectedEndDate !== undefined ? (expectedEndDate ? new Date(expectedEndDate) : null) : existing.expectedEndDate,
-          completedDate: completedDate !== undefined ? (completedDate ? new Date(completedDate) : null) : existing.completedDate,
+          completedDate: finalCompletedDate,
           notes: notes !== undefined ? (notes?.trim() || null) : existing.notes,
         },
       })
@@ -167,37 +240,30 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 // DELETE /api/production-orders/:id
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const admin = await requireAdmin()
+    if (!admin.ok) {
+      return NextResponse.json({ error: admin.error }, { status: admin.status })
+    }
+    const companyId = admin.companyId
     const { id } = await params
-    const existing = await db.productionOrder.findUnique({ where: { id } })
+    const existing = await db.productionOrder.findFirst({ where: { id, companyId } })
     if (!existing) {
       return NextResponse.json({ error: 'أمر التشغيل غير موجود' }, { status: 404 })
     }
 
-    await db.$transaction(async (tx) => {
+    await db.$transaction(async (tx: any) => {
       // 1) لو كان in_progress: إرجاع المواد الخام
       if (existing.status === 'in_progress') {
         const orderMaterials = (existing.materials) as Array<{ materialId: string; materialName: string; quantity: number; unit: string }> || []
         for (const mat of orderMaterials) {
           if (!mat.materialId) continue
-          const material = await tx.material.findUnique({ where: { id: mat.materialId } })
+
+          const material = await tx.material.findFirst({ where: { id: mat.materialId, companyId } })
           if (!material) continue
+
           await tx.material.update({
             where: { id: mat.materialId },
             data: { quantity: { increment: mat.quantity }, updatedAt: new Date() },
-          })
-          await tx.materialTransaction.create({
-            data: {
-              materialId: mat.materialId,
-              warehouseId: material.warehouseId,
-              type: 'in',
-              quantity: mat.quantity,
-              unitCost: material.unitCost,
-              date: new Date(),
-              reason: `حذف أمر تشغيل ${existing.orderNumber}`,
-              referenceType: 'production_order_delete',
-              referenceId: id,
-              notes: `إرجاع مادة ${mat.materialName} بسبب حذف أمر التشغيل`,
-            },
           })
         }
       }
@@ -210,9 +276,9 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
         })
       }
 
-      // 3) حذف حركات المواد المرتبطة بهذا الأمر
+      // 3) حذف حركات المواد المرتبطة بهذا الأمر — داخل الشركة فقط
       await tx.materialTransaction.deleteMany({
-        where: { referenceType: 'production_order', referenceId: id },
+        where: { referenceType: 'production_order', referenceId: id, companyId },
       })
 
       // 4) حذف أمر التشغيل

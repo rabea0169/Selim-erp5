@@ -1,3 +1,8 @@
+// ⚠️ ملف قديم (Legacy / غير مستخدم حالياً)
+// هذا المخطط الخاص بـ IndexedDB (27 مخزناً) كان يُستخدم قبل الانتقال الكامل إلى Server API.
+// لا يوجد أي استيراد لهذا الملف في الكود الحالي (تم التحقق بالبحث)، لذا لا تتم أي تهيئة
+// له عند الإقلاع ولا يستهلك موارد. أُبقي للمرجعية فقط — لا تحذفه إلا بعد التأكد الكامل.
+
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
 import type {
   FactorySettings, AuditLogEntry, User, Worker, WorkerAdvance, WorkerReceipt, WorkerAttendance,

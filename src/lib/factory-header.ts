@@ -2,7 +2,7 @@
 
 import { factorySettingsRepository } from '@/lib/db'
 import type { FactorySettings } from '@/lib/db/types'
-import { escapeHtml } from '@/lib/escape-html'
+import { escapeHtml, safeImageUrl } from '@/lib/escape-html'
 
 let cachedSettings: FactorySettings | null = null
 
@@ -18,12 +18,15 @@ export function clearSettingsCache() {
 
 /**
  * توليد HTML لترويسة المصنع في الفواتير والمطبوعات
+ * كل القيم تُهرّب بـ escapeHtml، ورابط الشعار يُتحقق منه بـ safeImageUrl
+ * (https?:// أو data:image فقط — منع javascript:/data:text/html في src)
  */
 export function buildFactoryHeader(settings: FactorySettings): string {
+  const logoUrl = safeImageUrl(settings.logo)
   return `
     <div style="text-align: center; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 2px solid #0f172a;">
-      ${settings.logo
-        ? `<img src="${escapeHtml(settings.logo)}" style="max-height: 80px; max-width: 180px; margin: 0 auto 8px; display: block;" />`
+      ${logoUrl
+        ? `<img src="${escapeHtml(logoUrl)}" style="max-height: 80px; max-width: 180px; margin: 0 auto 8px; display: block;" />`
         : ''
       }
       <h1 style="margin: 0; font-size: 20px; color: #0f172a; font-weight: bold;">${escapeHtml(settings.factoryName)}</h1>

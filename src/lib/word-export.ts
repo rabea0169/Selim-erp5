@@ -1,10 +1,14 @@
 /**
  * تصدير البيانات بصيغة Word (docx)
  * يعمل بدون مكتبات خارجية - يولّد ملف docx بصيغة HTML
+ *
+ * ملاحظة أمنية: `content` يُدرج كـ HTML كما هو لأنه يُبنى داخلياً من قوالب التقارير
+ * بعد تهريب قيم البيانات بـ escapeHtml (مثلاً exportTableToWord). لا تمرّر له
+ * محتوى خام من مدخلات المستخدم مباشرةً. رابط الشعار يُتحقق عبر safeImageUrl.
  */
 
 import type { FactorySettings } from '@/lib/db/types'
-import { escapeHtml } from '@/lib/escape-html'
+import { escapeHtml, safeImageUrl } from '@/lib/escape-html'
 
 interface ExportOptions {
   title: string
@@ -20,11 +24,14 @@ interface ExportOptions {
 export function exportToWord({ title, factorySettings, content, fileName }: ExportOptions): void {
   const now = new Date().toLocaleString('ar-EG')
 
+  // رابط شعار آمن فقط (https?:// أو data:image) — منع javascript:/data:text/html
+  const logoUrl = safeImageUrl(factorySettings?.logo)
+
   // ترويسة المصنع (لو موجودة)
   const factoryHeader = factorySettings?.factoryName
     ? `
       <div style="text-align: center; margin-bottom: 20px; border-bottom: 2px solid #0f172a; padding-bottom: 10px;">
-        ${factorySettings.logo ? `<img src="${escapeHtml(factorySettings.logo)}" style="max-height: 80px; max-width: 200px; margin-bottom: 8px;" />` : ''}
+        ${logoUrl ? `<img src="${escapeHtml(logoUrl)}" style="max-height: 80px; max-width: 200px; margin-bottom: 8px;" />` : ''}
         <h1 style="margin: 0; color: #0f172a; font-size: 22px;">${escapeHtml(factorySettings.factoryName)}</h1>
         ${factorySettings.slogan ? `<p style="margin: 4px 0; color: #64748b; font-size: 12px;">${escapeHtml(factorySettings.slogan)}</p>` : ''}
         <div style="margin-top: 6px; font-size: 11px; color: #475569;">

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Plus, Trash2, Package, Percent, Tag, Coins } from 'lucide-react'
+import { Plus, Trash2, Package, Percent, Tag, Coins, Wallet } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -23,13 +23,15 @@ import {
 } from '@/components/ui/select'
 import { useToast } from '@/hooks/use-toast'
 import { formatCurrency, todayStr } from '@/lib/format'
-import { saleRepository, productRepository, dataChangeEmitter, type Customer, type Product } from '@/lib/db'
+import { saleRepository, productRepository, dataChangeEmitter, type Customer, type Product, type Sale } from '@/lib/db'
 
 interface SaleFormProps {
   open: boolean
   onOpenChange: (v: boolean) => void
   onSaved: () => void
   customers: Customer[]
+  // فاتورة موجودة للتعديل — عند تمريرها يعمل النموذج في وضع التعديل
+  sale?: Sale | null
 }
 
 interface SaleFormItem {
@@ -43,7 +45,8 @@ interface SaleFormItem {
 
 type DiscountType = 'none' | 'percentage' | 'fixed'
 
-export function SaleForm({ open, onOpenChange, onSaved, customers }: SaleFormProps) {
+export function SaleForm({ open, onOpenChange, onSaved, customers, sale }: SaleFormProps) {
+  const isEdit = !!sale
   const [customerName, setCustomerName] = useState('')
   const [customerId, setCustomerId] = useState('')
   const [invoiceNo, setInvoiceNo] = useState('')
@@ -61,12 +64,40 @@ export function SaleForm({ open, onOpenChange, onSaved, customers }: SaleFormPro
   const [products, setProducts] = useState<Product[]>([])
   const { toast } = useToast()
 
-  // تحميل المنتجات
+  // تحميل المنتجات + تعبئة الحقول عند فتح النموذج في وضع التعديل
   useEffect(() => {
     if (open) {
       productRepository.getAll().then(setProducts).catch(() => {})
+      if (sale) {
+        setCustomerName(sale.customerName || '')
+        setCustomerId(sale.customerId_ref || '')
+        setInvoiceNo(sale.invoiceNo || '')
+        setDate((sale.date || '').split('T')[0] || todayStr())
+        setPaid(sale.paid ? String(sale.paid) : '')
+        setNotes(sale.notes || '')
+        setItems(
+          sale.items.length > 0
+            ? sale.items.map((it) => ({
+                productName: it.itemName,
+                productId: it.productId || undefined,
+                priceType: (it.priceType as SaleFormItem['priceType']) || 'custom',
+                quantity: it.quantity,
+                unitPrice: it.unitPrice,
+                total: it.quantity * it.unitPrice,
+              }))
+            : [{ productName: '', priceType: 'custom', quantity: 1, unitPrice: 0, total: 0 }]
+        )
+        const dt = sale.discountType
+        setDiscountType(dt === 'percentage' || dt === 'fixed' ? dt : 'none')
+        setDiscountValue(sale.discountValue ? String(sale.discountValue) : '')
+        setTaxRate(sale.taxRate ? String(sale.taxRate) : '')
+        setExtraFees(sale.extraFees ? String(sale.extraFees) : '')
+      } else {
+        reset()
+      }
     }
-  }, [open])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, sale])
 
   // الإجمالي الفرعي (مجموع الأصناف)
   const subtotal = items.reduce((s, it) => s + it.quantity * it.unitPrice, 0)
@@ -197,7 +228,7 @@ export function SaleForm({ open, onOpenChange, onSaved, customers }: SaleFormPro
     }
     setSaving(true)
     try {
-      await saleRepository.createWithItems({
+      const payload = {
         customerName,
         customerId_ref: (customerId && customerId !== '__none__') ? customerId : undefined,
         invoiceNo,
@@ -215,8 +246,14 @@ export function SaleForm({ open, onOpenChange, onSaved, customers }: SaleFormPro
           quantity: Number(it.quantity),
           unitPrice: Number(it.unitPrice),
         })),
-      })
-      dataChangeEmitter.notifyCreate('sales')
+      }
+      if (isEdit && sale) {
+        await saleRepository.updateWithItems(sale.id, payload)
+        dataChangeEmitter.notifyUpdate('sales')
+      } else {
+        await saleRepository.createWithItems(payload)
+        dataChangeEmitter.notifyCreate('sales')
+      }
       dataChangeEmitter.notifyUpdate('products')
       dataChangeEmitter.notifyUpdate('treasuryTransactions')
       reset()
@@ -232,8 +269,8 @@ export function SaleForm({ open, onOpenChange, onSaved, customers }: SaleFormPro
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto" dir="rtl">
         <DialogHeader>
-          <DialogTitle className="text-right">فاتورة مبيعات جديدة</DialogTitle>
-          <DialogDescription className="sr-only">فاتورة مبيعات جديدة مع الخصومات والضريبة</DialogDescription>
+          <DialogTitle className="text-right">{isEdit ? 'تعديل فاتورة مبيعات' : 'فاتورة مبيعات جديدة'}</DialogTitle>
+          <DialogDescription className="sr-only">{isEdit ? 'تعديل فاتورة مبيعات موجودة' : 'فاتورة مبيعات جديدة مع الخصومات والضريبة'}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3">
@@ -264,20 +301,14 @@ export function SaleForm({ open, onOpenChange, onSaved, customers }: SaleFormPro
               />
             </div>
             <div>
-              <Label className="text-xs">رقم الفاتورة</Label>
-              <Input value={invoiceNo} onChange={(e) => setInvoiceNo(e.target.value)} placeholder="رقم الفاتورة" className="bg-slate-50" />
+              <Label className="text-xs">رقم الفاتورة (اختياري)</Label>
+              <Input value={invoiceNo} onChange={(e) => setInvoiceNo(e.target.value)} placeholder="تلقائي (INV-0001)" className="bg-slate-50" />
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <Label className="text-xs">التاريخ</Label>
-              <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="bg-slate-50" />
-            </div>
-            <div>
-              <Label className="text-xs">المدفوع</Label>
-              <Input type="number" value={paid} onChange={(e) => setPaid(e.target.value)} placeholder="0" className="bg-slate-50" />
-            </div>
+          <div>
+            <Label className="text-xs">التاريخ</Label>
+            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="bg-slate-50" />
           </div>
 
           {/* الأصناف */}
@@ -359,11 +390,11 @@ export function SaleForm({ open, onOpenChange, onSaved, customers }: SaleFormPro
                   </div>
                   <div>
                     <Label className="text-[10px]">الكمية</Label>
-                    <Input type="number" value={it.quantity} onChange={(e) => updateItem(i, 'quantity', Number(e.target.value))} className="bg-white text-sm h-8" min="1" />
+                    <Input type="number" value={it.quantity} onChange={(e) => updateItem(i, 'quantity', Number(e.target.value))} onFocus={(e) => e.target.select()} className="bg-white text-sm h-8" min="1" />
                   </div>
                   <div>
                     <Label className="text-[10px]">سعر الوحدة</Label>
-                    <Input type="number" value={it.unitPrice} onChange={(e) => updateItem(i, 'unitPrice', Number(e.target.value))} className="bg-white text-sm h-8" min="0" />
+                    <Input type="number" value={it.unitPrice} onChange={(e) => updateItem(i, 'unitPrice', Number(e.target.value))} onFocus={(e) => e.target.select()} className="bg-white text-sm h-8" min="0" />
                   </div>
                   <div>
                     <Label className="text-[10px]">الإجمالي</Label>
@@ -418,6 +449,7 @@ export function SaleForm({ open, onOpenChange, onSaved, customers }: SaleFormPro
                   type="number"
                   value={discountValue}
                   onChange={(e) => setDiscountValue(e.target.value)}
+                  onFocus={(e) => e.target.select()}
                   placeholder="0"
                   disabled={discountType === 'none'}
                   className="bg-white text-sm h-8"
@@ -445,6 +477,7 @@ export function SaleForm({ open, onOpenChange, onSaved, customers }: SaleFormPro
                   type="number"
                   value={taxRate}
                   onChange={(e) => setTaxRate(e.target.value)}
+                  onFocus={(e) => e.target.select()}
                   placeholder="مثال: 14"
                   className="bg-white text-sm h-8"
                   min="0"
@@ -470,6 +503,27 @@ export function SaleForm({ open, onOpenChange, onSaved, customers }: SaleFormPro
                 type="number"
                 value={extraFees}
                 onChange={(e) => setExtraFees(e.target.value)}
+                onFocus={(e) => e.target.select()}
+                placeholder="0"
+                className="bg-white text-sm h-8"
+                min="0"
+              />
+            </div>
+          </div>
+
+          {/* ===== المدفوع (بعد معرفة الإجمالي النهائي) ===== */}
+          <div className="bg-emerald-50/60 border border-emerald-200 rounded-lg p-3 space-y-2">
+            <div className="flex items-center gap-1.5">
+              <Wallet className="w-3.5 h-3.5 text-emerald-700" />
+              <Label className="text-xs font-bold text-emerald-800">المدفوع</Label>
+            </div>
+            <div>
+              <Label className="text-[10px]">المبلغ المدفوع الآن (يُترك فارغاً للبيع الآجل)</Label>
+              <Input
+                type="number"
+                value={paid}
+                onChange={(e) => setPaid(e.target.value)}
+                onFocus={(e) => e.target.select()}
                 placeholder="0"
                 className="bg-white text-sm h-8"
                 min="0"
@@ -519,11 +573,12 @@ export function SaleForm({ open, onOpenChange, onSaved, customers }: SaleFormPro
           </div>
         </div>
 
+        {/* الأزرار: الإجراء الأساسي (حفظ) أولاً، ثم الإلغاء في النهاية */}
         <DialogFooter className="gap-2">
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>إلغاء</Button>
           <Button onClick={save} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">
-            {saving ? 'جارٍ الحفظ...' : 'حفظ الفاتورة'}
+            {saving ? 'جارٍ الحفظ...' : isEdit ? 'حفظ التعديلات' : 'حفظ الفاتورة'}
           </Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>إلغاء</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

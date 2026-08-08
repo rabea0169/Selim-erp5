@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import {
   Plus,
   Trash2,
+  Pencil,
   Search,
   Wallet,
   Calendar,
@@ -68,6 +69,7 @@ async function fetchExpensesAndCategories(
 export function ExpensesView() {
   const [open, setOpen] = useState(false)
   const [catOpen, setCatOpen] = useState(false)
+  const [editing, setEditing] = useState<Expense | null>(null)
   const [search, setSearch] = useState('')
   const [filterCat, setFilterCat] = useState('')
   const [from, setFrom] = useState('')
@@ -94,6 +96,16 @@ export function ExpensesView() {
     } catch (e: any) {
       toast({ title: 'خطأ', description: e.message, variant: 'destructive' })
     }
+  }
+
+  const handleEdit = (expense: Expense) => {
+    setEditing(expense)
+    setOpen(true)
+  }
+
+  const handleFormOpenChange = (v: boolean) => {
+    setOpen(v)
+    if (!v) setEditing(null)
   }
 
   const expensesList: Expense[] = data?.expenses || []
@@ -126,7 +138,7 @@ export function ExpensesView() {
             <Settings className="w-4 h-4" />
           </Button>
           <Button
-            onClick={() => setOpen(true)}
+            onClick={() => { setEditing(null); setOpen(true) }}
             className="bg-rose-600 hover:bg-rose-700 text-white shadow-sm"
           >
             <Plus className="w-4 h-4 ml-1" />
@@ -277,6 +289,15 @@ export function ExpensesView() {
               <Button
                 size="icon"
                 variant="ghost"
+                className="h-7 w-7 text-slate-500"
+                title="تعديل المصروف"
+                onClick={() => handleEdit(e)}
+              >
+                <Pencil className="w-3.5 h-3.5" />
+              </Button>
+              <Button
+                size="icon"
+                variant="ghost"
                 className="h-7 w-7 text-rose-500"
                 onClick={() => handleDelete(e.id)}
               >
@@ -289,8 +310,9 @@ export function ExpensesView() {
 
       <ExpenseForm
         open={open}
-        onOpenChange={setOpen}
+        onOpenChange={handleFormOpenChange}
         categories={categoriesList}
+        expense={editing}
         onSaved={() => setOpen(false)}
       />
       <CategoryManager

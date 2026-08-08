@@ -5,7 +5,7 @@ import { dataChangeEmitter } from '../live-data'
 import type { Warehouse, Material, MaterialTransaction } from '../types'
 
 class WarehouseRepository extends BaseRepository<Warehouse> {
-  constructor() { super('/api/warehouses', 'warehouses') }
+  constructor() { super('/api/warehouses', 'warehouses', 'warehouses') }
 
   async getByType(type: Warehouse['type']): Promise<Warehouse[]> {
     return this.getAll({ type })
@@ -17,7 +17,7 @@ class WarehouseRepository extends BaseRepository<Warehouse> {
 }
 
 class MaterialRepository extends BaseRepository<Material> {
-  constructor() { super('/api/materials', 'materials') }
+  constructor() { super('/api/materials', 'materials', 'materials') }
 
   async getByWarehouse(warehouseId: string): Promise<Material[]> {
     return this.getAll({ warehouseId })
@@ -40,6 +40,13 @@ class MaterialRepository extends BaseRepository<Material> {
     dataChangeEmitter.notifyCreate('materialTransactions')
   }
 
+  /** تسوية جرد — newQuantity هو الرصيد الجديد المطلق */
+  async adjustStock(materialId: string, newQuantity: number, reason: string, notes?: string): Promise<void> {
+    await apiPost('/api/materials/stock', { materialId, quantity: newQuantity, type: 'adjustment', reason, notes })
+    dataChangeEmitter.notifyUpdate('materials')
+    dataChangeEmitter.notifyCreate('materialTransactions')
+  }
+
   async getTransactions(materialId: string): Promise<MaterialTransaction[]> {
     try { return await apiGet<MaterialTransaction[]>(`/api/materials/${materialId}/transactions`) } catch { return [] }
   }
@@ -53,7 +60,7 @@ class MaterialRepository extends BaseRepository<Material> {
 }
 
 class MaterialTransactionRepository extends BaseRepository<MaterialTransaction> {
-  constructor() { super('/api/material-transactions', 'materialTransactions') }
+  constructor() { super('/api/material-transactions', 'materialTransactions', 'materialTransactions') }
 
   async getByMaterial(materialId: string): Promise<MaterialTransaction[]> {
     try { return await apiGet<MaterialTransaction[]>(`/api/materials/${materialId}/transactions`) } catch { return [] }

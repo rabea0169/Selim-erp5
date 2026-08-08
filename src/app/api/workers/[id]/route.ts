@@ -1,22 +1,61 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
-import { getCurrentUser } from '@/lib/auth'
+import { requireCompanyScope } from '@/lib/company-scope'
 import { safeError } from '@/lib/safe-error'
+import { requireAdmin } from '@/lib/admin-check'
+
+// تحويل رقم اختياري: قيمة فارغة/غير صالحة → null
+function optNum(v: any): number | null {
+  if (v === undefined || v === null || v === '') return null
+  const n = Number(v)
+  return isNaN(n) ? null : n
+}
+
+// GET /api/workers/[id] — جلب موظف واحد (مقيد بالشركة — حماية IDOR)
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const scope = await requireCompanyScope()
+    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
+    const user = scope.user
+    if (!user) {
+      return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    }
+    const companyId = scope.companyId
+    const { id } = await params
+
+    const worker = await db.worker.findFirst({
+      where: { id, companyId },
+    })
+    if (!worker) {
+      return NextResponse.json({ error: 'الموظف غير موجود' }, { status: 404 })
+    }
+    return NextResponse.json({ worker })
+  } catch (e) {
+    const { error, status } = safeError(e)
+    return NextResponse.json({ error }, { status })
+  }
+}
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const user = await getCurrentUser()
+    const scope = await requireCompanyScope()
+    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
+    const user = scope.user
+    if (!user) {
+      return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    }
+    const companyId = scope.companyId
     const { id } = await params
     const body = await req.json()
-    const { name, phone, job, type, notes, dailyWage, monthlySalary } = body
+    const { name, phone, job, type, notes, hourlyRate, overtimeRate, workStartTime, workHoursPerDay, monthlySalary } = body
 
     if (!name?.trim()) {
       return NextResponse.json({ error: 'اسم الموظف مطلوب' }, { status: 400 })
     }
 
-    // فحص وجود الموظف وتبعيته للشركة (حماية IDOR)
+    // فحص وجود الموظف وتبعيته للشركة (حماية IDOR) — الفلتر إجباري حتى لو companyId null
     const existing = await db.worker.findFirst({
-      where: { id, ...(user?.companyId ? { companyId: user.companyId } : {}) },
+      where: { id, companyId },
     })
     if (!existing) {
       return NextResponse.json({ error: 'الموظف غير موجود' }, { status: 404 })
@@ -35,6 +74,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         phone: phone?.trim() || null,
         job: job?.trim() || null,
         type: validType,
+        hourlyRate: optNum(hourlyRate),
+        overtimeRate: optNum(overtimeRate),
+        workStartTime: workStartTime?.trim() || null,
+        workHoursPerDay: optNum(workHoursPerDay),
+        monthlySalary: optNum(monthlySalary),
         notes: notes?.trim() || null,
       },
     })
@@ -47,12 +91,16 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const user = await getCurrentUser()
+    const admin = await requireAdmin()
+    if (!admin.ok) {
+      return NextResponse.json({ error: admin.error }, { status: admin.status })
+    }
+    const companyId = admin.companyId
     const { id } = await params
 
     // فحص وجود الموظف وتبعيته للشركة (حماية IDOR)
     const existing = await db.worker.findFirst({
-      where: { id, ...(user?.companyId ? { companyId: user.companyId } : {}) },
+      where: { id, companyId },
     })
     if (!existing) {
       return NextResponse.json({ error: 'الموظف غير موجود' }, { status: 404 })

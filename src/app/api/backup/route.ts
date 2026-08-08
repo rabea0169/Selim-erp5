@@ -3,13 +3,33 @@ import { db } from '@/lib/db-server'
 import { requireAdmin } from '@/lib/admin-check'
 import { safeError } from '@/lib/safe-error'
 
-// GET /api/backup - تصدير كل البيانات بصيغة JSON (admin فقط)
+// تنفيذ استعلام كيان واحد بشكل مستقل — عند الفشل نسجل الخطأ ونعيد مصفوفة فارغة
+// حتى لا يُسقط استعلام فاشل واحد (جدول/عمود مفقود) التصدير بالكامل بـ 500
+async function tryQuery<T>(name: string, warnings: string[], fn: () => Promise<T[]>): Promise<T[]> {
+  try {
+    return await fn()
+  } catch (e) {
+    console.error('[backup] entity failed:', name, e)
+    warnings.push(name)
+    return []
+  }
+}
+
+// GET /api/backup - تصدير بيانات الشركة الحالية فقط بصيغة JSON (admin فقط)
 export async function GET() {
   try {
     const admin = await requireAdmin()
     if (!admin.ok) {
       return NextResponse.json({ error: admin.error }, { status: admin.status })
     }
+    const companyId = admin.companyId ?? null
+    const warnings: string[] = []
+
+    // Fix: عزل كامل بالشركة — الجداول الفرعية (saleItems/purchaseItems) عبر معرفات الآباء
+    const sales = await tryQuery('sales', warnings, () => db.sale.findMany({ where: { companyId } }))
+    const purchases = await tryQuery('purchases', warnings, () => db.purchase.findMany({ where: { companyId } }))
+    const saleIds = sales.map((s: any) => s.id)
+    const purchaseIds = purchases.map((p: any) => p.id)
 
     const [
       workers,
@@ -19,13 +39,10 @@ export async function GET() {
       production,
       customers,
       suppliers,
-      sales,
       saleItems,
-      purchases,
       purchaseItems,
       expenseCategories,
       expenses,
-      // Fix D: Missing tables
       products,
       warehouses,
       materials,
@@ -38,37 +55,37 @@ export async function GET() {
       factorySettings,
       auditLogs,
     ] = await Promise.all([
-      db.worker.findMany(),
-      db.workerAdvance.findMany(),
-      db.workerReceipt.findMany(),
-      db.workerAttendance.findMany(),
-      db.production.findMany(),
-      db.customer.findMany(),
-      db.supplier.findMany(),
-      db.sale.findMany(),
-      db.saleItem.findMany(),
-      db.purchase.findMany(),
-      db.purchaseItem.findMany(),
-      db.expenseCategory.findMany(),
-      db.expense.findMany(),
-      // Fix D: Missing tables
-      db.product.findMany(),
-      db.warehouse.findMany(),
-      db.material.findMany(),
-      db.materialTransaction.findMany(),
-      db.treasuryTransaction.findMany(),
-      db.productionOrder.findMany(),
-      db.payment.findMany(),
-      db.saleReturn.findMany(),
-      db.purchaseReturn.findMany(),
-      db.factorySettings.findMany(),
-      db.auditLog.findMany(),
+      tryQuery('workers', warnings, () => db.worker.findMany({ where: { companyId } })),
+      tryQuery('workerAdvances', warnings, () => db.workerAdvance.findMany({ where: { companyId } })),
+      tryQuery('workerReceipts', warnings, () => db.workerReceipt.findMany({ where: { companyId } })),
+      tryQuery('workerAttendance', warnings, () => db.workerAttendance.findMany({ where: { companyId } })),
+      tryQuery('production', warnings, () => db.production.findMany({ where: { companyId } })),
+      tryQuery('customers', warnings, () => db.customer.findMany({ where: { companyId } })),
+      tryQuery('suppliers', warnings, () => db.supplier.findMany({ where: { companyId } })),
+      tryQuery('saleItems', warnings, () => db.saleItem.findMany({ where: { saleId: { in: saleIds } } })),
+      tryQuery('purchaseItems', warnings, () => db.purchaseItem.findMany({ where: { purchaseId: { in: purchaseIds } } })),
+      tryQuery('expenseCategories', warnings, () => db.expenseCategory.findMany({ where: { companyId } })),
+      tryQuery('expenses', warnings, () => db.expense.findMany({ where: { companyId } })),
+      tryQuery('products', warnings, () => db.product.findMany({ where: { companyId } })),
+      tryQuery('warehouses', warnings, () => db.warehouse.findMany({ where: { companyId } })),
+      tryQuery('materials', warnings, () => db.material.findMany({ where: { companyId } })),
+      tryQuery('materialTransactions', warnings, () => db.materialTransaction.findMany({ where: { companyId } })),
+      tryQuery('treasuryTransactions', warnings, () => db.treasuryTransaction.findMany({ where: { companyId } })),
+      tryQuery('productionOrders', warnings, () => db.productionOrder.findMany({ where: { companyId } })),
+      tryQuery('payments', warnings, () => db.payment.findMany({ where: { companyId } })),
+      tryQuery('saleReturns', warnings, () => db.saleReturn.findMany({ where: { companyId } })),
+      tryQuery('purchaseReturns', warnings, () => db.purchaseReturn.findMany({ where: { companyId } })),
+      tryQuery('factorySettings', warnings, () => db.factorySettings.findMany({ where: { companyId: companyId ?? '__none__' } })),
+      tryQuery('auditLogs', warnings, () => db.auditLog.findMany({ where: { companyId } })),
     ])
 
     const backup = {
-      version: 3,
+      version: 4,
       app: 'clothing-factory-management',
+      companyId,
       exportedAt: new Date().toISOString(),
+      // أسماء الكيانات التي تعذّر تصديرها (فارغة في الحالة الطبيعية)
+      warnings,
       data: {
         workers,
         workerAdvances: advances,
@@ -83,7 +100,6 @@ export async function GET() {
         purchaseItems,
         expenseCategories,
         expenses,
-        // Fix D: Missing tables
         products,
         warehouses,
         materials,

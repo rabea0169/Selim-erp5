@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
-import { getCurrentUser } from '@/lib/auth'
+import { requireCompanyScope } from '@/lib/company-scope'
 import { safeError } from '@/lib/safe-error'
 
 export async function GET(req: NextRequest) {
@@ -27,7 +27,8 @@ export async function GET(req: NextRequest) {
       db.saleReturn.findMany({ where, orderBy: { date: 'desc' }, skip: (page - 1) * limit, take: limit }),
       db.saleReturn.count({ where }),
     ])
-    return NextResponse.json({ returns, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } })
+    // المفتاح saleReturns كما يتوقع العميل (contract fix)
+    return NextResponse.json({ saleReturns: returns, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } })
   } catch (e) {
     const { error, status } = safeError(e); return NextResponse.json({ error }, { status })
   }
@@ -40,9 +41,9 @@ export async function POST(req: NextRequest) {
 
     const companyId = user.companyId || null
     const body = await req.json()
-    const { saleId, date, total, reason, notes, items, returnNumber, customerName } = body
+    const { saleId, date, reason, notes, items, returnNumber, customerName, restockItems } = body
 
-    if (!saleId || !date || !total) {
+    if (!saleId || !date) {
       return NextResponse.json({ error: 'بيانات المرتجع غير مكتملة' }, { status: 400 })
     }
 
@@ -76,6 +77,7 @@ export async function POST(req: NextRequest) {
           items: Array.isArray(items) ? items : [],
           reason: reason?.trim() || null,
           notes: notes?.trim() || null,
+          restockItems: shouldRestock,
         },
       })
 
@@ -86,6 +88,7 @@ export async function POST(req: NextRequest) {
               where: { id: item.productId },
               data: { quantity: { increment: Number(item.quantity) } },
             })
+            if (updated.count === 0) throw new Error('المنتج غير موجود')
           }
         }
       }

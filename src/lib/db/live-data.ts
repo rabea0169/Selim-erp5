@@ -3,7 +3,7 @@
 // نظام التحديث الفوري - يبث الأحداث لما تتغير البيانات
 // كل المكونات اللي بتستخدم useLiveData هتتحدث تلقائياً
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 
 type EntityType =
   | 'sales' | 'purchases' | 'workers' | 'workerAdvances' | 'workerReceipts'
@@ -77,9 +77,16 @@ export function useLiveData<T>(
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [reloadFlag, setReloadFlag] = useState(0)
+  // هل اكتمل التحميل الأول؟ — لمنع الجلب المزدوج عند فتح الشاشة:
+  // كثير من المكونات تستدعي reload() داخل useEffect عند تغيّر البحث،
+  // وأول تشغيلة للـ effect تكون مباشرة بعد الإقلاع فتسبب جلباً ثانياً مكرراً.
+  const firstLoadDone = useRef(false)
 
   const reload = useCallback(() => {
-    setReloadFlag((f) => f + 1)
+    // تجاهل reload قبل اكتمال التحميل الأول — الجلب الابتدائي جارٍ أصلاً بنفس الـ fetcher
+    if (firstLoadDone.current) {
+      setReloadFlag((f) => f + 1)
+    }
   }, [])
 
   useEffect(() => {
@@ -95,6 +102,7 @@ export function useLiveData<T>(
       } catch (e: any) {
         if (mounted) setError(e.message)
       } finally {
+        firstLoadDone.current = true
         if (mounted) setLoading(false)
       }
     }

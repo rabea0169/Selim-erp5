@@ -21,6 +21,7 @@ import { PurchaseForm } from './purchases/PurchaseForm'
 
 export function PurchasesView() {
   const [open, setOpen] = useState(false)
+  const [editPurchase, setEditPurchase] = useState<Purchase | null>(null)
   const [search, setSearch] = useState('')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
@@ -55,6 +56,16 @@ export function PurchasesView() {
     }
   }
 
+  const handleEdit = (p: Purchase) => {
+    setEditPurchase(p)
+    setOpen(true)
+  }
+
+  const handleOpenChange = (v: boolean) => {
+    setOpen(v)
+    if (!v) setEditPurchase(null)
+  }
+
   const purchasesList = purchases || []
   const suppliersList = suppliers || []
 
@@ -74,7 +85,7 @@ export function PurchasesView() {
             <Truck className="w-4 h-4 ml-1" />
             الموردين
           </Button>
-          <Button onClick={() => setOpen(true)} className="bg-amber-600 hover:bg-amber-700 text-white shadow-sm">
+          <Button onClick={() => { setEditPurchase(null); setOpen(true) }} className="bg-amber-600 hover:bg-amber-700 text-white shadow-sm">
             <Plus className="w-4 h-4 ml-1" />
             فاتورة جديدة
           </Button>
@@ -131,12 +142,12 @@ export function PurchasesView() {
       ) : (
         <div className="space-y-2">
           {purchasesList.map((p) => (
-            <PurchaseCard key={p.id} purchase={p} onDelete={handleDelete} />
+            <PurchaseCard key={p.id} purchase={p} onDelete={handleDelete} onEdit={handleEdit} />
           ))}
         </div>
       )}
 
-      <PurchaseForm open={open} onOpenChange={setOpen} onSaved={() => setOpen(false)} suppliers={suppliersList} />
+      <PurchaseForm open={open} onOpenChange={handleOpenChange} onSaved={() => setOpen(false)} suppliers={suppliersList} editPurchase={editPurchase} />
       {showSuppliers && (
         <SuppliersView
           onBack={() => {

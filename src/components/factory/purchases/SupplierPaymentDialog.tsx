@@ -59,11 +59,23 @@ export function SupplierPaymentDialog({ open, onOpenChange, purchase }: Supplier
       toast({ title: 'تنبيه', description: `المبلغ أكبر من المتبقي (${formatCurrency(remaining)})`, variant: 'destructive' })
       return
     }
+    // السيرفر (POST /api/payments) يتحقق من وجود المورد ويحدّث paid ذرّياً —
+    // لا يمكن تسجيل دفعة لفاتورة غير مرتبطة بمورد مسجل
+    if (!purchase.supplierId_ref) {
+      toast({
+        title: 'تنبيه',
+        description: 'لا يمكن تسجيل الدفعة: الفاتورة غير مرتبطة بمورد مسجل. اربطها بمورد من قائمة الموردين أولاً',
+        variant: 'destructive',
+      })
+      return
+    }
     setSaving(true)
     try {
+      // ملاحظة: السيرفر يزيد purchase.paid وينشئ حركة الخزينة ذرّياً داخل نفس الـ transaction
+      // — لا نحتاج لأي تحديث إضافي للفاتورة من العميل (كان يسبب تحديثاً مكرراً وسباق بيانات)
       await paymentRepository.create({
         type: 'supplier_payment',
-        partyId: purchase.supplierId_ref || purchase.id,
+        partyId: purchase.supplierId_ref,
         partyName: purchase.supplierName,
         invoiceId: purchase.id,
         invoiceNo: purchase.invoiceNo,
@@ -72,9 +84,6 @@ export function SupplierPaymentDialog({ open, onOpenChange, purchase }: Supplier
         method,
         notes: notes || undefined,
       })
-      // تحديث المشتريات: زيادة المدفوع
-      const { purchaseRepository } = await import('@/lib/db')
-      await purchaseRepository.update(purchase.id, { paid: purchase.paid + amountNum } as any)
       dataChangeEmitter.notifyUpdate('purchases')
       dataChangeEmitter.notifyUpdate('payments')
       dataChangeEmitter.notifyUpdate('treasuryTransactions')
@@ -190,16 +199,17 @@ export function SupplierPaymentDialog({ open, onOpenChange, purchase }: Supplier
           </div>
         </div>
 
+        {/* الأزرار: الإجراء الأساسي (دفع) أولاً، ثم الإلغاء في النهاية */}
         <DialogFooter className="gap-2 px-1 pb-6">
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
-            إلغاء
-          </Button>
           <Button
             onClick={save}
             disabled={saving || !amount || Number(amount) <= 0}
             className="bg-amber-600 hover:bg-amber-700 text-white"
           >
             {saving ? 'جارٍ الحفظ...' : `دفع ${formatCurrency(Number(amount) || 0)}`}
+          </Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
+            إلغاء
           </Button>
         </DialogFooter>
       </DialogContent>

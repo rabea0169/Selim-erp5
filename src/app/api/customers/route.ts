@@ -1,17 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
-import { getCurrentUser } from '@/lib/auth'
+import { requireCompanyScope } from '@/lib/company-scope'
 import { safeError } from '@/lib/safe-error'
 
 export async function GET(req: NextRequest) {
   try {
-    const user = await getCurrentUser()
+    const scope = await requireCompanyScope()
+    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
+    const user = scope.user
+    if (!user) {
+      return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    }
+    const companyId = scope.companyId
+
     const { searchParams } = new URL(req.url)
     const q = searchParams.get('q') || ''
-    const where: any = user?.companyId ? { companyId: user.companyId } : {}
+    // عزل الشركات إجباري — companyId null يطابق السجلات القديمة غير المربوطة فقط
+    const where: any = { companyId }
     if (q) {
       where.AND = [
-        user?.companyId ? { companyId: user.companyId } : {},
+        { companyId },
         {
           OR: [
             { name: { contains: q } },
@@ -31,19 +39,46 @@ export async function GET(req: NextRequest) {
       },
       orderBy: { createdAt: 'desc' },
     })
-    const withTotals = customers.map((c) => {
-      const totalSales = c.sales.reduce((s, x) => s + x.total, 0)
-      const totalPaid = c.sales.reduce((s, x) => s + x.paid, 0)
+
+    // fix(receivables): تجميع المرتجعات والسدادات العامة (غير المرتبطة بفاتورة) لكل عميل
+    // حتى يكون totalRemaining = مبيعات - مدفوع - مرتجعات - سدادات عامة (مطابقاً لكشف الحساب)
+    const ids = customers.map((c: any) => c.id)
+    const [returnAgg, standaloneAgg] = ids.length
+      ? await Promise.all([
+          db.saleReturn.groupBy({
+            by: ['customerId_ref'],
+            where: { companyId, customerId_ref: { in: ids } },
+            _sum: { total: true },
+          }),
+          db.payment.groupBy({
+            by: ['partyId'],
+            where: { companyId, type: 'customer_payment', invoiceId: null, partyId: { in: ids } },
+            _sum: { amount: true },
+          }),
+        ])
+      : [[], []]
+    const returnsMap = new Map((returnAgg as any[]).map((r: any) => [r.customerId_ref, r._sum?.total || 0]))
+    const standaloneMap = new Map((standaloneAgg as any[]).map((p: any) => [p.partyId, p._sum?.amount || 0]))
+
+    const withTotals = customers.map((c: any) => {
+      const totalSales = c.sales.reduce((s: number, x: any) => s + x.total, 0)
+      const totalPaid = c.sales.reduce((s: number, x: any) => s + x.paid, 0)
+      const totalReturns = returnsMap.get(c.id) || 0
+      const standalonePayments = standaloneMap.get(c.id) || 0
       return {
         id: c.id,
         name: c.name,
         phone: c.phone,
         address: c.address,
         notes: c.notes,
+        creditLimit: c.creditLimit,
+        loyaltyPoints: c.loyaltyPoints,
+        openingBalance: c.openingBalance,
         createdAt: c.createdAt,
         totalSales,
         totalPaid,
-        totalRemaining: totalSales - totalPaid,
+        totalReturns,
+        totalRemaining: Math.max(0, totalSales - totalPaid - totalReturns - standalonePayments),
         salesCount: c._count.sales,
       }
     })
@@ -55,9 +90,14 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const user = await getCurrentUser()
+    const scope = await requireCompanyScope()
+    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
+    const user = scope.user
+    if (!user) {
+      return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    }
     const body = await req.json()
-    const { name, phone, address, notes } = body
+    const { name, phone, address, notes, creditLimit, openingBalance } = body
 
     if (!name?.trim()) {
       return NextResponse.json(
@@ -68,11 +108,13 @@ export async function POST(req: NextRequest) {
 
     const customer = await db.customer.create({
       data: {
-        companyId: user?.companyId || null,
+        companyId: scope.companyId,
         name: name.trim(),
         phone: phone?.trim() || null,
         address: address?.trim() || null,
         notes: notes?.trim() || null,
+        creditLimit: Number(creditLimit) > 0 ? Number(creditLimit) : null,
+        openingBalance: Number(openingBalance) > 0 ? Number(openingBalance) : 0,
       },
     })
     return NextResponse.json({ customer })

@@ -29,15 +29,7 @@ export async function GET(req: NextRequest) {
       db.payment.count({ where }),
     ])
 
-    return NextResponse.json({
-      payments,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
-    })
+    return NextResponse.json({ payments, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } })
   } catch (e) {
     const { error, status } = safeError(e)
     return NextResponse.json({ error }, { status })
@@ -54,62 +46,31 @@ export async function POST(req: NextRequest) {
 
     const companyId = user.companyId || null
     const body = await req.json()
-    const {
-      type,
-      partyId,
-      partyName,
-      invoiceId,
-      invoiceNo,
-      amount,
-      date,
-      method,
-      notes,
-    } = body
+    const { type, partyId, partyName, invoiceId, invoiceNo, amount, date, method, notes } = body
 
-    // التحقق من نوع السداد
     if (type !== 'customer_payment' && type !== 'supplier_payment') {
-      return NextResponse.json(
-        { error: 'نوع السداد غير صالح (يجب أن يكون customer_payment أو supplier_payment)' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'نوع السداد غير صالح' }, { status: 400 })
     }
-
-    // التحقق من بيانات الطرف
     if (!partyId?.trim()) {
-      return NextResponse.json(
-        { error: type === 'customer_payment' ? 'العميل مطلوب' : 'المورد مطلوب' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: type === 'customer_payment' ? 'العميل مطلوب' : 'المورد مطلوب' }, { status: 400 })
     }
     if (!partyName?.trim()) {
-      return NextResponse.json(
-        { error: 'اسم الطرف مطلوب' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'اسم الطرف مطلوب' }, { status: 400 })
     }
-
-    // التحقق من التاريخ
     if (!date) {
-      return NextResponse.json(
-        { error: 'التاريخ مطلوب' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'التاريخ مطلوب' }, { status: 400 })
     }
 
     // التحقق من المبلغ
     const amountNumber = Math.round(Number(amount) * 100) / 100
     if (!Number.isFinite(amountNumber) || amountNumber <= 0) {
-      return NextResponse.json(
-        { error: 'المبلغ يجب أن يكون أكبر من صفر' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'المبلغ يجب أن يكون أكبر من صفر' }, { status: 400 })
     }
 
     // تنفيذ العملية في transaction واحد
     const payment = await db.$transaction(async (tx) => {
       let sale: any = null
       let purchase: any = null
-
       if (invoiceId?.trim()) {
         if (type === 'customer_payment') {
           sale = await tx.sale.findFirst({
@@ -144,6 +105,8 @@ export async function POST(req: NextRequest) {
           type,
           partyId: partyId.trim(),
           partyName: partyName.trim(),
+          customerId: type === 'customer_payment' ? partyId.trim() : null,
+          supplierId: type === 'supplier_payment' ? partyId.trim() : null,
           invoiceId: invoiceId?.trim() || null,
           invoiceNo: invoiceNo?.trim() || null,
           amount: amountNumber,
@@ -156,10 +119,7 @@ export async function POST(req: NextRequest) {
       // تحديث الفاتورة وإنشاء حركة خزينة مع ربط companyId
       if (type === 'customer_payment') {
         if (sale) {
-          await tx.sale.update({
-            where: { id: sale.id },
-            data: { paid: { increment: amountNumber } },
-          })
+          await tx.sale.update({ where: { id: sale.id }, data: { paid: { increment: amountNumber } } })
         }
         await tx.treasuryTransaction.create({
           data: {
@@ -168,20 +128,13 @@ export async function POST(req: NextRequest) {
             amount: amountNumber,
             date: new Date(date),
             description: `تحصيل من عميل - ${partyName.trim()}`,
-            category: 'سدادات عملاء',
-            referenceType: 'payment',
-            referenceId: newPayment.id,
-            notes: invoiceNo?.trim()
-              ? `فاتورة رقم ${invoiceNo.trim()}`
-              : notes?.trim() || null,
+            category: 'سدادات عملاء', referenceType: 'payment', referenceId: newPayment.id,
+            notes: invoiceNo?.trim() ? `فاتورة رقم ${invoiceNo.trim()}` : notes?.trim() || null,
           },
         })
       } else {
         if (purchase) {
-          await tx.purchase.update({
-            where: { id: purchase.id },
-            data: { paid: { increment: amountNumber } },
-          })
+          await tx.purchase.update({ where: { id: purchase.id }, data: { paid: { increment: amountNumber } } })
         }
         await tx.treasuryTransaction.create({
           data: {
@@ -190,12 +143,8 @@ export async function POST(req: NextRequest) {
             amount: amountNumber,
             date: new Date(date),
             description: `سداد لمورد - ${partyName.trim()}`,
-            category: 'سدادات موردين',
-            referenceType: 'payment',
-            referenceId: newPayment.id,
-            notes: invoiceNo?.trim()
-              ? `فاتورة رقم ${invoiceNo.trim()}`
-              : notes?.trim() || null,
+            category: 'سدادات موردين', referenceType: 'payment', referenceId: newPayment.id,
+            notes: invoiceNo?.trim() ? `فاتورة رقم ${invoiceNo.trim()}` : notes?.trim() || null,
           },
         })
       }

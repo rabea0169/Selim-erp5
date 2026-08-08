@@ -3,17 +3,13 @@ import { db } from '@/lib/db-server'
 import { requireAdmin } from '@/lib/admin-check'
 import { safeError } from '@/lib/safe-error'
 
-// حقول محظورة من التزامن (لا يسمح للعميل بتعديلها)
-const FORBIDDEN_FIELDS: Record<string, string[]> = {
-  user: ['passwordHash', 'role'],
-}
-
 // حقول مسموحة لكل نموذج (أمان بالسماح لا بالمنع)
+// companyId غير موجود هنا عمداً — يُفرض من الجلسة ولا يُقبل من العميل أبداً
 const ALLOWED_FIELDS: Record<string, string[]> = {
-  factorySettings: ['id', 'factoryName', 'factoryNameEn', 'slogan', 'phone', 'whatsapp', 'email', 'address', 'taxNumber', 'commercialRegister', 'logo', 'currency', 'invoicePrefix', 'invoiceFooter', 'defaultPaperSize', 'taxRate', 'updatedAt'],
+  factorySettings: ['factoryName', 'factoryNameEn', 'slogan', 'phone', 'whatsapp', 'email', 'address', 'taxNumber', 'commercialRegister', 'logo', 'currency', 'invoicePrefix', 'invoiceFooter', 'defaultPaperSize', 'taxRate', 'updatedAt'],
   worker: ['id', 'name', 'phone', 'job', 'type', 'hourlyRate', 'overtimeRate', 'workStartTime', 'workHoursPerDay', 'monthlySalary', 'notes', 'createdAt', 'updatedAt'],
-  workerAdvance: ['id', 'workerId', 'companyId', 'amount', 'date', 'notes', 'createdAt'],
-  workerReceipt: ['id', 'workerId', 'companyId', 'amount', 'date', 'notes', 'createdAt'],
+  workerAdvance: ['id', 'workerId', 'amount', 'date', 'notes', 'createdAt'],
+  workerReceipt: ['id', 'workerId', 'amount', 'date', 'notes', 'createdAt'],
   workerAttendance: ['id', 'workerId', 'date', 'checkIn', 'checkOut', 'status', 'notes', 'workHours', 'overtimeHours', 'lateMinutes', 'createdAt'],
   production: ['id', 'workerId', 'date', 'modelName', 'quantity', 'unitPrice', 'total', 'productId', 'addToInventory', 'notes', 'createdAt'],
   customer: ['id', 'name', 'phone', 'address', 'notes', 'creditLimit', 'loyaltyPoints', 'openingBalance', 'createdAt'],
@@ -33,7 +29,6 @@ const ALLOWED_FIELDS: Record<string, string[]> = {
   payment: ['id', 'type', 'partyId', 'partyName', 'invoiceId', 'invoiceNo', 'amount', 'date', 'method', 'notes', 'createdAt'],
   saleReturn: ['id', 'returnNumber', 'saleId', 'invoiceNo', 'customerName', 'customerId_ref', 'date', 'total', 'reason', 'restockItems', 'items', 'notes', 'createdAt'],
   purchaseReturn: ['id', 'returnNumber', 'purchaseId', 'invoiceNo', 'supplierName', 'supplierId_ref', 'date', 'total', 'reason', 'restockItems', 'items', 'notes', 'createdAt'],
-  auditLog: ['id', 'action', 'entityType', 'entityId', 'description', 'userId', 'userName', 'metadata', 'timestamp'],
 }
 
 // نماذج لديها حقل updatedAt في Prisma
@@ -41,14 +36,15 @@ const MODELS_WITH_UPDATED_AT = new Set([
   'factorySettings', 'worker', 'sale', 'purchase', 'material', 'product', 'productionOrder',
 ])
 
-// POST /api/sync/push - رفع بيانات من IndexedDB للسيرفر (admin فقط)
+// POST /api/sync/push - رفع بيانات من IndexedDB للسيرفر (admin فقط، داخل شركته فقط)
 export async function POST(req: NextRequest) {
   try {
-    // تحقق admin
+    // تحقق admin + شركة المستخدم
     const admin = await requireAdmin()
     if (!admin.ok) {
       return NextResponse.json({ error: admin.error }, { status: admin.status })
     }
+    const companyId = admin.companyId ?? null
 
     const body = await req.json()
     const { data } = body
@@ -100,9 +96,7 @@ export async function POST(req: NextRequest) {
     results['purchaseReturnItems'] = { success: purchaseReturnItemsData.length, failed: 0 }
 
     const tableMap: Record<string, any> = {
-      // ⚠️ users و auditLogs مستثنيان من المزامنة لحماية الصلاحيات وسجل التدقيق
-      // users: 'user',          // GAP-01 fix: لا يسمح بمزامنة بيانات المستخدمين (يمنع تصعيد الصلاحيات)
-      // auditLogs: 'auditLog',  // GAP-01 fix: لا يسمح بمزامنة سجل التدقيق
+      // users و auditLogs مستثنيان من المزامنة لحماية الصلاحيات وسجل التدقيق
       factorySettings: 'factorySettings',
       workers: 'worker',
       workerAdvances: 'workerAdvance',
@@ -136,20 +130,22 @@ export async function POST(req: NextRequest) {
       }
 
       const allowed = ALLOWED_FIELDS[modelName]
-      const forbidden = FORBIDDEN_FIELDS[modelName] || []
       let successCount = 0
       let failedCount = 0
       let firstError = ''
 
       for (const record of records) {
         try {
-          if (!record.id) { failedCount++; if (!firstError) firstError = 'missing id'; continue }
+          // factorySettings مفتاحه الأساسي هو companyId نفسه — لا يحتاج record.id
+          if (modelName !== 'factorySettings' && !record.id) {
+            failedCount++; if (!firstError) firstError = 'missing id'; continue
+          }
 
-          // فلترة الحقول المسموحة فقط
+          // فلترة الحقول المسموحة فقط — الفحص يتم قبل أي كتابة (بما فيها التواريخ)
           const processed: any = {}
           for (const [key, value] of Object.entries(record)) {
-            // تجاهل الحقول المحظورة
-            if (forbidden.includes(key)) continue
+            // اسقط أي حقل غير مسموح به (بما فيه id في factorySettings و companyId دائماً)
+            if (allowed && !allowed.includes(key)) continue
 
             // تحويل التواريخ
             if (typeof value === 'string' && (key.includes('date') || key.includes('At') || key.includes('Date') || key === 'checkIn' || key === 'checkOut' || key === 'timestamp')) {
@@ -158,23 +154,45 @@ export async function POST(req: NextRequest) {
                 processed[key] = d
               }
             } else if (value !== undefined && value !== null) {
-              // لو في قائمة المسموحات نستخدمها، وإلا نسقط الحقل
-              if (!allowed || allowed.includes(key)) {
-                processed[key] = value
-              }
+              processed[key] = value
             }
           }
+
+          // فرض الشركة من الجلسة — لا يمكن للعميل الكتابة في شركة أخرى
+          processed.companyId = companyId
 
           // updatedAt فقط للنماذج اللي عندها الحقل ده
           if (MODELS_WITH_UPDATED_AT.has(modelName)) {
             processed.updatedAt = new Date()
           }
 
-          await (db as any)[modelName].upsert({
-            where: { id: record.id },
-            create: processed,
-            update: processed,
+          if (modelName === 'factorySettings') {
+            // FactorySettings مفتاحه companyId — upsert واحد لكل شركة
+            if (!companyId) { failedCount++; if (!firstError) firstError = 'no company'; continue }
+            delete processed.id
+            await db.factorySettings.upsert({
+              where: { companyId },
+              create: { ...processed, companyId },
+              update: processed,
+            })
+            successCount++
+            continue
+          }
+
+          // عزل الشركات: حدّث فقط لو السجل موجود داخل نفس الشركة، وإلا أنشئ سجلاً جديداً
+          const existing = await (db as any)[modelName].findFirst({
+            where: { id: record.id, companyId },
+            select: { id: true },
           })
+
+          if (existing) {
+            await (db as any)[modelName].update({
+              where: { id: record.id },
+              data: processed,
+            })
+          } else {
+            await (db as any)[modelName].create({ data: processed })
+          }
           successCount++
         } catch (e: any) {
           console.error(`[Sync Push] ${modelName}#${record?.id || '?'}: ${e.message}`)

@@ -9,14 +9,21 @@ export interface ReportSummary {
   salesTotal: number
   salesPaid: number
   salesRemaining: number
+  salesCount: number
   purchasesTotal: number
   purchasesPaid: number
   purchasesRemaining: number
+  purchasesCount: number
   advancesTotal: number
+  advancesCount: number
   receiptsTotal: number
+  receiptsCount: number
   productionTotal: number
   productionPieces: number
+  productionCount: number
+  attendanceCount: number
   expensesTotal: number
+  expensesCount: number
   saleReturnsTotal: number
   purchaseReturnsTotal: number
   netProfit: number
@@ -65,7 +72,7 @@ class ReportRepository {
     return res
   }
 
-  async importAll(backupData: any): Promise<{ success: boolean; counts: any }> {
+  async importAll(backupData: any): Promise<{ success: boolean; message?: string; counts: any }> {
     const { apiPost } = await import('../../api-client')
     return await apiPost('/api/restore', { ...backupData, confirm: 'WIPE_AND_RESTORE' })
   }

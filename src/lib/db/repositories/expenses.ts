@@ -1,11 +1,11 @@
 'use client'
 import { BaseRepository } from './base'
-import { apiPost, apiDelete } from '../../api-client'
+import { apiPost, apiPut, apiDelete } from '../../api-client'
 import { dataChangeEmitter } from '../live-data'
 import type { Expense } from '../types'
 
 class ExpenseRepository extends BaseRepository<Expense> {
-  constructor() { super('/api/expenses', 'expenses') }
+  constructor() { super('/api/expenses', 'expenses', 'expenses') }
 
   async search(query: string, from?: string, to?: string, categoryId?: string): Promise<Expense[]> {
     const params: Record<string, string> = {}
@@ -26,6 +26,14 @@ class ExpenseRepository extends BaseRepository<Expense> {
   async createWithCategory(data: { categoryId: string; amount: number; date: string; notes?: string }): Promise<Expense> {
     const res = await apiPost<any>('/api/expenses', data)
     dataChangeEmitter.notifyCreate('expenses')
+    dataChangeEmitter.notifyUpdate('treasuryTransactions')
+    return res.expense || res
+  }
+
+  /** تعديل مصروف — السيرفر يزامن حركة الخزينة ذرّياً مع التعديل */
+  async update(id: string, data: { categoryId: string; amount: number; date: string; notes?: string }): Promise<Expense> {
+    const res = await apiPut<any>(`/api/expenses/${id}`, data)
+    dataChangeEmitter.notifyUpdate('expenses')
     dataChangeEmitter.notifyUpdate('treasuryTransactions')
     return res.expense || res
   }

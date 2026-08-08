@@ -10,7 +10,6 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { useToast } from '@/hooks/use-toast'
 import { formatCurrency } from '@/lib/format'
 import {
   workerRepository,
@@ -43,6 +42,11 @@ async function fetchWorkers(search: string): Promise<WorkerWithStats[]> {
           job: w.job ?? null,
           type: (w as WorkerType).type ?? 'monthly',
           notes: w.notes ?? null,
+          hourlyRate: w.hourlyRate ?? null,
+          overtimeRate: w.overtimeRate ?? null,
+          workStartTime: w.workStartTime ?? null,
+          workHoursPerDay: w.workHoursPerDay ?? null,
+          monthlySalary: w.monthlySalary ?? null,
           advances: w.advances || [],
           receipts: w.receipts || [],
           totalAdvances: w.totalAdvances || 0,
@@ -53,6 +57,7 @@ async function fetchWorkers(search: string): Promise<WorkerWithStats[]> {
       // search() path: fetch stats individually (N queries in parallel)
       // TODO: Add workerRepository.searchWithStats() batch method to avoid N queries
       const stats = await workerRepository.getWithStats(w.id)
+      const full = stats?.worker as any
       return {
         id: w.id,
         name: w.name,
@@ -60,6 +65,11 @@ async function fetchWorkers(search: string): Promise<WorkerWithStats[]> {
         job: w.job ?? null,
         type: w.type ?? 'monthly',
         notes: w.notes ?? null,
+        hourlyRate: full?.hourlyRate ?? null,
+        overtimeRate: full?.overtimeRate ?? null,
+        workStartTime: full?.workStartTime ?? null,
+        workHoursPerDay: full?.workHoursPerDay ?? null,
+        monthlySalary: full?.monthlySalary ?? null,
         advances: stats?.advances || [],
         receipts: stats?.receipts || [],
         totalAdvances: stats?.totalAdvances || 0,
@@ -76,7 +86,6 @@ export function WorkersView() {
   const [open, setOpen] = useState(false)
   const [subView, setSubView] = useState<'list' | 'attendance' | 'production'>('list')
   const currentView = subView as string
-  const { toast } = useToast()
 
   // تحميل الموظفين مع التحديث الفوري عند تغير السلف/القبض/الإنتاج
   const { data: workers, loading, reload } = useLiveData<WorkerWithStats[]>(

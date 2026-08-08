@@ -15,6 +15,7 @@ import {
   buildFactoryHeader,
   buildFactoryFooter,
 } from '@/lib/factory-header'
+import { printDocument, getDefaultPrintSettings } from '@/lib/printer'
 import { exportToWord } from '@/lib/word-export'
 // تصدير Excel - الزر والدالة الأساسية
 import { ExcelExportButton } from './ExcelExportButton'
@@ -61,6 +62,7 @@ export function ReportsView() {
   const [to, setTo] = useState(todayStr())
   const [exporting, setExporting] = useState(false)
   const [exportingWord, setExportingWord] = useState(false)
+  const [printing, setPrinting] = useState(false)
   const [printHtml, setPrintHtml] = useState('')
   const [factorySettings, setFactorySettings] = useState<FactorySettings | null>(null)
   const { toast } = useToast()
@@ -112,8 +114,32 @@ export function ReportsView() {
     setTo(today)
   }
 
-  const handlePrint = () => {
-    window.print()
+  // طباعة نظيفة عبر نافذة طباعة مخصصة (بترويسة/تذييل المصنع وحجم الورق من الإعدادات)
+  // بدلاً من window.print التي كانت تطبع عناصر الواجهة كلها
+  const handlePrint = async () => {
+    if (!data || !printHtml) {
+      window.print()
+      return
+    }
+    setPrinting(true)
+    try {
+      const settings = await getDefaultPrintSettings()
+      const result = await printDocument(
+        printHtml,
+        settings,
+        'التقرير الشامل',
+        buildPrintText(data, from, to)
+      )
+      if (result.success) {
+        toast({ title: 'تم', description: 'تم إرسال التقرير للطباعة' })
+      } else {
+        toast({ title: 'فشل الطباعة', description: result.error, variant: 'destructive' })
+      }
+    } catch (e: any) {
+      toast({ title: 'خطأ', description: e.message, variant: 'destructive' })
+    } finally {
+      setPrinting(false)
+    }
   }
 
   const exportPDF = async () => {
@@ -182,11 +208,11 @@ export function ReportsView() {
       </div>
 
       {/* صندوق الفلاتر + أزرار التصدير (نفس الصندوق الأبيض) */}
-      <div className="bg-white rounded-xl p-3 shadow-sm border border-slate-100 space-y-2">
+      <div className="bg-white rounded-xl p-3 shadow-sm border border-slate-100 space-y-2 no-print">
         <ReportFilters
           from={from}
           to={to}
-          loading={loading}
+          loading={loading || printing}
           onFromChange={setFrom}
           onToChange={setTo}
           onPreset={setPreset}

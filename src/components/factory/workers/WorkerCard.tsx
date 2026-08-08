@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import {
   Trash2,
+  Pencil,
   Phone,
   Briefcase,
   ArrowDownCircle,
@@ -21,6 +22,7 @@ import {
 } from '@/lib/db'
 import { WorkerReportModal } from '../WorkerReportModal'
 import { TransactionForm } from './TransactionForm'
+import { WorkerForm } from './WorkerForm'
 import type { WorkerWithStats } from './types'
 
 interface WorkerCardProps {
@@ -33,6 +35,7 @@ export function WorkerCard({ worker, onChanged }: WorkerCardProps) {
   const [advanceOpen, setAdvanceOpen] = useState(false)
   const [receiptOpen, setReceiptOpen] = useState(false)
   const [reportOpen, setReportOpen] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
   const { toast } = useToast()
 
   const handleDeleteAdvance = async (id: string) => {
@@ -222,15 +225,26 @@ export function WorkerCard({ worker, onChanged }: WorkerCardProps) {
             </div>
           )}
 
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleDeleteWorker}
-            className="text-rose-600 hover:bg-rose-50 w-full text-xs"
-          >
-            <Trash2 className="w-3.5 h-3.5 ml-1" />
-            حذف الموظف
-          </Button>
+          <div className="grid grid-cols-2 gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setEditOpen(true)}
+              className="text-purple-600 hover:bg-purple-50 w-full text-xs"
+            >
+              <Pencil className="w-3.5 h-3.5 ml-1" />
+              تعديل الموظف
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleDeleteWorker}
+              className="text-rose-600 hover:bg-rose-50 w-full text-xs"
+            >
+              <Trash2 className="w-3.5 h-3.5 ml-1" />
+              حذف الموظف
+            </Button>
+          </div>
         </div>
       )}
 
@@ -247,6 +261,12 @@ export function WorkerCard({ worker, onChanged }: WorkerCardProps) {
         worker={worker}
         type="receipt"
         onSaved={() => setReceiptOpen(false)}
+      />
+      <WorkerForm
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        worker={worker}
+        onSaved={() => setEditOpen(false)}
       />
       {reportOpen && (
         <WorkerReportModal worker={worker} onClose={() => setReportOpen(false)} />

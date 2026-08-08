@@ -1,18 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { requireCompanyScope } from '@/lib/company-scope'
 import { safeError } from '@/lib/safe-error'
 
 export async function GET(req: NextRequest) {
   try {
+    const scope = await requireCompanyScope()
+    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
+    const user = scope.user
+    if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    const companyId = scope.companyId
+
     const { searchParams } = new URL(req.url)
     const q = searchParams.get('q') || ''
 
-    const where: any = {}
+    const where: any = { companyId }
     if (q) {
-      where.OR = [
-        { name: { contains: q } },
-        { phone: { contains: q } },
-        { job: { contains: q } },
+      where.AND = [
+        { companyId },
+        {
+          OR: [
+            { name: { contains: q } },
+            { phone: { contains: q } },
+            { job: { contains: q } },
+          ],
+        },
       ]
     }
 
@@ -26,9 +38,9 @@ export async function GET(req: NextRequest) {
     })
 
     // Calculate totals
-    const workersWithTotals = workers.map((w) => {
-      const totalAdvances = w.advances.reduce((s, a) => s + a.amount, 0)
-      const totalReceipts = w.receipts.reduce((s, r) => s + r.amount, 0)
+    const workersWithTotals = workers.map((w: any) => {
+      const totalAdvances = w.advances.reduce((s: number, a: any) => s + a.amount, 0)
+      const totalReceipts = w.receipts.reduce((s: number, r: any) => s + r.amount, 0)
       return {
         ...w,
         totalAdvances,
@@ -43,10 +55,22 @@ export async function GET(req: NextRequest) {
   }
 }
 
+// تحويل رقم اختياري: قيمة فارغة/غير صالحة → null
+function optNum(v: any): number | null {
+  if (v === undefined || v === null || v === '') return null
+  const n = Number(v)
+  return isNaN(n) ? null : n
+}
+
 export async function POST(req: NextRequest) {
   try {
+    const scope = await requireCompanyScope()
+    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
+    const user = scope.user
+    if (!user) return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+
     const body = await req.json()
-    const { name, phone, job, type, notes } = body
+    const { name, phone, job, type, notes, hourlyRate, overtimeRate, workStartTime, workHoursPerDay, monthlySalary } = body
 
     // التحقق من البيانات
     if (!name?.trim()) {
@@ -65,10 +89,16 @@ export async function POST(req: NextRequest) {
 
     const worker = await db.worker.create({
       data: {
+        companyId: scope.companyId,
         name: name.trim(),
         phone: phone?.trim() || null,
         job: job?.trim() || null,
         type: validType,
+        hourlyRate: optNum(hourlyRate),
+        overtimeRate: optNum(overtimeRate),
+        workStartTime: workStartTime?.trim() || null,
+        workHoursPerDay: optNum(workHoursPerDay),
+        monthlySalary: optNum(monthlySalary),
         notes: notes?.trim() || null,
       },
     })

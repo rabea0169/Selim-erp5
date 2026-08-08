@@ -11,7 +11,7 @@ import type { Production } from '../types'
  */
 class ProductionRepository extends BaseRepository<Production> {
   constructor() {
-    super('/api/production', 'production')
+    super('/api/production', 'production', 'production')
   }
 
   /** Get all production records for a specific worker */
@@ -45,9 +45,10 @@ class ProductionRepository extends BaseRepository<Production> {
 
   /** Create a production record — server handles stock update */
   async createWithCalculation(data: any): Promise<Production> {
-    const result = await apiPost<Production>('/api/production', data)
+    const res: any = await apiPost('/api/production', data)
     dataChangeEmitter.notifyCreate('production')
-    return result
+    // فك تغليف الاستجابة — السيرفر يعيد { production }
+    return (res?.production || res) as Production
   }
 }
 

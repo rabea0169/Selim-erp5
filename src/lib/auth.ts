@@ -4,8 +4,13 @@ import { cookies } from 'next/headers'
 import { db } from '@/lib/db-server'
 import { getTokenSecret } from './auth-secret'
 
+// تحذير: منطق التحقق من التوكن مكرر في src/lib/auth-edge.ts (Edge Runtime / Web Crypto).
+// أي تغيير في صيغة التوكن أو التوقيع هنا يجب أن يعكس هناك وإلا يتعطل الـ middleware.
 const SESSION_COOKIE = 'factory_session'
-const SESSION_EXPIRY_DAYS = 30
+// مدة الجلسة مقلّصة من 30 إلى 7 أيام لتقليل نافذة إساءة استخدام توكن مسروق.
+// ملاحظة: الدور يُقرأ دائماً من قاعدة البيانات (getCurrentUser / requireAdmin)
+// ولا يُعتمد على role داخل التوكن، فتغيير الدور يسري فوراً حتى مع توكن قديم.
+const SESSION_EXPIRY_DAYS = 7
 
 // إنشاء session token ببيانات المستخدم + توقيع HMAC
 function createSessionToken(userId: string, username: string, role: string = 'user', companyId?: string | null): string {
@@ -17,13 +22,16 @@ function createSessionToken(userId: string, username: string, role: string = 'us
 }
 
 // التحقق من session token مع التحقق من التوقيع
+// ملاحظة: مقارنة التوقيع تتم بـ timingSafeEqual لمنع timing attacks
 export function verifySessionToken(token: string | undefined): { userId: string; username: string; role: string; companyId?: string | null } | null {
   if (!token) return null
   try {
     const tokenData = JSON.parse(Buffer.from(token, 'base64').toString())
     const { payload, sig } = tokenData
     const expectedSig = crypto.createHmac('sha256', getTokenSecret()).update(payload).digest('hex')
-    if (sig !== expectedSig) return null
+    const sigBuf = Buffer.from(String(sig), 'utf8')
+    const expectedBuf = Buffer.from(expectedSig, 'utf8')
+    if (sigBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(sigBuf, expectedBuf)) return null
     const data = JSON.parse(payload)
     if (data.expires < Date.now()) return null
     return { userId: data.userId, username: data.username, role: data.role || 'user', companyId: data.companyId ?? null }
@@ -33,6 +41,8 @@ export function verifySessionToken(token: string | undefined): { userId: string;
 }
 
 // الحصول على المستخدم الحالي من الكوكيز
+// ملاحظة أمنية: الدور (role) يُقرأ من قاعدة البيانات في كل طلب وليس من التوكن،
+// فأي تغيير في الدور أو حذف المستخدم يسري فوراً دون انتظار انتهاء التوكن.
 export async function getCurrentUser(): Promise<{
   id: string
   username: string
@@ -57,6 +67,8 @@ export async function isRegistrationAllowed(): Promise<boolean> {
 }
 
 // تسجيل الدخول
+// ملاحظة أمنية: كلمة المرور تُستقبل كنص عادي في جسم JSON — مقبول فقط فوق HTTPS
+// (يجب فرض HTTPS في الإنتاج؛ HSTS مفعّل في next.config.ts).
 export async function loginUser(username: string, password: string): Promise<{
   success: boolean
   error?: string
@@ -119,7 +131,7 @@ export async function registerUser(
 
   let user: any
   try {
-    user = await db.$transaction(async (tx) => {
+    user = await db.$transaction(async (tx: any) => {
       const existing = await tx.user.findUnique({ where: { username: username.trim() } })
       if (existing) throw new Error('اسم المستخدم موجود بالفعل')
 
@@ -131,7 +143,7 @@ export async function registerUser(
       })
 
       const passwordHash = await bcrypt.hash(password, 12)
-      return tx.user.create({
+      const newUser = await tx.user.create({
         data: {
           username: username.trim(),
           passwordHash,
@@ -140,6 +152,14 @@ export async function registerUser(
           companyId: company.id,
         },
       })
+
+      // ربط الشركة بكود ثابت فريد مرتبط بالمستخدم (يتوافق مع company-scope.ts)
+      await tx.company.update({
+        where: { id: company.id },
+        data: { code: `user:${newUser.id}` },
+      })
+
+      return newUser
     })
   } catch (e: any) {
     if (e.message === 'اسم المستخدم موجود بالفعل' || e.code === 'P2002') {

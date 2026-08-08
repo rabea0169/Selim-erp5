@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { Trash2, Calendar, HandCoins } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Trash2, Calendar, HandCoins, Pencil } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { formatCurrency, formatDate } from '@/lib/format'
@@ -13,14 +13,21 @@ import { SupplierPaymentDialog } from './SupplierPaymentDialog'
 interface PurchaseCardProps {
   purchase: Purchase
   onDelete: (id: string) => void
+  onEdit?: (purchase: Purchase) => void
   onPay?: (purchase: Purchase) => void
 }
 
-export function PurchaseCard({ purchase, onDelete, onPay }: PurchaseCardProps) {
+export function PurchaseCard({ purchase, onDelete, onEdit, onPay }: PurchaseCardProps) {
   const [expanded, setExpanded] = useState(false)
   const [printHtml, setPrintHtml] = useState('')
   const [paymentOpen, setPaymentOpen] = useState(false)
   const remaining = purchase.total - purchase.paid
+
+  // إبطال HTML الطباعة المخزن عند تغير بيانات الفاتورة (مثلاً بعد تسجيل دفعة)
+  // حتى لا تُطبع قيم المدفوع/المتبقي القديمة
+  useEffect(() => {
+    setPrintHtml('')
+  }, [purchase.paid, purchase.total])
 
   const handlePrintClick = async () => {
     const html = await buildPurchasePrintHtml(purchase)
@@ -106,6 +113,17 @@ export function PurchaseCard({ purchase, onDelete, onPay }: PurchaseCardProps) {
               className="w-full border-amber-300 text-amber-700 hover:bg-amber-50"
             >
               تحضير للطباعة
+            </Button>
+          )}
+          {onEdit && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onEdit(purchase)}
+              className="w-full border-blue-300 text-blue-700 hover:bg-blue-50"
+            >
+              <Pencil className="w-3.5 h-3.5 ml-1" />
+              تعديل الفاتورة
             </Button>
           )}
           <Button variant="ghost" size="sm" onClick={() => onDelete(purchase.id)} className="text-rose-600 hover:bg-rose-50 w-full">

@@ -8,12 +8,12 @@ import {
   Trash2,
   ArrowDownToLine,
   ArrowUpFromLine,
+  Scale,
   ChevronLeft,
   MapPin,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { formatCurrency } from '@/lib/format'
 import type { Warehouse, Material } from '@/lib/db'
@@ -38,6 +38,7 @@ export function MaterialList({
   const [search, setSearch] = useState('')
   const [addStockFor, setAddStockFor] = useState<Material | null>(null)
   const [consumeStockFor, setConsumeStockFor] = useState<Material | null>(null)
+  const [adjustStockFor, setAdjustStockFor] = useState<Material | null>(null)
 
   const filtered = materials.filter(
     (m) =>
@@ -112,7 +113,7 @@ export function MaterialList({
         <div className="space-y-2">
           {filtered.map((m) => {
             const value = m.quantity * m.unitCost
-            const isLowStock = m.reorderLevel && m.quantity <= m.reorderLevel
+            const isLowStock = m.reorderLevel != null && m.quantity <= m.reorderLevel
             return (
               <div
                 key={m.id}
@@ -155,7 +156,7 @@ export function MaterialList({
                     </p>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   <Button
                     variant="outline"
                     size="sm"
@@ -163,7 +164,7 @@ export function MaterialList({
                     className="h-8 text-xs font-medium border-emerald-200 text-emerald-700 hover:bg-emerald-50"
                   >
                     <ArrowDownToLine className="w-3.5 h-3.5 ml-1" />
-                    إضافة كمية
+                    إضافة
                   </Button>
                   <Button
                     variant="outline"
@@ -173,7 +174,16 @@ export function MaterialList({
                     disabled={m.quantity <= 0}
                   >
                     <ArrowUpFromLine className="w-3.5 h-3.5 ml-1" />
-                    سحب كمية
+                    سحب
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setAdjustStockFor(m)}
+                    className="h-8 text-xs font-medium border-blue-200 text-blue-700 hover:bg-blue-50"
+                  >
+                    <Scale className="w-3.5 h-3.5 ml-1" />
+                    تسوية
                   </Button>
                 </div>
               </div>
@@ -182,7 +192,7 @@ export function MaterialList({
         </div>
       )}
 
-      {/* نوافذ إضافة/سحب كمية */}
+      {/* نوافذ إضافة/سحب/تسوية كمية */}
       {addStockFor && (
         <StockDialog
           open={true}
@@ -199,6 +209,15 @@ export function MaterialList({
           material={consumeStockFor}
           mode="consume"
           onSaved={() => setConsumeStockFor(null)}
+        />
+      )}
+      {adjustStockFor && (
+        <StockDialog
+          open={true}
+          onOpenChange={(v) => !v && setAdjustStockFor(null)}
+          material={adjustStockFor}
+          mode="adjust"
+          onSaved={() => setAdjustStockFor(null)}
         />
       )}
     </div>

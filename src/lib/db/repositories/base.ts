@@ -2,6 +2,7 @@
 
 import { apiGet, apiPost, apiPut, apiDelete } from '../../api-client'
 import { dataChangeEmitter } from '../live-data'
+import type { EntityType } from '../live-data'
 
 interface PaginatedResponse<T> {
   pagination?: { total: number; page: number; limit: number; pages: number }
@@ -12,13 +13,20 @@ interface PaginatedResponse<T> {
  * Replaces IndexedDB operations with server API calls.
  * Subclasses set `responseKey` to match the key used in paginated responses
  * (e.g. 'sales', 'workers', 'categories', 'transactions', etc.).
+ *
+ * Subclasses also pass `entityType` so that create/update/delete emit
+ * dataChangeEmitter notifications centrally — this keeps useLiveData views
+ * refreshing automatically without each subclass re-implementing the events.
+ * Subclass methods that perform their own apiPost/apiPut/apiDelete (without
+ * calling super) still emit their own richer notifications and are unaffected.
  */
 export class BaseRepository<T extends { id?: string }> {
   protected _lastTotal: number | null = null
 
   constructor(
     protected basePath: string,
-    protected responseKey: string = ''
+    protected responseKey: string = '',
+    protected entityType?: EntityType
   ) {}
 
   /** Fetch all records (up to 999) with optional extra query params */
@@ -60,32 +68,46 @@ export class BaseRepository<T extends { id?: string }> {
     }
   }
 
-  /** Create a new record */
+  /** Create a new record — notifies dataChangeEmitter when entityType is set */
   async create(data: any): Promise<T> {
     const res: any = await apiPost<T>(this.basePath, data)
+    let result = res as T
     // Unwrap if the response wraps the created entity
     if (res && typeof res === 'object' && !Array.isArray(res)) {
       if (this.responseKey && res[this.responseKey]) {
-        return res[this.responseKey] as T
-      }
-      // Check if response has a nested entity under a common key pattern
-      const keys = Object.keys(res)
-      if (keys.length === 2 && keys.includes('pagination')) {
-        const dataKey = keys.find(k => k !== 'pagination')!
-        return res[dataKey] as T
+        result = res[this.responseKey] as T
+      } else {
+        // Check if response has a nested entity under a common key pattern
+        const keys = Object.keys(res)
+        if (keys.length === 2 && keys.includes('pagination')) {
+          const dataKey = keys.find(k => k !== 'pagination')!
+          result = res[dataKey] as T
+        }
       }
     }
-    return res as T
+    this.invalidateCount()
+    if (this.entityType) {
+      dataChangeEmitter.notifyCreate(this.entityType, (result as any)?.id)
+    }
+    return result
   }
 
-  /** Update an existing record */
+  /** Update an existing record — notifies dataChangeEmitter when entityType is set */
   async update(id: string, data: any): Promise<T> {
-    return await apiPut<T>(this.basePath + '/' + id, data)
+    const res = await apiPut<T>(this.basePath + '/' + id, data)
+    if (this.entityType) {
+      dataChangeEmitter.notifyUpdate(this.entityType, id)
+    }
+    return res
   }
 
-  /** Delete a record */
+  /** Delete a record — notifies dataChangeEmitter when entityType is set */
   async delete(id: string): Promise<void> {
     await apiDelete(this.basePath + '/' + id)
+    this.invalidateCount()
+    if (this.entityType) {
+      dataChangeEmitter.notifyDelete(this.entityType, id)
+    }
   }
 
   /** Get total count from last paginated response, or fetch it */

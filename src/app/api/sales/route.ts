@@ -1,10 +1,49 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db-server'
+import { requireCompanyScope } from '@/lib/company-scope'
 import { safeError } from '@/lib/safe-error'
+import { computeInvoiceTotals, assertValidPaid } from '@/lib/calc'
+
+// توليد رقم فاتورة تلقائي: {invoicePrefix}{رقم تسلسلي 4 خانات}
+// يُنفَّذ داخل الـ transaction لضمان عدم تكرار الرقم عند التزامن
+async function generateInvoiceNo(tx: any, companyId: string | null): Promise<string> {
+  // قراءة بادئة الفاتورة من إعدادات المصنع الخاصة بالشركة (الافتراضي 'INV-')
+  let prefix = 'INV-'
+  if (companyId) {
+    const settings = await tx.factorySettings.findUnique({ where: { companyId } })
+    if (settings?.invoicePrefix?.trim()) {
+      prefix = settings.invoicePrefix.trim()
+    }
+  }
+
+  // آخر فاتورة لنفس الشركة بنفس البادئة
+  const last = await tx.sale.findFirst({
+    where: { companyId, invoiceNo: { startsWith: prefix } },
+    orderBy: [{ createdAt: 'desc' }, { invoiceNo: 'desc' }],
+    select: { invoiceNo: true },
+  })
+
+  let next = 1
+  if (last?.invoiceNo) {
+    const match = last.invoiceNo.slice(prefix.length).match(/\d+/)
+    if (match) {
+      next = parseInt(match[0], 10) + 1
+    }
+  }
+  return `${prefix}${String(next).padStart(4, '0')}`
+}
 
 // GET /api/sales?from=&to=&q=&page=1&limit=50
 export async function GET(req: NextRequest) {
   try {
+    const scope = await requireCompanyScope()
+    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
+    const user = scope.user
+    if (!user) {
+      return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    }
+    const companyId = scope.companyId
+
     const { searchParams } = new URL(req.url)
     const from = searchParams.get('from')
     const to = searchParams.get('to')
@@ -12,7 +51,8 @@ export async function GET(req: NextRequest) {
     const page = Math.max(1, Number(searchParams.get('page')) || 1)
     const limit = Math.min(200, Math.max(1, Number(searchParams.get('limit')) || 50))
 
-    const where: any = {}
+    // عزل الشركات: لا تظهر إلا مبيعات الشركة الحالية
+    const where: any = { companyId }
     if (from || to) {
       where.date = {}
       if (from) {
@@ -28,10 +68,15 @@ export async function GET(req: NextRequest) {
       }
     }
     if (q) {
-      where.OR = [
-        { customerName: { contains: q } },
-        { invoiceNo: { contains: q } },
-        { notes: { contains: q } },
+      where.AND = [
+        { companyId },
+        {
+          OR: [
+            { customerName: { contains: q } },
+            { invoiceNo: { contains: q } },
+            { notes: { contains: q } },
+          ],
+        },
       ]
     }
 
@@ -59,6 +104,14 @@ export async function GET(req: NextRequest) {
 // POST /api/sales
 export async function POST(req: NextRequest) {
   try {
+    const scope = await requireCompanyScope()
+    if (!scope.ok) return NextResponse.json({ error: scope.error }, { status: scope.status })
+    const user = scope.user
+    if (!user) {
+      return NextResponse.json({ error: 'غير مصرح — يجب تسجيل الدخول أولاً' }, { status: 401 })
+    }
+    const companyId = scope.companyId
+
     const body = await req.json()
     const {
       customerName,
@@ -85,7 +138,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'التاريخ غير صالح' }, { status: 400 })
     }
     if (!Array.isArray(items) || items.length === 0) {
-      return NextResponse.json({ error: 'يجب إضافة صنف واحد على الأقل' }, { status: 400 })
+      return NextResponse.json({ error: 'يجب إضافة صنف واحداً على الأقل' }, { status: 400 })
     }
 
     const validItems = items.filter(
@@ -95,109 +148,139 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'أضف صنفاً صحيحاً واحداً على الأقل' }, { status: 400 })
     }
 
-    const subtotal = validItems.reduce(
-      (sum: number, it: any) => sum + Number(it.quantity) * Number(it.unitPrice),
-      0
-    )
-    const discType = discountType || null
-    const discValue = Number(discountValue) || 0
-    const discountAmount = discType === 'percentage'
-      ? subtotal * (discValue / 100)
-      : discValue
-    const tRate = Number(taxRate) || 0
-    const taxAmount = (subtotal - discountAmount) * (tRate / 100)
-    const fees = Number(extraFees) || 0
-    const total = subtotal - discountAmount + taxAmount + fees
+    // منع القيم السالبة للخصم/الضريبة/المصاريف (لا يثق بالعميل)
+    if (Number(discountValue) < 0 || Number(taxRate) < 0 || Number(extraFees) < 0) {
+      return NextResponse.json({ error: 'قيم الخصم والضريبة والمصاريف لا يمكن أن تكون سالبة' }, { status: 400 })
+    }
+
+    // حساب الإجماليات عبر المكتبة المشتركة (مغطاة باختبارات وحدية)
+    const totals = computeInvoiceTotals({ items: validItems, discountType, discountValue, taxRate, extraFees })
+    const { subtotal, discountAmount, taxAmount, total } = totals
+    const discType = totals.discountType
+    const discValue = totals.discountValue
+    const tRate = totals.taxRate
+    const fees = totals.extraFees
     const paidAmount = Number(paid) || 0
 
+    // منع خصم أكبر من الإجمالي الفرعي (العميل يحدّه، والخادم يرفضه صراحة)
+    if (discountAmount > subtotal) {
+      return NextResponse.json({ error: 'مبلغ الخصم لا يمكن أن يتجاوز الإجمالي الفرعي' }, { status: 400 })
+    }
+    if (discType === 'percentage' && discValue > 100) {
+      return NextResponse.json({ error: 'نسبة الخصم لا يمكن أن تتجاوز 100%' }, { status: 400 })
+    }
+
     // F5-02 fix: التحقق من أن المدفوع لا يتجاوز الإجمالي ولا يكون سالباً
-    if (paidAmount < 0) {
-      return NextResponse.json({ error: 'المبلغ المدفوع لا يمكن أن يكون سالباً' }, { status: 400 })
-    }
-    if (paidAmount > total) {
-      return NextResponse.json({ error: `المبلغ المدفوع (${paidAmount}) يتجاوز إجمالي الفاتورة (${total})` }, { status: 400 })
+    const paidError = assertValidPaid(paidAmount, total)
+    if (paidError) {
+      return NextResponse.json({ error: paidError }, { status: 400 })
     }
 
-    const sale = await db.$transaction(async (tx) => {
-      // فحص المخزون داخل الـ transaction (TOCTOU fix)
-      for (const it of validItems) {
-        if (it.productId) {
-          const product = await tx.product.findUnique({ where: { id: it.productId } })
-          if (!product) {
-            throw new Error(`المنتج "${it.itemName}" غير موجود في قاعدة البيانات`)
-          }
-          if (product.quantity < Number(it.quantity)) {
-            throw new Error(`الكمية المتاحة من ${product.name} (${product.quantity}) أقل من المطلوب (${it.quantity})`)
+    // إن لم يرسل العميل رقم فاتورة يدوياً — سيُولَّد تلقائياً داخل الـ transaction
+    const manualInvoiceNo = invoiceNo?.trim() || null
+
+    const runCreate = () =>
+      db.$transaction(async (tx: any) => {
+        // توليد رقم الفاتورة داخل الـ transaction (داخل نفس الاستعلام المتسلسل لمنع التكرار)
+        const finalInvoiceNo = manualInvoiceNo ?? (await generateInvoiceNo(tx, companyId))
+
+        // فحص المخزون داخل الـ transaction (TOCTOU fix) — مع عزل الشركة
+        for (const it of validItems) {
+          if (it.productId) {
+            const product = await tx.product.findFirst({
+              where: { id: it.productId, companyId },
+            })
+            if (!product) {
+              throw new Error(`المنتج "${it.itemName}" غير موجود في قاعدة البيانات`)
+            }
+            if (product.quantity < Number(it.quantity)) {
+              throw new Error(`الكمية المتاحة من ${product.name} (${product.quantity}) أقل من المطلوب (${it.quantity})`)
+            }
           }
         }
-      }
 
-      // التحقق من العميل داخل الـ transaction
-      if (customerId_ref) {
-        const customer = await tx.customer.findUnique({ where: { id: customerId_ref } })
-        if (!customer) {
-          throw new Error('العميل المحدد غير موجود')
+        // التحقق من العميل داخل الـ transaction — مع عزل الشركة
+        if (customerId_ref) {
+          const customer = await tx.customer.findFirst({
+            where: { id: customerId_ref, companyId },
+          })
+          if (!customer) {
+            throw new Error('العميل المحدد غير موجود')
+          }
         }
-      }
 
-      const newSale = await tx.sale.create({
-        data: {
-          customerName: customerName.trim(),
-          customerId_ref: customerId_ref || null,
-          invoiceNo: invoiceNo?.trim() || null,
-          date: dateObj,
-          subtotal,
-          discountType: discType,
-          discountValue: discValue,
-          discountAmount,
-          taxRate: tRate,
-          taxAmount,
-          extraFees: fees,
-          total,
-          paid: paidAmount,
-          notes: notes?.trim() || null,
-          items: {
-            create: validItems.map((it: any) => ({
-              itemName: it.itemName.trim(),
-              productId: it.productId || null,
-              priceType: it.priceType || null,
-              quantity: Number(it.quantity),
-              unitPrice: Number(it.unitPrice),
-              total: Number(it.quantity) * Number(it.unitPrice),
-            })),
+        const newSale = await tx.sale.create({
+          data: {
+            companyId,
+            customerName: customerName.trim(),
+            customerId_ref: customerId_ref || null,
+            invoiceNo: finalInvoiceNo,
+            date: dateObj,
+            subtotal,
+            discountType: discType,
+            discountValue: discValue,
+            discountAmount,
+            taxRate: tRate,
+            taxAmount,
+            extraFees: fees,
+            total,
+            paid: paidAmount,
+            notes: notes?.trim() || null,
+            items: {
+              create: validItems.map((it: any) => ({
+                itemName: it.itemName.trim(),
+                productId: it.productId || null,
+                priceType: it.priceType || null,
+                quantity: Number(it.quantity),
+                unitPrice: Number(it.unitPrice),
+                total: Number(it.quantity) * Number(it.unitPrice),
+              })),
+            },
           },
-        },
-        include: { items: true },
-      })
+          include: { items: true },
+        })
 
-      // خصم الكميات من مخزون المنتجات
-      for (const it of validItems) {
-        if (it.productId) {
-          await tx.product.update({
-            where: { id: it.productId },
-            data: { quantity: { decrement: Number(it.quantity) }, updatedAt: new Date() },
+        // خصم الكميات من مخزون المنتجات
+        for (const it of validItems) {
+          if (it.productId) {
+            await tx.product.update({
+              where: { id: it.productId },
+              data: { quantity: { decrement: Number(it.quantity) }, updatedAt: new Date() },
+            })
+          }
+        }
+
+        // إنشاء حركة خزينة — مرتبطة بنفس الشركة
+        if (paidAmount > 0) {
+          await tx.treasuryTransaction.create({
+            data: {
+              companyId,
+              type: 'deposit',
+              amount: paidAmount,
+              date: dateObj,
+              description: `مبيعات - ${customerName.trim()}`,
+              category: 'مبيعات',
+              referenceType: 'sale',
+              referenceId: newSale.id,
+              notes: finalInvoiceNo ? `فاتورة رقم ${finalInvoiceNo}` : null,
+            },
           })
         }
-      }
 
-      // إنشاء حركة خزينة
-      if (paidAmount > 0) {
-        await tx.treasuryTransaction.create({
-          data: {
-            type: 'deposit',
-            amount: paidAmount,
-            date: dateObj,
-            description: `مبيعات - ${customerName.trim()}`,
-            category: 'مبيعات',
-            referenceType: 'sale',
-            referenceId: newSale.id,
-            notes: invoiceNo ? `فاتورة رقم ${invoiceNo.trim()}` : null,
-          },
-        })
-      }
+        return newSale
+      })
 
-      return newSale
-    })
+    let sale
+    try {
+      sale = await runCreate()
+    } catch (e: any) {
+      // تعارض فريد (P2002) عند التوليد التلقائي — أعد المحاولة مرة واحدة برقم أعلى
+      if (!manualInvoiceNo && e?.code === 'P2002') {
+        sale = await runCreate()
+      } else {
+        throw e
+      }
+    }
 
     return NextResponse.json({ sale })
   } catch (e) {

@@ -23,7 +23,7 @@ import {
 } from '@/components/ui/select'
 import { useToast } from '@/hooks/use-toast'
 import { formatCurrency, formatDate, todayStr } from '@/lib/format'
-import { paymentRepository, dataChangeEmitter, type Sale } from '@/lib/db'
+import { paymentRepository, saleRepository, dataChangeEmitter, type Sale } from '@/lib/db'
 
 interface CustomerPaymentDialogProps {
   open: boolean
@@ -62,20 +62,25 @@ export function CustomerPaymentDialog({ open, onOpenChange, sale }: CustomerPaym
     }
     setSaving(true)
     try {
-      await paymentRepository.create({
-        type: 'customer_payment',
-        partyId: sale.customerId_ref || sale.id,
-        partyName: sale.customerName,
-        invoiceId: sale.id,
-        invoiceNo: sale.invoiceNo,
-        amount: amountNum,
-        date,
-        method,
-        notes: notes || undefined,
-      })
-      // تحديث المبيعات: زيادة المدفوع
-      const { saleRepository } = await import('@/lib/db')
-      await saleRepository.update(sale.id, { paid: sale.paid + amountNum } as any)
+      if (sale.customerId_ref) {
+        // عميل مسجل: POST /api/payments يحدّث paid في الفاتورة ويسجّل حركة الخزينة ذرّياً على الخادم —
+        // لا يجوز تحديث paid من العميل هنا وإلا يُحسب المبلغ مرتين (تناقض مع الخادم)
+        await paymentRepository.create({
+          type: 'customer_payment',
+          partyId: sale.customerId_ref,
+          partyName: sale.customerName,
+          invoiceId: sale.id,
+          invoiceNo: sale.invoiceNo,
+          amount: amountNum,
+          date,
+          method,
+          notes: notes || undefined,
+        })
+      } else {
+        // عميل غير مسجل (اسم يدوي): /api/payments يرفض لعدم وجود عميل بالمعرف،
+        // لذا نحدّث paid مباشرة عبر PUT /api/sales/[id] الذي يسجّل حركة الخزينة ذرّياً على الخادم
+        await saleRepository.update(sale.id, { paid: sale.paid + amountNum } as any)
+      }
       dataChangeEmitter.notifyUpdate('sales')
       dataChangeEmitter.notifyUpdate('payments')
       dataChangeEmitter.notifyUpdate('treasuryTransactions')
@@ -197,16 +202,17 @@ export function CustomerPaymentDialog({ open, onOpenChange, sale }: CustomerPaym
           </div>
         </div>
 
+        {/* الأزرار: الإجراء الأساسي (استلام) أولاً، ثم الإلغاء في النهاية */}
         <DialogFooter className="gap-2 px-1 pb-6">
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
-            إلغاء
-          </Button>
           <Button
             onClick={save}
             disabled={saving || !amount || Number(amount) <= 0}
             className="bg-emerald-600 hover:bg-emerald-700 text-white"
           >
             {saving ? 'جارٍ الحفظ...' : `استلام ${formatCurrency(Number(amount) || 0)}`}
+          </Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
+            إلغاء
           </Button>
         </DialogFooter>
       </DialogContent>
