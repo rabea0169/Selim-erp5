@@ -93,7 +93,7 @@ export async function POST(req: NextRequest) {
     if (!validation.success) {
       return NextResponse.json({ error: validation.errors[0] }, { status: 400 })
     }
-    const { type, amount, date, description, category, notes } = validation.data
+    const { type, amount, date, description, category, referenceType, referenceId, notes } = validation.data
 
     const transaction = await db.treasuryTransaction.create({
       data: {
@@ -103,6 +103,8 @@ export async function POST(req: NextRequest) {
         date: new Date(date),
         description: description.trim(),
         category: category?.trim() || null,
+        referenceType: referenceType?.trim() || null,
+        referenceId: referenceId?.trim() || null,
         notes: notes?.trim() || null,
       },
     })

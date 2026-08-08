@@ -93,11 +93,13 @@ export const factorySettingsSchema = z.object({
 })
 
 export const treasuryTransactionSchema = z.object({
-  type: z.enum(['deposit', 'withdrawal']),
+  type: z.enum(['deposit', 'withdrawal', 'transfer']),
   amount: z.coerce.number().positive('المبلغ يجب أن يكون موجباً'),
   date: z.string().min(1, 'التاريخ مطلوب'),
   description: z.string().min(1, 'الوصف مطلوب'),
   category: z.string().optional().nullable(),
+  referenceType: z.string().optional().nullable(),
+  referenceId: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
 })
 
