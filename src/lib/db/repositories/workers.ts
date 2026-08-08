@@ -4,7 +4,7 @@ import { apiGet } from '../../api-client'
 import type { Worker, WorkerAdvance, WorkerReceipt } from '../types'
 
 class WorkerRepository extends BaseRepository<Worker> {
-  constructor() { super('/api/workers', 'workers') }
+  constructor() { super('/api/workers', 'workers', 'workers') }
 
   /** جلب موظف واحد — السيرفر يعيد { worker } لذا نفك التغليف */
   async getById(id: string): Promise<Worker | undefined> {

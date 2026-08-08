@@ -5,7 +5,7 @@ import { dataChangeEmitter } from '../live-data'
 import type { Product, ProductionOrder, ProductionOrderStage } from '../types'
 
 class ProductRepository extends BaseRepository<Product> {
-  constructor() { super('/api/products', 'products') }
+  constructor() { super('/api/products', 'products', 'products') }
 
   async search(query: string): Promise<Product[]> {
     if (!query) return this.getAll()
@@ -33,7 +33,7 @@ class ProductRepository extends BaseRepository<Product> {
 }
 
 class ProductionOrderRepository extends BaseRepository<ProductionOrder> {
-  constructor() { super('/api/production-orders', 'productionOrders') }
+  constructor() { super('/api/production-orders', 'productionOrders', 'productionOrders') }
 
   async getByStatus(status: ProductionOrder['status']): Promise<ProductionOrder[]> {
     return this.getAll({ status })

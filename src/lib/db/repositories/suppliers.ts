@@ -4,7 +4,7 @@ import { apiGet } from '../../api-client'
 import type { Supplier, Purchase } from '../types'
 
 class SupplierRepository extends BaseRepository<Supplier> {
-  constructor() { super('/api/suppliers', 'suppliers') }
+  constructor() { super('/api/suppliers', 'suppliers', 'suppliers') }
 
   async search(query: string): Promise<Supplier[]> {
     if (!query) return this.getAll()

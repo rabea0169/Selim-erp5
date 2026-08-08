@@ -11,7 +11,7 @@ import type { WorkerAttendance } from '../types'
  */
 class WorkerAttendanceRepository extends BaseRepository<WorkerAttendance> {
   constructor() {
-    super('/api/attendance', 'attendance')
+    super('/api/attendance', 'attendance', 'workerAttendance')
   }
 
   /** Get all attendance records for a specific worker */

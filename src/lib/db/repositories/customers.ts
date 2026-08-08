@@ -4,7 +4,7 @@ import { apiGet } from '../../api-client'
 import type { Customer, Sale } from '../types'
 
 class CustomerRepository extends BaseRepository<Customer> {
-  constructor() { super('/api/customers', 'customers') }
+  constructor() { super('/api/customers', 'customers', 'customers') }
 
   async search(query: string): Promise<Customer[]> {
     if (!query) return this.getAll()

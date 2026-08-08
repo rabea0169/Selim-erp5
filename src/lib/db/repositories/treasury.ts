@@ -11,7 +11,7 @@ export interface TreasurySummary {
 }
 
 class TreasuryRepository extends BaseRepository<TreasuryTransaction> {
-  constructor() { super('/api/treasury-transactions', 'transactions') }
+  constructor() { super('/api/treasury-transactions', 'transactions', 'treasuryTransactions') }
 
   async getByDateRange(from?: string, to?: string, type?: string): Promise<TreasuryTransaction[]> {
     const params: Record<string, string> = {}

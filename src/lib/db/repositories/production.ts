@@ -11,7 +11,7 @@ import type { Production } from '../types'
  */
 class ProductionRepository extends BaseRepository<Production> {
   constructor() {
-    super('/api/production', 'production')
+    super('/api/production', 'production', 'production')
   }
 
   /** Get all production records for a specific worker */
